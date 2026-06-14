@@ -16,6 +16,33 @@ jobs:
           submodules: 'recursive'
           fetch-depth: '0'
 
+      - name: Fetch submodules by exact commit
+        run: |
+          set -e
+          fetch_sub() {
+            local path="$1"; local url="$2"; local sha="$3"
+            echo "=== $path @ $sha ==="
+            rm -rf "$path"
+            git clone --filter=blob:none "$url" "$path"
+            git -C "$path" checkout -q "$sha"
+            git -C "$path" submodule update --init --recursive --depth 1 || true
+          }
+          fetch_sub build-system/bazel-rules/apple_support       https://github.com/bazelbuild/apple_support.git                a99414ad848c3aeb84640934352ecc85d8a937f5
+          fetch_sub build-system/bazel-rules/rules_apple         https://github.com/ali-fareed/rules_apple.git                  1791d916de4083388f22e20248d8b010d23f0d6b
+          fetch_sub build-system/bazel-rules/rules_swift         https://github.com/bazelbuild/rules_swift.git                  9dce728ed1e9168ec8c912fcd3443dad48a286fe
+          fetch_sub build-system/bazel-rules/rules_xcodeproj     https://github.com/MobileNativeFoundation/rules_xcodeproj.git   997f2db058596f91663e54782b79490de87208da
+          fetch_sub build-system/bazel-rules/sourcekit-bazel-bsp https://github.com/spotify/sourcekit-bazel-bsp.git             feea27cfc88eccc58af0cfe5674444e945cfb75f
+          fetch_sub submodules/LottieCpp/lottiecpp               https://github.com/ali-fareed/lottiecpp.git                    4a3144b5d527429f7bbd0f07003cb372bf8939ce
+          fetch_sub submodules/TgVoipWebrtc/tgcalls              https://github.com/TelegramMessenger/tgcalls.git               8099768559edb0efd2d1b300090c18141226e9a8
+          fetch_sub submodules/rlottie/rlottie                   https://github.com/TelegramMessenger/rlottie.git               67f103bc8b625f2a4a9e94f1d8c7bd84c5a08d1d
+          fetch_sub third-party/XcodeGen                         https://github.com/yonaskolb/XcodeGen.git                      53cb43cb66908a28812d7629d03fed94c9827a24
+          fetch_sub third-party/dav1d/dav1d                      https://github.com/ali-fareed/dav1d.git                        330e20672e85f9de1678dccd6957845898ef57a1
+          fetch_sub third-party/libvpx/libvpx                    https://github.com/webmproject/libvpx.git                      e7bfd8b6c230a6824e7fd1efa2378a7322986128
+          fetch_sub third-party/td/td                            https://github.com/tdlib/td.git                                e894536b2f46caad93f997448d2daff9431b19dd
+          fetch_sub third-party/webrtc/webrtc                    https://github.com/ali-fareed/webrtc.git                       d5c77d3588c9353dd48b80430d2ffb41dafef177
+          echo "=== submodule sizes ==="
+          du -sh build-system/bazel-rules/* submodules/rlottie/rlottie third-party/webrtc/webrtc 2>/dev/null || true
+
       - name: Set active Xcode path
         run: |
           XCODE_VERSION=$(cat versions.json | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj["xcode"]);')
