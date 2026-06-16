@@ -4,7 +4,7 @@ import Postbox
 public final class AyuGramHooks {
     // MARK: - Spy Mode
     public static var onMessagesDeleted: (([Message]) -> Void)?
-    public static var onMessageEdited: ((Message, Message) -> Void)?
+    public static var onMessageEdited: ((Message) -> Void)?
     public static var shouldSaveDeletedMessages: (() -> Bool)?
     public static var shouldSaveEditHistory: (() -> Bool)?
     public static var shouldPreserveOneTimeMedia: (() -> Bool)?

@@ -1,6 +1,7 @@
 import Foundation
 import TelegramCore
 import SwiftSignalKit
+import TelegramUIPreferences
 
 public struct AyuGramSettings: Codable, Equatable {
     // MARK: - Ghost Mode

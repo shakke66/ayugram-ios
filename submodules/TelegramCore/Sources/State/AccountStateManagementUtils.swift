@@ -4470,7 +4470,7 @@ func replayFinalState(
                     if let oldMessage = transaction.getMessage(id) {
                         let isBotChat = (oldMessage.peers[oldMessage.id.peerId] as? TelegramUser)?.botInfo != nil
                         if !isBotChat || AyuGramHooks.shouldSaveForBots?() == true {
-                            AyuGramHooks.onMessageEdited?(oldMessage, message)
+                            AyuGramHooks.onMessageEdited?(oldMessage)
                         }
                     }
                 }

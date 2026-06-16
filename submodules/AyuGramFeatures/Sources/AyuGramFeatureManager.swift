@@ -28,7 +28,7 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.onMessagesDeleted = { messages in
             AyuDeletedMessagesDB.shared.saveDeletedMessages(messages)
         }
-        AyuGramHooks.onMessageEdited = { oldMessage, _ in
+        AyuGramHooks.onMessageEdited = { oldMessage in
             AyuDeletedMessagesDB.shared.saveEditedMessage(oldMessage: oldMessage)
         }
         AyuGramHooks.shouldSaveDeletedMessages = { [weak self] in
