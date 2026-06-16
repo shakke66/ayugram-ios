@@ -142,7 +142,7 @@ public func ayuGramOtherController(context: AccountContext) -> ViewController {
             let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager) { s in var s = s; s[keyPath: keyPath] = value; return s }.startStandalone()
         },
         openURL: { url in
-            arguments.context.sharedContext.openExternalUrl(context: arguments.context, urlContext: .generic, url: url, forceExternal: true, presentationData: arguments.context.sharedContext.currentPresentationData.with { $0 }, navigationController: nil, dismissInput: {})
+            context.sharedContext.openExternalUrl(context: context, urlContext: .generic, url: url, forceExternal: true, presentationData: context.sharedContext.currentPresentationData.with { $0 }, navigationController: nil, dismissInput: {})
         },
         copyToClipboard: { text in
             UIPasteboard.general.string = text
