@@ -120,10 +120,22 @@ jobs:
           OUTPUT_PATH="build/artifacts"
           rm -rf "$OUTPUT_PATH"
           mkdir -p "$OUTPUT_PATH"
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa; do
-            cp "$f" $OUTPUT_PATH/ || true
-          done
+          # Canonical location used by Make.py: the bazel-bin convenience symlink
+          # resolves to the correct config dir regardless of the config hash.
+          IPA="bazel-bin/Telegram/Telegram.ipa"
+          if [ ! -e "$IPA" ]; then
+            IPA="$(ls -1 bazel-out/*/bin/Telegram/Telegram.ipa 2>/dev/null | head -1)"
+          fi
+          if [ -n "$IPA" ] && [ -e "$IPA" ]; then
+            echo "Found IPA: $IPA"
+            cp -L "$IPA" "$OUTPUT_PATH/Telegram.ipa"
+          else
+            echo "ERROR: Telegram.ipa not found. Contents of bazel-bin/Telegram:"
+            ls -la bazel-bin/Telegram/ 2>/dev/null | head -60
+          fi
           cp -R $OUTPUT_PATH $GITHUB_WORKSPACE/artifacts || true
+          echo "=== artifacts ==="
+          ls -la $GITHUB_WORKSPACE/artifacts/ || true
 
       - name: Upload IPA
         if: success()
