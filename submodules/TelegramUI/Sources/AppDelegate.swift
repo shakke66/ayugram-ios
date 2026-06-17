@@ -643,9 +643,15 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             isICloudEnabled: buildConfig.isICloudEnabled
         )
         
-        guard let appGroupUrl = maybeAppGroupUrl else {
-            self.mainWindow?.presentNative(UIAlertController(title: nil, message: "Error 2", preferredStyle: .alert))
-            return true
+        let appGroupUrl: URL
+        if let maybeAppGroupUrl = maybeAppGroupUrl {
+            appGroupUrl = maybeAppGroupUrl
+        } else {
+            // Sideload fallback: when the App Group entitlement is unavailable (e.g. a free Apple ID
+            // re-sign via AltStore/Sideloadly), containerURL(forSecurityApplicationGroupIdentifier:)
+            // returns nil. Fall back to the app's own sandbox so the UI still launches instead of
+            // returning early before makeKeyAndVisible() and showing a black screen.
+            appGroupUrl = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         }
         
         var isDebugConfiguration = false
