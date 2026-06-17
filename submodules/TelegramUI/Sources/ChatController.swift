@@ -2247,7 +2247,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
 
             if AyuGramHooks.shouldConfirmStickers?() == true {
-                let alertController = textAlertController(context: strongSelf.context, title: nil, text: strongSelf.presentationData.strings.Common_AreYouSure, actions: [
+                let alertController = textAlertController(context: strongSelf.context, title: nil, text: "Send sticker?", actions: [
                     TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
                     TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: { [weak self] in
                         let _ = self?.controllerInteraction?.sendSticker(fileReference, silentPosting, schedule, query, clearInput, sourceView, sourceRect, sourceLayer, bubbleUpEmojiOrStickersets)
@@ -2417,7 +2417,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         }, sendGif: { [weak self] fileReference, sourceView, sourceRect, silentPosting, schedule in
             if let strongSelf = self {
                 if AyuGramHooks.shouldConfirmGIF?() == true {
-                    let alertController = textAlertController(context: strongSelf.context, title: nil, text: strongSelf.presentationData.strings.Common_AreYouSure, actions: [
+                    let alertController = textAlertController(context: strongSelf.context, title: nil, text: "Send GIF?", actions: [
                         TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
                         TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: { [weak self] in
                             let _ = self?.controllerInteraction?.sendGif(fileReference, sourceView, sourceRect, silentPosting, schedule)

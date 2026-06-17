@@ -688,7 +688,7 @@ extension ChatControllerImpl {
         postpone: Bool = false
     ) {
         if AyuGramHooks.shouldConfirmVoice?() == true {
-            let alertController = textAlertController(context: self.context, title: nil, text: self.presentationData.strings.Common_AreYouSure, actions: [
+            let alertController = textAlertController(context: self.context, title: nil, text: "Send voice message?", actions: [
                 TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_Cancel, action: {}),
                 TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_OK, action: { [weak self] in
                     self?.sendMediaRecordingConfirmed(silentPosting: silentPosting, scheduleTime: scheduleTime, repeatPeriod: repeatPeriod, viewOnce: viewOnce, messageEffect: messageEffect, postpone: postpone)

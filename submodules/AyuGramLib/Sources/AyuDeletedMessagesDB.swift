@@ -1,5 +1,5 @@
 import Foundation
-import SQLite3
+import sqlcipher
 import Postbox
 import TelegramCore
 import SwiftSignalKit

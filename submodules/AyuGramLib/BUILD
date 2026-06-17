@@ -14,6 +14,7 @@ swift_library(
         "//submodules/Postbox:Postbox",
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/TelegramUIPreferences:TelegramUIPreferences",
+        "//submodules/sqlcipher:sqlcipher",
     ],
     visibility = [
         "//visibility:public",
