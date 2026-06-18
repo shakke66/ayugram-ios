@@ -81,17 +81,7 @@ jobs:
           # Inject Telegram API credentials from GitHub Secrets so the real api_hash
           # stays out of the public repository (the committed value is a placeholder).
           if [ -n "$TELEGRAM_API_ID" ] && [ -n "$TELEGRAM_API_HASH" ]; then
-            python3 - <<'PY'
-import json, os
-path = "build-system/appstore-configuration.json"
-with open(path) as f:
-    cfg = json.load(f)
-cfg["api_id"] = os.environ["TELEGRAM_API_ID"].strip()
-cfg["api_hash"] = os.environ["TELEGRAM_API_HASH"].strip()
-with open(path, "w") as f:
-    json.dump(cfg, f, indent=2)
-print("Injected api_id:", cfg["api_id"])
-PY
+            python3 -c "import json,os; p='build-system/appstore-configuration.json'; c=json.load(open(p)); c['api_id']=os.environ['TELEGRAM_API_ID'].strip(); c['api_hash']=os.environ['TELEGRAM_API_HASH'].strip(); json.dump(c,open(p,'w'),indent=2); print('Injected api_id:', c['api_id'])"
           else
             echo "WARNING: TELEGRAM_API_ID/TELEGRAM_API_HASH secrets are not set; building with the placeholder api_id from the config file (login will hang)."
           fi
