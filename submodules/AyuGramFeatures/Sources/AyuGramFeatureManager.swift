@@ -173,10 +173,22 @@ public final class AyuGramFeatureManager {
 
         // MARK: - Sending
         AyuGramHooks.shouldUseScheduledMessages = { [weak self] in
-            return self?.currentSettings.useScheduledMessages ?? false
+            guard let s = self?.currentSettings else { return false }
+            // Send-in-Ghost only applies while a full Ghost Mode is active (desktop parity).
+            return s.useScheduledMessages && s.ghostModeEnabled && s.suppressOnlineStatus
         }
         AyuGramHooks.shouldSendWithoutSound = { [weak self] in
-            return self?.currentSettings.sendWithoutSound ?? false
+            guard let s = self?.currentSettings else { return false }
+            // sendWithoutSoundOption: 0 Never / 1 InGhost / 2 Always (6.7.8 mode).
+            switch s.sendWithoutSoundOption {
+            case 2:
+                return true
+            case 1:
+                return s.ghostModeEnabled
+            default:
+                // Never (0) — fall back to the legacy standalone toggle.
+                return s.sendWithoutSound
+            }
         }
 
         // MARK: - W0 Reanimation & 6.7.8
@@ -226,6 +238,13 @@ public final class AyuGramFeatureManager {
             guard let self = self, self.currentSettings.enableFilters else { return false }
             if self.currentSettings.shadowBanIds.contains(peerId) { return true }
             if text.isEmpty { return false }
+            // Shared filters apply to channels always; to non-channel dialogs
+            // (private chats & groups) only when "Enable filters in chats" is on.
+            let namespace = PeerId(peerId).namespace
+            let isChannel = namespace == Namespaces.Peer.CloudChannel
+            if !isChannel && !self.currentSettings.enableFiltersInChats {
+                return false
+            }
             let range = NSRange(text.startIndex..., in: text)
             for regex in self.compiledFilters {
                 if regex.firstMatch(in: text, options: [], range: range) != nil {

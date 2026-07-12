@@ -8584,11 +8584,29 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
 
             if !commit && !isScheduledMessages && AyuGramHooks.shouldUseScheduledMessages?() == true {
-                self.presentScheduleTimePicker(style: media ? .media : .default, dismissByTapOutside: false, completion: { [weak self] time, repeatPeriod in
-                    if let strongSelf = self {
-                        strongSelf.sendMessages(strongSelf.transformEnqueueMessages(messages, silentPosting: false, scheduleTime: time, repeatPeriod: repeatPeriod, postpone: postpone), commit: true)
+                // AyuGram Ghost "Send in Ghost": auto-delay the send via a scheduled
+                // timestamp so we never blink online. Matches desktop behaviour:
+                //  - plain text: fixed 12s delay
+                //  - media: max(6, ceil(fileSizeMB * 4.5)) seconds
+                var maxDelay: Int32 = 12
+                for message in messages {
+                    if case let .message(_, _, _, mediaReference, _, _, _, _, _, _) = message, let mediaReference = mediaReference {
+                        if let file = mediaReference.media as? TelegramMediaFile, let size = file.size {
+                            let mb = Double(size) / 1024.0 / 1024.0
+                            let mediaDelay = Int32(max(6.0, ceil(mb * 4.5)))
+                            if mediaDelay > maxDelay {
+                                maxDelay = mediaDelay
+                            }
+                        } else {
+                            // Non-file media (image without size / etc.) — use the media floor.
+                            if maxDelay < 6 {
+                                maxDelay = 6
+                            }
+                        }
                     }
-                })
+                }
+                let scheduleTime = Int32(Date().timeIntervalSince1970) + maxDelay
+                self.sendMessages(self.transformEnqueueMessages(messages, silentPosting: false, scheduleTime: scheduleTime, repeatPeriod: nil, postpone: postpone), commit: true)
                 return
             }
 

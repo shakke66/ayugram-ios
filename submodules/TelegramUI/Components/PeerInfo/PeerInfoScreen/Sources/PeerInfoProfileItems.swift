@@ -21,6 +21,22 @@ import BoostLevelIconComponent
 private let enabledPublicBioEntities: EnabledEntityTypes = [.allUrl, .mention, .hashtag]
 private let enabledPrivateBioEntities: EnabledEntityTypes = [.internalUrl, .mention, .hashtag]
 
+// AyuGram: format a peer id according to the selected display mode.
+// mode: 1 = raw Telegram-API id, 2 = Bot-API id (users positive, groups -id, channels -100…).
+private func ayuFormatPeerId(_ peerId: PeerId, mode: Int32) -> String {
+    let raw = peerId.id._internalGetInt64Value()
+    if mode == 2 {
+        if peerId.namespace == Namespaces.Peer.CloudChannel {
+            return "-100\(raw)"
+        } else if peerId.namespace == Namespaces.Peer.CloudGroup {
+            return "-\(raw)"
+        } else {
+            return "\(raw)"
+        }
+    }
+    return "\(raw)"
+}
+
 enum InfoSection: Int, CaseIterable {
     case unofficial
     case groupLocation
@@ -180,7 +196,7 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
 
         if AyuGramHooks.shouldShowDialogID?() == true {
             let peerId = user.id
-            let idString = "\(peerId.id._internalGetInt64Value())"
+            let idString = ayuFormatPeerId(peerId, mode: AyuGramHooks.peerIdDisplayMode?() ?? 1)
             items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemDialogId, label: "ID", text: idString, textColor: .primary, action: { _, _ in
                 UIPasteboard.general.string = idString
             }, requestLayout: { animated in
@@ -652,7 +668,7 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
             if let cachedData = data.cachedData as? CachedChannelData {
                 if AyuGramHooks.shouldShowDialogID?() == true {
                     let peerId = channel.id
-                    let idString = "\(peerId.id._internalGetInt64Value())"
+                    let idString = ayuFormatPeerId(peerId, mode: AyuGramHooks.peerIdDisplayMode?() ?? 1)
                     items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemDialogId, label: "ID", text: idString, textColor: .primary, action: { _, _ in
                         UIPasteboard.general.string = idString
                     }, requestLayout: { animated in
