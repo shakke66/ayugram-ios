@@ -1212,7 +1212,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 break
             }
         }
-        if self.isAIEnabled && width >= 500.0 {
+        if self.isAIEnabled && width >= 500.0 && AyuGramHooks.shouldShowAiEditorButton?() != false {
             if firstButton {
                 firstButton = false
                 accessoryButtonsWidth += self.accessoryButtonInset
@@ -3540,7 +3540,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             )
         }
         
-        if self.isAIEnabled {
+        if self.isAIEnabled && AyuGramHooks.shouldShowAiEditorButton?() != false {
             let aiButton: (button: HighlightTrackingButton, icon: UIImageView)
             if let current = self.aiButton {
                 aiButton = current

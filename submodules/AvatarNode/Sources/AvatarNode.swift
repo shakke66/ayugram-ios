@@ -734,7 +734,12 @@ public final class AvatarNode: ASDisplayNode {
                 self.imageNode.cornerRadius = 0.0
             case .round:
                 self.imageNode.clipsToBounds = true
-                self.imageNode.cornerRadius = displayDimensions.height * 0.5
+                if let corners = AyuGramHooks.avatarCornerRadius?(), corners != 50 {
+                    // AyuGram: 0 = square, 50 = full circle (default), values in between = rounded rect.
+                    self.imageNode.cornerRadius = displayDimensions.height * (CGFloat(corners) / 100.0)
+                } else {
+                    self.imageNode.cornerRadius = displayDimensions.height * 0.5
+                }
             case .roundedRect:
                 self.imageNode.clipsToBounds = true
                 self.imageNode.cornerRadius = displayDimensions.height * 0.25

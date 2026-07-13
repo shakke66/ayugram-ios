@@ -223,7 +223,7 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.shouldImproveLinkPreviews = { [weak self] in self?.currentSettings.improveLinkPreviews ?? false }
         AyuGramHooks.shouldUseSemiTransparentDeleted = { [weak self] in self?.currentSettings.semiTransparentDeletedMessages ?? false }
         AyuGramHooks.shouldHidePremiumStatuses = { [weak self] in self?.currentSettings.hidePremiumStatuses ?? false }
-        AyuGramHooks.avatarCornerRadius = { [weak self] in self?.currentSettings.avatarCorners ?? 23 }
+        AyuGramHooks.avatarCornerRadius = { [weak self] in self?.currentSettings.avatarCorners ?? 50 }
         AyuGramHooks.messageBubbleRadius = { [weak self] in self?.currentSettings.messageBubbleRadius ?? 16 }
         AyuGramHooks.shouldUseSingleCornerRadius = { [weak self] in self?.currentSettings.singleCornerRadius ?? false }
         AyuGramHooks.peerIdDisplayMode = { [weak self] in self?.currentSettings.showDialogId ?? 0 }

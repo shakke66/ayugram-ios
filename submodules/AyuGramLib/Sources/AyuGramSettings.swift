@@ -227,7 +227,7 @@ public struct AyuGramSettings: Codable, Equatable {
             improveLinkPreviews: false,
             semiTransparentDeletedMessages: false,
             hidePremiumStatuses: false,
-            avatarCorners: 23,
+            avatarCorners: 50,
             singleCornerRadius: false,
             messageBubbleRadius: 16,
             sendWithoutSoundOption: 0,
@@ -521,7 +521,7 @@ public struct AyuGramSettings: Codable, Equatable {
         self.improveLinkPreviews = try container.decodeIfPresent(Bool.self, forKey: "improveLinkPreviews") ?? false
         self.semiTransparentDeletedMessages = try container.decodeIfPresent(Bool.self, forKey: "semiTransparentDeletedMessages") ?? false
         self.hidePremiumStatuses = try container.decodeIfPresent(Bool.self, forKey: "hidePremiumStatuses") ?? false
-        self.avatarCorners = try container.decodeIfPresent(Int32.self, forKey: "avatarCorners") ?? 23
+        self.avatarCorners = try container.decodeIfPresent(Int32.self, forKey: "avatarCorners") ?? 50
         self.singleCornerRadius = try container.decodeIfPresent(Bool.self, forKey: "singleCornerRadius") ?? false
         self.messageBubbleRadius = try container.decodeIfPresent(Int32.self, forKey: "messageBubbleRadius") ?? 16
         self.sendWithoutSoundOption = try container.decodeIfPresent(Int32.self, forKey: "sendWithoutSoundOption") ?? 0
