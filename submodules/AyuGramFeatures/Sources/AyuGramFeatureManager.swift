@@ -10,15 +10,20 @@ public final class AyuGramFeatureManager {
     private var settingsDisposable: Disposable?
     private var currentSettings: AyuGramSettings = .defaultSettings
     private var compiledFilters: [NSRegularExpression] = []
+    private var compiledReversedFilters: [NSRegularExpression] = []
 
     public init() {}
 
     private func recompileFilters() {
         guard self.currentSettings.enableFilters else {
             self.compiledFilters = []
+            self.compiledReversedFilters = []
             return
         }
         self.compiledFilters = self.currentSettings.messageFilters.compactMap { pattern in
+            return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        }
+        self.compiledReversedFilters = self.currentSettings.reversedFilters.compactMap { pattern in
             return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
         }
     }
@@ -237,7 +242,6 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.isMessageHiddenByFilter = { [weak self] peerId, text in
             guard let self = self, self.currentSettings.enableFilters else { return false }
             if self.currentSettings.shadowBanIds.contains(peerId) { return true }
-            if text.isEmpty { return false }
             // Shared filters apply to channels always; to non-channel dialogs
             // (private chats & groups) only when "Enable filters in chats" is on.
             let namespace = PeerId(peerId).namespace
@@ -246,10 +250,26 @@ public final class AyuGramFeatureManager {
                 return false
             }
             let range = NSRange(text.startIndex..., in: text)
-            for regex in self.compiledFilters {
-                if regex.firstMatch(in: text, options: [], range: range) != nil {
+            // Normal filters: hide a message when it MATCHES any pattern.
+            if !text.isEmpty {
+                for regex in self.compiledFilters {
+                    if regex.firstMatch(in: text, options: [], range: range) != nil {
+                        return true
+                    }
+                }
+            }
+            // Reversed filters: when present, hide everything EXCEPT messages that
+            // match at least one reversed pattern. Empty text matches nothing → hidden.
+            if !self.compiledReversedFilters.isEmpty {
+                if text.isEmpty {
                     return true
                 }
+                for regex in self.compiledReversedFilters {
+                    if regex.firstMatch(in: text, options: [], range: range) != nil {
+                        return false
+                    }
+                }
+                return true
             }
             return false
         }

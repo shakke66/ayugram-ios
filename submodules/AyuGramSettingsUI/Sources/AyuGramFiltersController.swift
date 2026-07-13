@@ -18,14 +18,16 @@ private final class AyuGramFiltersArguments {
     let toggleFiltersInChats: (Bool) -> Void
     let toggleHideFromBlocked: (Bool) -> Void
     let presentFilterEditor: (Int?, String) -> Void
+    let presentReversedFilterEditor: (Int?, String) -> Void
     let pushController: (ViewController) -> Void
 
-    init(context: AccountContext, toggleFilters: @escaping (Bool) -> Void, toggleFiltersInChats: @escaping (Bool) -> Void, toggleHideFromBlocked: @escaping (Bool) -> Void, presentFilterEditor: @escaping (Int?, String) -> Void, pushController: @escaping (ViewController) -> Void) {
+    init(context: AccountContext, toggleFilters: @escaping (Bool) -> Void, toggleFiltersInChats: @escaping (Bool) -> Void, toggleHideFromBlocked: @escaping (Bool) -> Void, presentFilterEditor: @escaping (Int?, String) -> Void, presentReversedFilterEditor: @escaping (Int?, String) -> Void, pushController: @escaping (ViewController) -> Void) {
         self.context = context
         self.toggleFilters = toggleFilters
         self.toggleFiltersInChats = toggleFiltersInChats
         self.toggleHideFromBlocked = toggleHideFromBlocked
         self.presentFilterEditor = presentFilterEditor
+        self.presentReversedFilterEditor = presentReversedFilterEditor
         self.pushController = pushController
     }
 }
@@ -33,6 +35,7 @@ private final class AyuGramFiltersArguments {
 private enum AyuGramFiltersSection: Int32 {
     case messageFilters
     case patterns
+    case reversedPatterns
     case globalFilters
 }
 
@@ -44,6 +47,9 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
     case patternsHeader(PresentationTheme)
     case filterPattern(PresentationTheme, Int32, String)
     case addFilter(PresentationTheme)
+    case reversedHeader(PresentationTheme)
+    case reversedPattern(PresentationTheme, Int32, String)
+    case addReversedFilter(PresentationTheme)
     case globalFiltersHeader(PresentationTheme)
     case shadowBan(PresentationTheme)
 
@@ -53,6 +59,8 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
             return AyuGramFiltersSection.messageFilters.rawValue
         case .patternsHeader, .filterPattern, .addFilter:
             return AyuGramFiltersSection.patterns.rawValue
+        case .reversedHeader, .reversedPattern, .addReversedFilter:
+            return AyuGramFiltersSection.reversedPatterns.rawValue
         case .globalFiltersHeader, .shadowBan:
             return AyuGramFiltersSection.globalFilters.rawValue
         }
@@ -67,8 +75,11 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
         case .patternsHeader: return 4
         case let .filterPattern(_, index, _): return 100 + index
         case .addFilter: return 9000
-        case .globalFiltersHeader: return 9001
-        case .shadowBan: return 9002
+        case .reversedHeader: return 9100
+        case let .reversedPattern(_, index, _): return 9200 + index
+        case .addReversedFilter: return 9800
+        case .globalFiltersHeader: return 9801
+        case .shadowBan: return 9802
         }
     }
 
@@ -78,6 +89,7 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
         case let (.enableFiltersInChats(_, lv), .enableFiltersInChats(_, rv)): return lv == rv
         case let (.hideFromBlocked(_, lv), .hideFromBlocked(_, rv)): return lv == rv
         case let (.filterPattern(_, li, lp), .filterPattern(_, ri, rp)): return li == ri && lp == rp
+        case let (.reversedPattern(_, li, lp), .reversedPattern(_, ri, rp)): return li == ri && lp == rp
         default: return lhs.stableId == rhs.stableId
         }
     }
@@ -113,6 +125,16 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
             return ItemListActionItem(presentationData: presentationData, title: "Add Filter", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
                 arguments.presentFilterEditor(nil, "")
             })
+        case .reversedHeader:
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Reversed Filters (hide all except matches)", sectionId: self.section)
+        case let .reversedPattern(_, index, pattern):
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: pattern, label: "", sectionId: self.section, style: .blocks, action: {
+                arguments.presentReversedFilterEditor(Int(index), pattern)
+            })
+        case .addReversedFilter:
+            return ItemListActionItem(presentationData: presentationData, title: "Add Reversed Filter", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                arguments.presentReversedFilterEditor(nil, "")
+            })
         case .globalFiltersHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "Global Filters", sectionId: self.section)
         case .shadowBan:
@@ -136,6 +158,13 @@ private func ayuGramFiltersEntries(settings: AyuGramSettings, presentationData: 
         index += 1
     }
     entries.append(.addFilter(presentationData.theme))
+    entries.append(.reversedHeader(presentationData.theme))
+    var reversedIndex: Int32 = 0
+    for pattern in settings.reversedFilters {
+        entries.append(.reversedPattern(presentationData.theme, reversedIndex, pattern))
+        reversedIndex += 1
+    }
+    entries.append(.addReversedFilter(presentationData.theme))
     entries.append(.globalFiltersHeader(presentationData.theme))
     entries.append(.shadowBan(presentationData.theme))
     return entries
@@ -174,6 +203,30 @@ public func ayuGramFiltersController(context: AccountContext) -> ViewController 
                         }
                     } else if !trimmed.isEmpty {
                         s.messageFilters.append(trimmed)
+                    }
+                    return s
+                }.startStandalone()
+            })
+            presentControllerImpl?(editController, nil)
+        },
+        presentReversedFilterEditor: { index, current in
+            let editController = promptController(context: context, text: index == nil ? "Add Reversed Filter (Regex)" : "Edit Reversed Filter (Regex)", value: current, apply: { value in
+                guard let value = value else {
+                    return
+                }
+                let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager) { s in
+                    var s = s
+                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let index = index {
+                        if index >= 0 && index < s.reversedFilters.count {
+                            if trimmed.isEmpty {
+                                s.reversedFilters.remove(at: index)
+                            } else {
+                                s.reversedFilters[index] = trimmed
+                            }
+                        }
+                    } else if !trimmed.isEmpty {
+                        s.reversedFilters.append(trimmed)
                     }
                     return s
                 }.startStandalone()

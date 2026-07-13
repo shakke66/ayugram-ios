@@ -128,6 +128,8 @@ public struct AyuGramSettings: Codable, Equatable {
     // MARK: - Filters (6.7.8)
     public var shadowBanIds: [Int64]
     public var messageFilters: [String]
+    // Reversed filters: hide everything EXCEPT messages matching these patterns (AyuGram v2 "reversed").
+    public var reversedFilters: [String]
 
     // MARK: - Computed
     public var ghostModeActiveCount: Int {
@@ -232,7 +234,8 @@ public struct AyuGramSettings: Codable, Equatable {
             messageBubbleRadius: 16,
             sendWithoutSoundOption: 0,
             shadowBanIds: [],
-            messageFilters: []
+            messageFilters: [],
+            reversedFilters: []
         )
     }
 
@@ -327,7 +330,8 @@ public struct AyuGramSettings: Codable, Equatable {
         messageBubbleRadius: Int32,
         sendWithoutSoundOption: Int32,
         shadowBanIds: [Int64],
-        messageFilters: [String]
+        messageFilters: [String],
+        reversedFilters: [String]
     ) {
         self.ghostModeEnabled = ghostModeEnabled
         self.suppressReadReceipts = suppressReadReceipts
@@ -420,6 +424,7 @@ public struct AyuGramSettings: Codable, Equatable {
         self.sendWithoutSoundOption = sendWithoutSoundOption
         self.shadowBanIds = shadowBanIds
         self.messageFilters = messageFilters
+        self.reversedFilters = reversedFilters
     }
 
     public init(from decoder: Decoder) throws {
@@ -527,6 +532,7 @@ public struct AyuGramSettings: Codable, Equatable {
         self.sendWithoutSoundOption = try container.decodeIfPresent(Int32.self, forKey: "sendWithoutSoundOption") ?? 0
         self.shadowBanIds = try container.decodeIfPresent([Int64].self, forKey: "shadowBanIds") ?? []
         self.messageFilters = try container.decodeIfPresent([String].self, forKey: "messageFilters") ?? []
+        self.reversedFilters = try container.decodeIfPresent([String].self, forKey: "reversedFilters") ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -634,6 +640,7 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.sendWithoutSoundOption, forKey: "sendWithoutSoundOption")
         try container.encode(self.shadowBanIds, forKey: "shadowBanIds")
         try container.encode(self.messageFilters, forKey: "messageFilters")
+        try container.encode(self.reversedFilters, forKey: "reversedFilters")
     }
 
     public mutating func setGhostMode(_ enabled: Bool) {
