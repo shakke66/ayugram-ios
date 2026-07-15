@@ -94,7 +94,7 @@ public final class GRVMArchivedMediaStore {
         return mediaBox.restoreResourceData(MediaResourceId(record.resourceId), fromPath: archiveURL.path)
     }
 
-    public func remove(_ records: [GRVMArchivedMedia]) {
+    public func remove(_ records: [GRVMArchivedMedia], completion: @escaping () -> Void = {}) {
         self.queue.async {
             for record in records {
                 guard let url = self.archiveURL(record: record) else {
@@ -102,6 +102,7 @@ public final class GRVMArchivedMediaStore {
                 }
                 try? self.fileManager.removeItem(at: url)
             }
+            completion()
         }
     }
 

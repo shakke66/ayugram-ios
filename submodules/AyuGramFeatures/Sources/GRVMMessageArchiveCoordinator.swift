@@ -308,6 +308,68 @@ public final class GRVMMessageArchiveCoordinator {
         return result
     }
 
+    public func clearDeleted(peerId: PeerId?, threadId: Int64?) -> Signal<[MessageId], NoError> {
+        return Signal { subscriber in
+            let disposable = MetaDisposable()
+            self.queue.async { [weak self] in
+                guard let self else {
+                    subscriber.putCompletion()
+                    return
+                }
+                guard let keys = try? self.store.deletedMessageKeys(
+                    accountId: self.accountRecordId.int64,
+                    peerId: peerId?.toInt64(),
+                    threadId: threadId
+                ) else {
+                    subscriber.putNext([])
+                    subscriber.putCompletion()
+                    return
+                }
+                guard !keys.isEmpty else {
+                    subscriber.putNext([])
+                    subscriber.putCompletion()
+                    return
+                }
+
+                let ids = keys.map { key in
+                    MessageId(
+                        peerId: PeerId(key.peerId),
+                        namespace: key.namespace,
+                        id: key.messageId
+                    )
+                }
+                disposable.set(self.postbox.transaction { transaction -> [MessageId] in
+                    _internal_applyMessageDeletion(
+                        accountPeerId: self.accountPeerId,
+                        transaction: transaction,
+                        mediaBox: self.mediaBox,
+                        ids: ids,
+                        mode: .forceCleanup
+                    )
+                    return ids
+                }.start(next: { [weak self] ids in
+                    guard let self else {
+                        subscriber.putCompletion()
+                        return
+                    }
+                    self.queue.async {
+                        guard let removedMedia = try? self.store.removeDeleted(keys) else {
+                            subscriber.putNext([])
+                            subscriber.putCompletion()
+                            return
+                        }
+                        self.index.removeDeleted(Set(keys))
+                        self.mediaStore.remove(removedMedia, completion: {
+                            subscriber.putNext(ids)
+                            subscriber.putCompletion()
+                        })
+                    }
+                }))
+            }
+            return disposable
+        }
+    }
+
     public func hasEditHistory(_ id: MessageId) -> Bool {
         return self.index.snapshot().revised.contains(where: {
             $0.accountId == self.accountRecordId.int64

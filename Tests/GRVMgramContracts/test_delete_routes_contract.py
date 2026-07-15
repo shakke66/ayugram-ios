@@ -1,3 +1,4 @@
+from collections import Counter
 import re
 import unittest
 from pathlib import Path
@@ -8,10 +9,18 @@ APPLY = CORE / "TelegramEngine/Messages/ApplyGRVMMessageDeletion.swift"
 HOOKS = CORE / "AyuGramHooks.swift"
 COORDINATOR = ROOT / "submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"
 MANAGER = ROOT / "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
+MEDIA_STORE = ROOT / "submodules/AyuGramLib/Sources/GRVMArchivedMediaStore.swift"
 
 
 def source(path: str) -> str:
     return (CORE / path).read_text(encoding="utf-8")
+
+
+def occurrence_window(value: str, anchor: str, occurrence: int, size: int = 3000) -> str:
+    offset = 0
+    for _ in range(occurrence):
+        offset = value.index(anchor, offset) + len(anchor)
+    return value[offset : offset + size]
 
 
 class DeleteRouteContractTests(unittest.TestCase):
@@ -51,20 +60,43 @@ class DeleteRouteContractTests(unittest.TestCase):
         self.assertGreaterEqual(manager.count("registry.service(accountPeerId: accountPeerId)"), 2)
 
     def test_every_user_visible_id_route_uses_the_helper(self) -> None:
-        routes = {
-            "State/AccountStateManagementUtils.swift": 2,
-            "TelegramEngine/Messages/DeleteMessagesInteractively.swift": 1,
-            "State/ManagedAutoremoveMessageOperations.swift": 1,
-            "State/ProcessSecretChatIncomingDecryptedOperations.swift": 1,
-            "State/HistoryViewStateValidation.swift": 2,
-            "TelegramEngine/Peers/UpdateCachedPeerData.swift": 1,
-            "TelegramEngine/Messages/DeleteMessages.swift": 4,
-            "TelegramEngine/Peers/RemovePeerChat.swift": 1,
-            "TelegramEngine/Messages/TelegramEngineMessages.swift": 1,
-        }
-        for path, minimum in routes.items():
-            with self.subTest(path=path):
-                self.assertGreaterEqual(source(path).count("_internal_applyMessageDeletion("), minimum)
+        routes = (
+            ("State/AccountStateManagementUtils.swift", "case let .DeleteMessagesWithGlobalIds(ids):", 1, 3000),
+            ("State/AccountStateManagementUtils.swift", "case let .DeleteMessages(ids):", 1, 3000),
+            ("TelegramEngine/Messages/DeleteMessagesInteractively.swift", "func deleteMessagesInteractively(", 1, 10000),
+            ("State/ManagedAutoremoveMessageOperations.swift", "func managedAutoremoveMessageOperations(", 1, 5000),
+            ("State/ProcessSecretChatIncomingDecryptedOperations.swift", "case let .deleteMessages(globallyUniqueIds):", 1, 3000),
+            ("State/HistoryViewStateValidation.swift", "if let message = transaction.getMessage(id), isLocallyDeletedMessage(message.attributes)", 1, 1000),
+            ("State/HistoryViewStateValidation.swift", "if let message = transaction.getMessage(id), isLocallyDeletedMessage(message.attributes)", 2, 1000),
+            ("TelegramEngine/Peers/UpdateCachedPeerData.swift", "if let minAvailableMessageId = minAvailableMessageId, minAvailableMessageIdUpdated", 1, 3000),
+            ("TelegramEngine/Messages/DeleteMessages.swift", "func _internal_deleteAllMessagesWithAuthor(", 1, 3000),
+            ("TelegramEngine/Messages/DeleteMessages.swift", "func _internal_deleteAllMessagesWithForwardAuthor(", 1, 3000),
+            ("TelegramEngine/Messages/DeleteMessages.swift", "func _internal_clearHistory(", 1, 3000),
+            ("TelegramEngine/Messages/DeleteMessages.swift", "func _internal_clearHistoryInRange(", 1, 3000),
+            ("TelegramEngine/Peers/RemovePeerChat.swift", "func _internal_removePeerChat(", 1, 3000),
+            ("TelegramEngine/Messages/TelegramEngineMessages.swift", "public func deleteMessages(transaction: Transaction, ids: [MessageId])", 1, 1000),
+        )
+        for path, anchor, occurrence, size in routes:
+            with self.subTest(path=path, anchor=anchor, occurrence=occurrence):
+                self.assertIn(
+                    "_internal_applyMessageDeletion(",
+                    occurrence_window(source(path), anchor, occurrence, size),
+                )
+
+    def test_force_cleanup_has_a_real_archive_call_site(self) -> None:
+        coordinator = COORDINATOR.read_text(encoding="utf-8")
+        self.assertIn("public func clearDeleted(", coordinator)
+        self.assertIn("mode: .forceCleanup", coordinator)
+        self.assertIn("self.store.removeDeleted(", coordinator)
+        self.assertIn("self.index.removeDeleted(", coordinator)
+        self.assertIn("self.mediaStore.remove(removedMedia, completion:", coordinator)
+        self.assertIn("completion()", MEDIA_STORE.read_text(encoding="utf-8"))
+
+    def test_save_for_bots_never_gates_edit_history(self) -> None:
+        value = source("State/AccountStateManagementUtils.swift")
+        edit_section = occurrence_window(value, "case let .EditMessage(id, message):", 1)
+        self.assertIn("AyuGramHooks.onMessageEdited?(oldMessage)", edit_section)
+        self.assertNotIn("shouldSaveForBots", edit_section)
 
     def test_global_range_author_and_forward_routes_collect_exact_ids(self) -> None:
         account_state = source("State/AccountStateManagementUtils.swift")
@@ -86,34 +118,30 @@ class DeleteRouteContractTests(unittest.TestCase):
         self.assertGreaterEqual(value.count("isLocallyDeletedMessage(message.attributes)"), 2)
 
     def test_remaining_direct_deletes_are_only_documented_technical_routes(self) -> None:
-        allowed_internal = {
-            "PendingMessages/EnqueueMessage.swift",
-            "State/ManagedSecretChatOutgoingOperations.swift",
-            "TelegramEngine/Messages/ApplyGRVMMessageDeletion.swift",
-            "TelegramEngine/Messages/DeleteMessages.swift",
-        }
-        allowed_transaction = {
-            "PendingMessages/PendingPeerMediaUploadManager.swift",
-            "State/ForumChannelState.swift",
-            "TelegramEngine/Messages/DeleteMessages.swift",
-            "TelegramEngine/Messages/QuickReplyMessages.swift",
-            "TelegramEngine/Messages/ScheduledMessages.swift",
-        }
-        internal_definition = re.compile(r"func _internal_deleteMessages\(")
-        unexpected_internal = []
-        unexpected_transaction = []
+        expected_internal = Counter({
+            ("PendingMessages/EnqueueMessage.swift", "_internal_deleteMessages(transaction: transaction, mediaBox: account.postbox.mediaBox, ids: removeMessageIds, deleteMedia: false)"): 1,
+            ("State/ManagedSecretChatOutgoingOperations.swift", "_internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [messageId])"): 1,
+            ("TelegramEngine/Messages/ApplyGRVMMessageDeletion.swift", "_internal_deleteMessages("): 2,
+        })
+        expected_transaction = Counter({
+            ("PendingMessages/PendingPeerMediaUploadManager.swift", "transaction.deleteMessages([messageId], forEachMedia: nil)"): 2,
+            ("TelegramEngine/Messages/DeleteMessages.swift", "transaction.deleteMessages(ids, forEachMedia: { _ in"): 1,
+            ("TelegramEngine/Messages/QuickReplyMessages.swift", "transaction.deleteMessages(existingCloudMessages.map(\\.id), forEachMedia: nil)"): 1,
+            ("TelegramEngine/Messages/QuickReplyMessages.swift", "transaction.deleteMessages(existingLocalMessages.map(\\.id), forEachMedia: nil)"): 1,
+            ("TelegramEngine/Messages/ScheduledMessages.swift", "transaction.deleteMessages([entry.id], forEachMedia: { media in"): 1,
+        })
+        actual_internal = Counter()
+        actual_transaction = Counter()
         for path in CORE.rglob("*.swift"):
             relative = path.relative_to(CORE).as_posix()
-            value = path.read_text(encoding="utf-8")
-            calls = value.count("_internal_deleteMessages(")
-            if internal_definition.search(value):
-                calls -= 1
-            if calls and relative not in allowed_internal:
-                unexpected_internal.append(relative)
-            if "transaction.deleteMessages(" in value and relative not in allowed_transaction:
-                unexpected_transaction.append(relative)
-        self.assertEqual(unexpected_internal, [])
-        self.assertEqual(unexpected_transaction, [])
+            for line in path.read_text(encoding="utf-8").splitlines():
+                stripped = line.strip()
+                if "_internal_deleteMessages(" in stripped and not re.search(r"func _internal_deleteMessages\(", stripped):
+                    actual_internal[(relative, stripped)] += 1
+                if "transaction.deleteMessages(" in stripped:
+                    actual_transaction[(relative, stripped)] += 1
+        self.assertEqual(actual_internal, expected_internal)
+        self.assertEqual(actual_transaction, expected_transaction)
 
 
 if __name__ == "__main__":

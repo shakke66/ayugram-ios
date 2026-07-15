@@ -4482,10 +4482,7 @@ func replayFinalState(
             case let .EditMessage(id, message):
                 if AyuGramHooks.shouldSaveEditHistory?() == true {
                     if let oldMessage = transaction.getMessage(id) {
-                        let isBotChat = (oldMessage.peers[oldMessage.id.peerId] as? TelegramUser)?.botInfo != nil
-                        if !isBotChat || AyuGramHooks.shouldSaveForBots?() == true {
-                            AyuGramHooks.onMessageEdited?(oldMessage)
-                        }
+                        AyuGramHooks.onMessageEdited?(oldMessage)
                     }
                 }
                 var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?

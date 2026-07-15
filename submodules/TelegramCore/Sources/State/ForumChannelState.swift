@@ -6,10 +6,6 @@ enum InternalAccountState {
         return transaction.addMessages(messages, location: location)
     }
     
-    static func deleteMessages(transaction: Transaction, ids: [MessageId], forEachMedia: ((Media) -> Void)?) {
-        transaction.deleteMessages(ids, forEachMedia: forEachMedia)
-    }
-    
     static func invalidateChannelState(peerId: PeerId) {
         
     }
