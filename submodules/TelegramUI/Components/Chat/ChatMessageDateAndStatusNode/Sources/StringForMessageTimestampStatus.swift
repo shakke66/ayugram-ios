@@ -220,18 +220,21 @@ public func stringForMessageTimestampStatus(accountPeerId: PeerId, message: Mess
         }
     }
 
-    let peerId = message.id.peerId.toInt64()
-    let messageId = message.id.id
+    let isDeleted = message.attributes.contains(where: { $0 is GRVMDeletedMessageAttribute })
+    let hasHistory = message.attributes.contains(where: { $0 is GRVMEditHistoryMessageAttribute })
     let replaceMarksWithIcons = AyuGramHooks.shouldReplaceMarksWithIcons?() == true
     if AyuGramHooks.shouldShowDeletedMark?() == true,
-       let check = AyuGramHooks.isMessageDeletedCheck, check(peerId, messageId),
-       let mark = AyuGramHooks.deletedMessageMark?() {
-        dateText = "\(replaceMarksWithIcons ? "🗑" : mark) \(dateText)"
+       isDeleted {
+        let mark = replaceMarksWithIcons ? "🗑" : (AyuGramHooks.deletedMessageMark?() ?? "🗑")
+        if !mark.isEmpty {
+            dateText = "\(mark) \(dateText)"
+        }
     }
     if AyuGramHooks.shouldShowEditedMark?() == true,
-       let check = AyuGramHooks.hasEditHistoryCheck, check(peerId, messageId),
-       let mark = AyuGramHooks.editedMessageMark?() {
-        dateText = "\(replaceMarksWithIcons ? "✏️" : mark) \(dateText)"
+       hasHistory {
+        let configuredMark = AyuGramHooks.editedMessageMark?() ?? ""
+        let mark = replaceMarksWithIcons ? "✏️" : (configuredMark.isEmpty ? strings.Conversation_MessageEditedLabel : configuredMark)
+        dateText = "\(mark) \(dateText)"
     }
 
     return dateText

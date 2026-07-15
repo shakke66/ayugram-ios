@@ -57,8 +57,6 @@ public final class AyuGramHooks {
     public static var shouldShowEditedMark: (() -> Bool)?
     public static var deletedMessageMark: (() -> String)?
     public static var editedMessageMark: (() -> String)?
-    public static var isMessageDeletedCheck: ((Int64, Int32) -> Bool)?
-    public static var hasEditHistoryCheck: ((Int64, Int32) -> Bool)?
 
     // MARK: - Sending
     public static var shouldUseScheduledMessages: (() -> Bool)?

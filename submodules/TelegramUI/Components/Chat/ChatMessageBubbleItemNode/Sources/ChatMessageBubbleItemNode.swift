@@ -112,6 +112,27 @@ private final class ChatMessageBubbleClippingNode: ASDisplayNode {
     }
 }
 
+private func grvmDeletedMessageContentAlpha(
+    item: ChatMessageItem
+) -> CGFloat {
+    guard AyuGramHooks.shouldUseSemiTransparentDeleted?() == true,
+          case let .message(message, _, _, _, _) = item.content,
+          message.attributes.contains(where: { $0 is GRVMDeletedMessageAttribute }),
+          !item.associatedData.isRecentActions,
+          item.controllerInteraction.selectionState == nil,
+          !item.presentationData.isPreview else {
+        return 1.0
+    }
+
+    if case .customChatContents = item.chatLocation {
+        return 1.0
+    }
+    if let subject = item.associatedData.subject, case .messageOptions = subject {
+        return 1.0
+    }
+    return 0.7
+}
+
 private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([(Message, AnyClass, ChatMessageEntryAttributes, BubbleItemAttributes)], Bool, Bool) {
     var result: [(Message, AnyClass, ChatMessageEntryAttributes, BubbleItemAttributes)] = []
     var skipText = false
@@ -748,6 +769,13 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
     private var appliedItem: ChatMessageItem?
     private var appliedForwardInfo: (Peer?, String?)?
     private var disablesComments = true
+
+    private func updateGRVMDeletedMessageContentAlpha() {
+        guard let item = self.appliedItem else {
+            return
+        }
+        self.mainContextSourceNode.alpha = grvmDeletedMessageContentAlpha(item: item)
+    }
     
     private var wasPending: Bool = false
     private var didChangeFromPendingToSent: Bool = false
@@ -3769,6 +3797,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         strongSelf.contentContainersWrapperNode.frame = CGRect(origin: CGPoint(), size: layout.contentSize)
         
         strongSelf.appliedItem = item
+        strongSelf.updateGRVMDeletedMessageContentAlpha()
         strongSelf.appliedForwardInfo = (forwardSource, forwardAuthorSignature)
         strongSelf.updateAccessibilityData(accessibilityData)
         strongSelf.disablesComments = disablesComments
@@ -6431,6 +6460,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         if wasSelected != isSelected {
             self.updateAccessibilityData(ChatMessageAccessibilityData(item: item, isSelected: isSelected))
         }
+        self.updateGRVMDeletedMessageContentAlpha()
     }
     
     override public func updateSearchTextHighlightState() {

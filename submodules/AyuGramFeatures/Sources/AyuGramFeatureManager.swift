@@ -154,19 +154,6 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.editedMessageMark = { [weak self] in
             return self?.currentSettings.editedMessageMark ?? "✏️"
         }
-        AyuGramHooks.isMessageDeletedCheck = { [weak self] peerId, messageId in
-            return self?.registry.primaryService()?.isMessageDeleted(peerId: peerId, messageId: messageId) ?? false
-        }
-        AyuGramHooks.hasEditHistoryCheck = { [weak self] peerId, messageId in
-            guard let service = self?.registry.primaryService() else {
-                return false
-            }
-            return service.hasEditHistory(MessageId(
-                peerId: PeerId(peerId),
-                namespace: Namespaces.Message.Cloud,
-                id: messageId
-            ))
-        }
 
         // MARK: - Sending
         AyuGramHooks.shouldUseScheduledMessages = { [weak self] in
