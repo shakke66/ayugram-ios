@@ -27,6 +27,58 @@ public enum RequestEditMessageError {
     case invalidGrouping
 }
 
+private func grvmMergedEditedMessage(
+    previous: Message,
+    incoming: StoreMessage,
+    markHistory: Bool
+) -> StoreMessage {
+    var updatedFlags = incoming.flags
+    var updatedLocalTags = incoming.localTags
+    if previous.localTags.contains(.OutgoingLiveLocation) {
+        updatedLocalTags.insert(.OutgoingLiveLocation)
+    }
+    if previous.flags.contains(.Incoming) {
+        updatedFlags.insert(.Incoming)
+    } else {
+        updatedFlags.remove(.Incoming)
+    }
+
+    var updatedMedia = incoming.media
+    if let previousPaidContent = previous.media.first(where: { $0 is TelegramMediaPaidContent }) as? TelegramMediaPaidContent,
+       case .full = previousPaidContent.extendedMedia.first {
+        updatedMedia = previous.media
+    }
+
+    return incoming
+        .withUpdatedLocalTags(updatedLocalTags)
+        .withUpdatedFlags(updatedFlags)
+        .withUpdatedAttributes(grvmMergedEditStateAttributes(
+            previous: previous.attributes,
+            incoming: incoming.attributes,
+            markHistory: markHistory
+        ))
+        .withUpdatedMedia(updatedMedia)
+}
+
+private func grvmApplyEditedMessage(
+    accountPeerId: PeerId,
+    transaction: Transaction,
+    id: MessageId,
+    message: StoreMessage
+) {
+    var shouldMarkHistory = false
+    if let previous = transaction.getMessage(id) {
+        shouldMarkHistory = AyuGramHooks.preserveEditRevision?(accountPeerId, previous) == true
+    }
+    transaction.updateMessage(id, update: { previous in
+        return .update(grvmMergedEditedMessage(
+            previous: previous,
+            incoming: message,
+            markHistory: shouldMarkHistory
+        ))
+    })
+}
+
 func _internal_requestEditMessage(account: Account, messageId: MessageId, text: String, media: RequestEditMessageMedia, entities: TextEntitiesMessageAttribute?, inlineStickers: [MediaId: Media], webpagePreviewAttribute: WebpagePreviewMessageAttribute?, disableUrlPreview: Bool, scheduleInfoAttribute: OutgoingScheduleInfoMessageAttribute?, invertMediaAttribute: InvertMediaMessageAttribute?) -> Signal<RequestEditMessageResult, RequestEditMessageError> {
     return requestEditMessage(accountPeerId: account.peerId, postbox: account.postbox, network: account.network, stateManager: account.stateManager, transformOutgoingMessageMedia: account.transformOutgoingMessageMedia, messageMediaPreuploadManager: account.messageMediaPreuploadManager, mediaReferenceRevalidationContext: account.mediaReferenceRevalidationContext, messageId: messageId, text: text, media: media, entities: entities, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, disableUrlPreview: disableUrlPreview, scheduleInfoAttribute: scheduleInfoAttribute, invertMediaAttribute: invertMediaAttribute)
 }
@@ -244,25 +296,7 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                                         updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
 
                                         if let message = StoreMessage(apiMessage: message, accountPeerId: accountPeerId, peerIsForum: peer.isForumOrMonoForum), case let .Id(id) = message.id {
-                                            transaction.updateMessage(id, update: { previousMessage in
-                                                var updatedFlags = message.flags
-                                                var updatedLocalTags = message.localTags
-                                                if previousMessage.localTags.contains(.OutgoingLiveLocation) {
-                                                    updatedLocalTags.insert(.OutgoingLiveLocation)
-                                                }
-                                                if previousMessage.flags.contains(.Incoming) {
-                                                    updatedFlags.insert(.Incoming)
-                                                } else {
-                                                    updatedFlags.remove(.Incoming)
-                                                }
-
-                                                var updatedMedia = message.media
-                                                if let previousPaidContent = previousMessage.media.first(where: { $0 is TelegramMediaPaidContent }) as? TelegramMediaPaidContent, case .full = previousPaidContent.extendedMedia.first {
-                                                    updatedMedia = previousMessage.media
-                                                }
-
-                                                return .update(message.withUpdatedLocalTags(updatedLocalTags).withUpdatedFlags(updatedFlags).withUpdatedMedia(updatedMedia))
-                                            })
+                                            grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
                                         }
                                     case .updateNewMessage(let data):
                                         let message = data.message
@@ -270,25 +304,7 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                                         updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
 
                                         if let message = StoreMessage(apiMessage: message, accountPeerId: accountPeerId, peerIsForum: peer.isForumOrMonoForum), case let .Id(id) = message.id {
-                                            transaction.updateMessage(id, update: { previousMessage in
-                                                var updatedFlags = message.flags
-                                                var updatedLocalTags = message.localTags
-                                                if previousMessage.localTags.contains(.OutgoingLiveLocation) {
-                                                    updatedLocalTags.insert(.OutgoingLiveLocation)
-                                                }
-                                                if previousMessage.flags.contains(.Incoming) {
-                                                    updatedFlags.insert(.Incoming)
-                                                } else {
-                                                    updatedFlags.remove(.Incoming)
-                                                }
-
-                                                var updatedMedia = message.media
-                                                if let previousPaidContent = previousMessage.media.first(where: { $0 is TelegramMediaPaidContent }) as? TelegramMediaPaidContent, case .full = previousPaidContent.extendedMedia.first {
-                                                    updatedMedia = previousMessage.media
-                                                }
-
-                                                return .update(message.withUpdatedLocalTags(updatedLocalTags).withUpdatedFlags(updatedFlags).withUpdatedMedia(updatedMedia))
-                                            })
+                                            grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
                                         }
                                     case .updateEditChannelMessage(let data):
                                         let message = data.message
@@ -296,25 +312,7 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                                         updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
 
                                         if let message = StoreMessage(apiMessage: message, accountPeerId: accountPeerId, peerIsForum: peer.isForumOrMonoForum), case let .Id(id) = message.id {
-                                            transaction.updateMessage(id, update: { previousMessage in
-                                                var updatedFlags = message.flags
-                                                var updatedLocalTags = message.localTags
-                                                if previousMessage.localTags.contains(.OutgoingLiveLocation) {
-                                                    updatedLocalTags.insert(.OutgoingLiveLocation)
-                                                }
-                                                if previousMessage.flags.contains(.Incoming) {
-                                                    updatedFlags.insert(.Incoming)
-                                                } else {
-                                                    updatedFlags.remove(.Incoming)
-                                                }
-
-                                                var updatedMedia = message.media
-                                                if let previousPaidContent = previousMessage.media.first(where: { $0 is TelegramMediaPaidContent }) as? TelegramMediaPaidContent, case .full = previousPaidContent.extendedMedia.first {
-                                                    updatedMedia = previousMessage.media
-                                                }
-
-                                                return .update(message.withUpdatedLocalTags(updatedLocalTags).withUpdatedFlags(updatedFlags).withUpdatedMedia(updatedMedia))
-                                            })
+                                            grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
                                         }
                                     case .updateNewChannelMessage(let data):
                                         let message = data.message
@@ -322,25 +320,7 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                                         updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
                                         
                                         if let message = StoreMessage(apiMessage: message, accountPeerId: accountPeerId, peerIsForum: peer.isForumOrMonoForum), case let .Id(id) = message.id {
-                                            transaction.updateMessage(id, update: { previousMessage in
-                                                var updatedFlags = message.flags
-                                                var updatedLocalTags = message.localTags
-                                                if previousMessage.localTags.contains(.OutgoingLiveLocation) {
-                                                    updatedLocalTags.insert(.OutgoingLiveLocation)
-                                                }
-                                                if previousMessage.flags.contains(.Incoming) {
-                                                    updatedFlags.insert(.Incoming)
-                                                } else {
-                                                    updatedFlags.remove(.Incoming)
-                                                }
-                                                
-                                                var updatedMedia = message.media
-                                                if let previousPaidContent = previousMessage.media.first(where: { $0 is TelegramMediaPaidContent }) as? TelegramMediaPaidContent, case .full = previousPaidContent.extendedMedia.first {
-                                                    updatedMedia = previousMessage.media
-                                                }
-                                                
-                                                return .update(message.withUpdatedLocalTags(updatedLocalTags).withUpdatedFlags(updatedFlags).withUpdatedMedia(updatedMedia))
-                                            })
+                                            grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
                                         }
                                     default:
                                         break

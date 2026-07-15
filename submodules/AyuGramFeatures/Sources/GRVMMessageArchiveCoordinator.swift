@@ -308,6 +308,60 @@ public final class GRVMMessageArchiveCoordinator {
         return result
     }
 
+    public func preserveEditRevision(_ message: Message) -> Bool {
+        let settings = self.settingsSnapshot()
+        guard settings.saveEditHistory else {
+            return false
+        }
+
+        let key = self.messageKey(message)
+        let messageResources = grvmMediaResources(message.media)
+        let records = messageResources.map {
+            self.mediaStore.plannedRecord(accountId: self.accountRecordId.int64, resource: $0)
+        }
+        let resourceIds = messageResources.map { $0.id.stringRepresentation }
+        let entitiesData = grvmEntitiesData(message)
+        let mediaSummary = grvmMediaSummary(message.media)
+        let fingerprint = grvmContentFingerprint(
+            text: message.text,
+            entitiesData: entitiesData,
+            mediaSummary: mediaSummary,
+            resourceIds: resourceIds
+        )
+        let savedAt = Int32(Date().timeIntervalSince1970)
+
+        do {
+            _ = try self.store.saveRevision(GRVMEditRevisionDraft(
+                key: key,
+                fingerprint: fingerprint,
+                savedAt: savedAt,
+                text: message.text,
+                entitiesData: entitiesData,
+                mediaSummary: mediaSummary,
+                resourceIds: resourceIds
+            ), media: records)
+        } catch {
+            return false
+        }
+        self.index.insertRevised(key)
+
+        for (resource, record) in zip(messageResources, records) {
+            self.disposables.add(self.mediaStore.archive(
+                record,
+                resource: resource,
+                mediaBox: self.mediaBox
+            ).start(next: { [weak self] record in
+                guard let self else {
+                    return
+                }
+                self.queue.async {
+                    try? self.store.updateMedia(record)
+                }
+            }))
+        }
+        return true
+    }
+
     public func clearDeleted(peerId: PeerId?, threadId: Int64?) -> Signal<[MessageId], NoError> {
         return Signal { subscriber in
             let disposable = MetaDisposable()

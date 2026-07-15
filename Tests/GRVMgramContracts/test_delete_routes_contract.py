@@ -95,7 +95,7 @@ class DeleteRouteContractTests(unittest.TestCase):
     def test_save_for_bots_never_gates_edit_history(self) -> None:
         value = source("State/AccountStateManagementUtils.swift")
         edit_section = occurrence_window(value, "case let .EditMessage(id, message):", 1)
-        self.assertIn("AyuGramHooks.onMessageEdited?(oldMessage)", edit_section)
+        self.assertIn("AyuGramHooks.preserveEditRevision?(accountPeerId, oldMessage)", edit_section)
         self.assertNotIn("shouldSaveForBots", edit_section)
 
     def test_global_range_author_and_forward_routes_collect_exact_ids(self) -> None:

@@ -21,8 +21,8 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.preserveDeletedMessages = { [weak self] accountPeerId, messages, source in
             return self?.registry.service(accountPeerId: accountPeerId)?.preserveDeletedMessages(messages, source: source) ?? [:]
         }
-        AyuGramHooks.shouldSaveEditHistory = { [weak self] in
-            return self?.currentSettings.saveEditHistory ?? false
+        AyuGramHooks.preserveEditRevision = { [weak self] accountPeerId, message in
+            return self?.registry.service(accountPeerId: accountPeerId)?.preserveEditRevision(message) ?? false
         }
         AyuGramHooks.shouldPreserveOneTimeMedia = { [weak self] in
             return self?.currentSettings.saveDeletedMessages ?? false

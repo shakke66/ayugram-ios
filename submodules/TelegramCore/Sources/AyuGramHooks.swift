@@ -4,10 +4,9 @@ import Postbox
 public final class AyuGramHooks {
     // MARK: - Spy Mode
     public static var onMessagesDeleted: (([Message]) -> Void)?
-    public static var onMessageEdited: ((Message) -> Void)?
     public static var shouldSaveDeletedMessages: ((PeerId) -> Bool)?
     public static var preserveDeletedMessages: ((PeerId, [Message], GRVMDeletionSource) -> [MessageId: [String]])?
-    public static var shouldSaveEditHistory: (() -> Bool)?
+    public static var preserveEditRevision: ((PeerId, Message) -> Bool)?
     public static var shouldPreserveOneTimeMedia: (() -> Bool)?
 
     // MARK: - Ghost Mode
@@ -105,4 +104,46 @@ public final class AyuGramHooks {
     // MARK: - Filters / shadow-ban (заполняются в W4)
     public static var isMessageHiddenByFilter: ((Int64, String) -> Bool)?
     public static var isShadowBanned: ((Int64) -> Bool)?
+}
+
+func grvmMergedEditStateAttributes(
+    previous: [MessageAttribute],
+    incoming: [MessageAttribute],
+    markHistory: Bool
+) -> [MessageAttribute] {
+    var result = incoming
+    if let deleted = previous.first(where: { $0 is GRVMDeletedMessageAttribute }) {
+        result.removeAll(where: { $0 is GRVMDeletedMessageAttribute })
+        result.append(deleted)
+    }
+
+    let previousHistory = previous.first(where: { $0 is GRVMEditHistoryMessageAttribute })
+    result.removeAll(where: { $0 is GRVMEditHistoryMessageAttribute })
+    if markHistory {
+        result.append(GRVMEditHistoryMessageAttribute(
+            latestRevisionAt: Int32(Date().timeIntervalSince1970)
+        ))
+    } else if let previousHistory {
+        result.append(previousHistory)
+    }
+    return result
+}
+
+func grvmMessageEditContentMatches(previous: Message, incoming: StoreMessage) -> Bool {
+    guard previous.text == incoming.text else {
+        return false
+    }
+    let previousEntities = previous.textEntitiesAttribute?.entities ?? []
+    let incomingEntities = (incoming.attributes.first(where: {
+        $0 is TextEntitiesMessageAttribute
+    }) as? TextEntitiesMessageAttribute)?.entities ?? []
+    guard previousEntities == incomingEntities, previous.media.count == incoming.media.count else {
+        return false
+    }
+    for (previousMedia, incomingMedia) in zip(previous.media, incoming.media) {
+        if !previousMedia.isEqual(to: incomingMedia) {
+            return false
+        }
+    }
+    return true
 }

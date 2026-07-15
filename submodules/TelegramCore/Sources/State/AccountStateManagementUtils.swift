@@ -4480,10 +4480,10 @@ func replayFinalState(
                     invalidateGroupStats.insert(Namespaces.PeerGroup.archive)
                 }
             case let .EditMessage(id, message):
-                if AyuGramHooks.shouldSaveEditHistory?() == true {
-                    if let oldMessage = transaction.getMessage(id) {
-                        AyuGramHooks.onMessageEdited?(oldMessage)
-                    }
+                var shouldMarkHistory = false
+                if let oldMessage = transaction.getMessage(id),
+                   !grvmMessageEditContentMatches(previous: oldMessage, incoming: message) {
+                    shouldMarkHistory = AyuGramHooks.preserveEditRevision?(accountPeerId, oldMessage) == true
                 }
                 var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?
                 transaction.updateMessage(id, update: { previousMessage in
@@ -4530,6 +4530,11 @@ func replayFinalState(
                     if let previousPaidContent = previousMessage.media.first(where: { $0 is TelegramMediaPaidContent }) as? TelegramMediaPaidContent, case .full = previousPaidContent.extendedMedia.first {
                         updatedMedia = previousMessage.media
                     }
+                    updatedAttributes = grvmMergedEditStateAttributes(
+                        previous: previousMessage.attributes,
+                        incoming: updatedAttributes,
+                        markHistory: shouldMarkHistory
+                    )
                     
                     return .update(message.withUpdatedLocalTags(updatedLocalTags).withUpdatedFlags(updatedFlags).withUpdatedAttributes(updatedAttributes).withUpdatedMedia(updatedMedia))
                 })
