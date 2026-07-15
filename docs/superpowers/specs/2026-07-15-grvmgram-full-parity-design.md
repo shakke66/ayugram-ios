@@ -163,16 +163,18 @@ Absolute sandbox paths are never persisted. All paths are resolved relative to t
 
 - Existing tables are migrated transactionally before new writes.
 - Existing single-account rows are adopted only when exactly one authorized account is available.
-- With multiple authorized accounts, unattributed legacy rows remain quarantined under account_id 0 and are not exposed in normal account views.
+- With multiple authorized accounts, unattributed legacy rows remain in transactional `_legacy_v1` quarantine (logically account ID 0) and are not exposed in normal account views.
 - Legacy rows are not silently associated with the wrong account.
 - Existing global settings are copied as initial defaults into each account's settings record.
 - Migration failure rolls back and leaves the original database intact.
 
 ## Persistent Media
 
-The media root is:
+The media root is normalized by account and resource:
 
-Documents/GRVMgramDeletedMedia/<account>/<peer>/<message>/
+Documents/GRVMgramDeletedMedia/<account>/blobs/<hash-prefix>/<resource-hash>
+
+Message/revision ownership stays in database mapping rows, so identical forwarded resources are stored once per account instead of once per message.
 
 Before deletion, each completed local MediaBox resource is copied atomically:
 
