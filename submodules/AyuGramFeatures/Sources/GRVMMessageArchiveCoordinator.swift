@@ -25,6 +25,26 @@ private struct GRVMCoordinatorSettingsState {
     }
 }
 
+private func grvmStoreMessage(_ message: Message, appending attribute: MessageAttribute) -> StoreMessage {
+    return StoreMessage(
+        id: message.id,
+        customStableId: nil,
+        globallyUniqueId: message.globallyUniqueId,
+        groupingKey: message.groupingKey,
+        threadId: message.threadId,
+        timestamp: message.timestamp,
+        flags: StoreMessageFlags(message.flags),
+        tags: message.tags,
+        globalTags: message.globalTags,
+        localTags: message.localTags,
+        forwardInfo: message.forwardInfo.flatMap(StoreMessageForwardInfo.init),
+        authorId: message.author?.id,
+        text: message.text,
+        attributes: message.attributes + [attribute],
+        media: message.media
+    )
+}
+
 public final class GRVMMessageArchiveCoordinator {
     public let accountPeerId: PeerId
     public let accountRecordId: AccountRecordId
@@ -99,6 +119,80 @@ public final class GRVMMessageArchiveCoordinator {
                 self.restore(records.filter { $0.copyState == .complete })
             }
         }))
+    }
+
+    public func reconcilePersistentMessageState() {
+        let snapshot = self.index.snapshot()
+        let deletedKeys = Set(snapshot.deleted.filter { key in
+            key.accountId == self.accountRecordId.int64
+        })
+        let revisedKeys = Set(snapshot.revised.filter { key in
+            key.accountId == self.accountRecordId.int64
+        })
+        let keys = Array(deletedKeys.union(revisedKeys))
+        let batchSize = 100
+
+        for offset in stride(from: 0, to: keys.count, by: batchSize) {
+            let batch = Array(keys[offset ..< min(offset + batchSize, keys.count)])
+            let batchDeletedKeys = batch.filter { deletedKeys.contains($0) }
+            self.queue.async { [weak self] in
+                guard let self else {
+                    return
+                }
+
+                let deletedRecords = (try? self.store.deletedMessages(keys: batchDeletedKeys)) ?? []
+                let deletedByKey = Dictionary(uniqueKeysWithValues: deletedRecords.map { ($0.key, $0) })
+                var latestRevisionDates: [GRVMMessageKey: Int32] = [:]
+                for key in batch where revisedKeys.contains(key) {
+                    if let revisions = try? self.store.editHistory(key),
+                       let savedAt = revisions.last?.savedAt {
+                        latestRevisionDates[key] = savedAt
+                    }
+                }
+
+                let disposable = self.postbox.transaction { transaction -> Void in
+                    for key in batch {
+                        let messageId = MessageId(
+                            peerId: PeerId(key.peerId),
+                            namespace: key.namespace,
+                            id: key.messageId
+                        )
+                        guard let message = transaction.getMessage(messageId),
+                              (message.threadId ?? 0) == key.threadId else {
+                            continue
+                        }
+
+                        if let record = deletedByKey[key],
+                           !message.attributes.contains(where: { $0 is GRVMDeletedMessageAttribute }) {
+                            _ = transaction.markMessageAsLocallyDeleted(
+                                id: messageId,
+                                attribute: GRVMDeletedMessageAttribute(
+                                    deletedAt: record.deletedAt,
+                                    source: .server,
+                                    topicId: key.threadId == 0 ? nil : key.threadId,
+                                    resourceIds: record.resourceIds
+                                )
+                            )
+                        }
+
+                        if revisedKeys.contains(key),
+                           !message.attributes.contains(where: { $0 is GRVMEditHistoryMessageAttribute }) {
+                            let latestRevisionAt = latestRevisionDates[key] ?? message.timestamp
+                            transaction.updateMessage(messageId, update: { current in
+                                guard !current.attributes.contains(where: { $0 is GRVMEditHistoryMessageAttribute }) else {
+                                    return .skip
+                                }
+                                return .update(grvmStoreMessage(
+                                    current,
+                                    appending: GRVMEditHistoryMessageAttribute(latestRevisionAt: latestRevisionAt)
+                                ))
+                            })
+                        }
+                    }
+                }.start()
+                self.disposables.add(disposable)
+            }
+        }
     }
 
     public func settingsSnapshot() -> AyuGramSettings {

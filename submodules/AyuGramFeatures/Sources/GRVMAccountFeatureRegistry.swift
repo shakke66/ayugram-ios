@@ -100,6 +100,7 @@ public final class GRVMAccountFeatureRegistry {
             )
             do {
                 try coordinator.prepare()
+                coordinator.reconcilePersistentMessageState()
             } catch {
                 return
             }

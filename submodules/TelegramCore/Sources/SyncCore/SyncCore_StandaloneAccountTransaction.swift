@@ -121,6 +121,14 @@ public let telegramPostboxSeedConfiguration: SeedConfiguration = {
             if previous.isEmpty {
                 return
             }
+            if let deleted = previous.first(where: { $0 is GRVMDeletedMessageAttribute }),
+               !updated.contains(where: { $0 is GRVMDeletedMessageAttribute }) {
+                updated.append(deleted)
+            }
+            if let editHistory = previous.first(where: { $0 is GRVMEditHistoryMessageAttribute }),
+               !updated.contains(where: { $0 is GRVMEditHistoryMessageAttribute }) {
+                updated.append(editHistory)
+            }
             var audioTranscription: AudioTranscriptionMessageAttribute?
             for attribute in previous {
                 if let attribute = attribute as? AudioTranscriptionMessageAttribute {

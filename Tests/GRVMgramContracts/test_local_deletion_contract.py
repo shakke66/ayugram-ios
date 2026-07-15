@@ -12,6 +12,19 @@ TELEGRAM_SEED = (
     ROOT
     / "submodules/TelegramCore/Sources/SyncCore/SyncCore_StandaloneAccountTransaction.swift"
 )
+DELETED_ATTRIBUTE = (
+    ROOT
+    / "submodules/TelegramCore/Sources/SyncCore/GRVMDeletedMessageAttribute.swift"
+)
+EDIT_ATTRIBUTE = (
+    ROOT
+    / "submodules/TelegramCore/Sources/SyncCore/GRVMEditHistoryMessageAttribute.swift"
+)
+ACCOUNT_MANAGER = ROOT / "submodules/TelegramCore/Sources/Account/AccountManager.swift"
+COORDINATOR = (
+    ROOT / "submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"
+)
+REGISTRY = ROOT / "submodules/AyuGramFeatures/Sources/GRVMAccountFeatureRegistry.swift"
 
 
 def swift_block(source: str, signature: str) -> str:
@@ -163,6 +176,69 @@ class LocalDeletionContractTests(unittest.TestCase):
             "installedStoreOrUpdateMessageActionsByPeerId",
             implementation,
         )
+
+    def test_persistent_state_attributes_are_compact_and_registered(self) -> None:
+        self.assertTrue(DELETED_ATTRIBUTE.exists())
+        self.assertTrue(EDIT_ATTRIBUTE.exists())
+        deleted = DELETED_ATTRIBUTE.read_text(encoding="utf-8")
+        edited = EDIT_ATTRIBUTE.read_text(encoding="utf-8")
+        declarations = ACCOUNT_MANAGER.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "GRVMDeletedMessageAttribute: MessageAttribute, LocalMessageDeletionMarker, Equatable",
+            deleted,
+        )
+        self.assertIn(
+            "GRVMEditHistoryMessageAttribute: MessageAttribute, Equatable",
+            edited,
+        )
+        for key in ('forKey: "d"', 'forKey: "s"', 'forKey: "t"', 'forKey: "r"'):
+            self.assertIn(key, deleted)
+        self.assertIn('forKey: "d"', edited)
+        self.assertIn('decodeOptionalInt64ForKey("t")', deleted)
+        self.assertIn('decodeStringArrayForKey("r")', deleted)
+        self.assertIn(
+            "declareEncodable(GRVMDeletedMessageAttribute.self",
+            declarations,
+        )
+        self.assertIn(
+            "declareEncodable(GRVMEditHistoryMessageAttribute.self",
+            declarations,
+        )
+
+    def test_server_merges_retain_both_local_state_attributes(self) -> None:
+        source = TELEGRAM_SEED.read_text(encoding="utf-8")
+        merge = swift_block(source, "mergeMessageAttributes: { previous, updated in")
+        for name in (
+            "GRVMDeletedMessageAttribute",
+            "GRVMEditHistoryMessageAttribute",
+        ):
+            self.assertGreaterEqual(merge.count(name), 2)
+            self.assertRegex(
+                merge,
+                rf"updated\.contains\(where: \{{ \$0 is {name} \}}\)",
+            )
+
+    def test_reconciliation_is_exact_account_scoped_and_batched(self) -> None:
+        source = COORDINATOR.read_text(encoding="utf-8")
+        method = swift_block(source, "public func reconcilePersistentMessageState(")
+
+        self.assertEqual(method.count("self.index.snapshot()"), 1)
+        self.assertIn("let batchSize = 100", method)
+        self.assertIn("key.accountId == self.accountRecordId.int64", method)
+        self.assertIn("self.store.deletedMessages(keys:", method)
+        self.assertIn("transaction.getMessage(messageId)", method)
+        self.assertIn("message.threadId ?? 0", method)
+        self.assertIn("GRVMDeletedMessageAttribute(", method)
+        self.assertIn("GRVMEditHistoryMessageAttribute(", method)
+        self.assertIn("transaction.markMessageAsLocallyDeleted(", method)
+
+    def test_registry_reconciles_only_after_preparing_the_index(self) -> None:
+        source = REGISTRY.read_text(encoding="utf-8")
+        registration = swift_block(source, "public func register(")
+        prepare = registration.index("try coordinator.prepare()")
+        reconcile = registration.index("coordinator.reconcilePersistentMessageState()")
+        self.assertLess(prepare, reconcile)
 
     def test_transition_preserves_unrendered_peer_ids(self) -> None:
         source = POSTBOX.read_text(encoding="utf-8")
