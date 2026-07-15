@@ -49,8 +49,13 @@ class MediaArchiveContractTests(unittest.TestCase):
         source = MEDIA_BOX.read_text(encoding="utf-8")
         self.assertIn("didRemoveResourceIdsPipe", source)
         self.assertIn("didRemoveResourceIds", source)
-        self.assertIn("if unlink(paths.complete) == 0", source)
-        self.assertIn("removedIds.append(id)", source)
+        for token in (
+            "let removedComplete = unlink(paths.complete) == 0",
+            "let removedPartial = unlink(paths.partial) == 0",
+            'let removedMeta = unlink(paths.partial + ".meta") == 0',
+            "if removedComplete || removedPartial || removedMeta",
+        ):
+            self.assertGreaterEqual(source.count(token), 2, token)
         self.assertGreaterEqual(source.count("didRemoveResourceIdsPipe.putNext(removedIds)"), 2)
 
     def test_restore_uses_serial_queues_and_refuses_active_contexts(self) -> None:

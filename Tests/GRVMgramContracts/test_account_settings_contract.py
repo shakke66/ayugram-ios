@@ -32,6 +32,15 @@ class AccountSettingsContractTests(unittest.TestCase):
         self.assertIn("values[accountKey]", source)
         self.assertIn("if values[accountKey] == nil", source)
 
+    def test_existing_envelope_never_falls_back_to_legacy_for_missing_account(self) -> None:
+        source = ACCOUNT_SETTINGS.read_text(encoding="utf-8")
+        self.assertIn(
+            "return envelope.values[accountKey] ?? .defaultSettings",
+            source,
+        )
+        self.assertIn("let existingEnvelope = entry?.get(GRVMAccountSettings.self)", source)
+        self.assertIn("existingEnvelope == nil", source)
+
     def test_every_settings_controller_reads_and_writes_its_account(self) -> None:
         directory = ROOT / "submodules/AyuGramSettingsUI/Sources"
         for name in CONTROLLERS:

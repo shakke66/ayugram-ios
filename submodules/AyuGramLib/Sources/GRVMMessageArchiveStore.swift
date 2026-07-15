@@ -98,6 +98,77 @@ public final class GRVMMessageArchiveStore {
     FROM edited_messages_legacy_v1
     """
 
+    static let migrateDeletedMediaBlobsV1 = """
+    WITH RECURSIVE split(resource_id, rest) AS (
+        SELECT '', media_resources || ',' FROM deleted_messages_legacy_v1
+        UNION ALL
+        SELECT trim(substr(rest, 1, instr(rest, ',') - 1)),
+               substr(rest, instr(rest, ',') + 1)
+        FROM split WHERE rest <> ''
+    )
+    INSERT OR IGNORE INTO archived_media_blobs (
+        account_id, resource_id, relative_path, byte_count, kind, copy_state
+    )
+    SELECT ?1, resource_id, '', 0, 'legacy', 0
+    FROM split WHERE resource_id <> ''
+    """
+
+    static let migrateDeletedMediaMappingsV1 = """
+    WITH RECURSIVE split(peer_id, message_id, resource_id, rest) AS (
+        SELECT peer_id, message_id, '', media_resources || ','
+        FROM deleted_messages_legacy_v1
+        UNION ALL
+        SELECT peer_id, message_id,
+               trim(substr(rest, 1, instr(rest, ',') - 1)),
+               substr(rest, instr(rest, ',') + 1)
+        FROM split WHERE rest <> ''
+    )
+    INSERT OR IGNORE INTO archived_message_media (
+        account_id, peer_id, message_namespace, message_id, thread_id, revision_id, resource_id
+    )
+    SELECT ?1, peer_id, 0, message_id, 0, 0, resource_id
+    FROM split WHERE resource_id <> ''
+    """
+
+    static let migrateEditedMediaBlobsV1 = """
+    WITH RECURSIVE split(resource_id, rest) AS (
+        SELECT '', media_resources || ',' FROM edited_messages_legacy_v1
+        UNION ALL
+        SELECT trim(substr(rest, 1, instr(rest, ',') - 1)),
+               substr(rest, instr(rest, ',') + 1)
+        FROM split WHERE rest <> ''
+    )
+    INSERT OR IGNORE INTO archived_media_blobs (
+        account_id, resource_id, relative_path, byte_count, kind, copy_state
+    )
+    SELECT ?1, resource_id, '', 0, 'legacy', 0
+    FROM split WHERE resource_id <> ''
+    """
+
+    static let migrateEditedMediaMappingsV1 = """
+    WITH RECURSIVE split(peer_id, message_id, revision_id, resource_id, rest) AS (
+        SELECT legacy.peer_id, legacy.message_id, revision.row_id, '', legacy.media_resources || ','
+        FROM edited_messages_legacy_v1 AS legacy
+        JOIN edit_revisions AS revision
+          ON revision.account_id = ?1
+         AND revision.peer_id = legacy.peer_id
+         AND revision.message_namespace = 0
+         AND revision.message_id = legacy.message_id
+         AND revision.thread_id = 0
+         AND revision.fingerprint = printf('legacy:%lld', legacy.id)
+        UNION ALL
+        SELECT peer_id, message_id, revision_id,
+               trim(substr(rest, 1, instr(rest, ',') - 1)),
+               substr(rest, instr(rest, ',') + 1)
+        FROM split WHERE rest <> ''
+    )
+    INSERT OR IGNORE INTO archived_message_media (
+        account_id, peer_id, message_namespace, message_id, thread_id, revision_id, resource_id
+    )
+    SELECT ?1, peer_id, 0, message_id, 0, revision_id, resource_id
+    FROM split WHERE resource_id <> ''
+    """
+
     private enum SQLValue {
         case int32(Int32)
         case int64(Int64)
@@ -158,9 +229,13 @@ public final class GRVMMessageArchiveStore {
                     if hasLegacyTables && activeAccountRecordIds.count == 1 && accountIds.count == 1, let accountId = accountIds.first {
                         if hasDeleted {
                             try self.executePrepared(database, sql: Self.migrateDeletedV1, values: [.int64(accountId)])
+                            try self.executePrepared(database, sql: Self.migrateDeletedMediaBlobsV1, values: [.int64(accountId)])
+                            try self.executePrepared(database, sql: Self.migrateDeletedMediaMappingsV1, values: [.int64(accountId)])
                         }
                         if hasEdited {
                             try self.executePrepared(database, sql: Self.migrateEditedV1, values: [.int64(accountId)])
+                            try self.executePrepared(database, sql: Self.migrateEditedMediaBlobsV1, values: [.int64(accountId)])
+                            try self.executePrepared(database, sql: Self.migrateEditedMediaMappingsV1, values: [.int64(accountId)])
                         }
                     }
                     try self.execute(database, sql: "PRAGMA user_version = 2")
@@ -528,8 +603,12 @@ public final class GRVMMessageArchiveStore {
             case let .text(value):
                 result = value.withCString { sqlite3_bind_text(statement, index, $0, -1, grvmSQLiteTransient) }
             case let .data(value):
-                result = value.withUnsafeBytes { bytes in
-                    sqlite3_bind_blob(statement, index, bytes.baseAddress, Int32(value.count), grvmSQLiteTransient)
+                if value.isEmpty {
+                    result = sqlite3_bind_zeroblob(statement, index, 0)
+                } else {
+                    result = value.withUnsafeBytes { bytes in
+                        sqlite3_bind_blob(statement, index, bytes.baseAddress, Int32(value.count), grvmSQLiteTransient)
+                    }
                 }
             }
             guard result == SQLITE_OK else {

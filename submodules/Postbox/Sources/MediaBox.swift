@@ -1885,11 +1885,12 @@ public final class MediaBox {
                         }
                     }
                     let paths = self.storePathsForId(id)
-                    if unlink(paths.complete) == 0 {
+                    let removedComplete = unlink(paths.complete) == 0
+                    let removedPartial = unlink(paths.partial) == 0
+                    let removedMeta = unlink(paths.partial + ".meta") == 0
+                    if removedComplete || removedPartial || removedMeta {
                         removedIds.append(id)
                     }
-                    unlink(paths.partial)
-                    unlink(paths.partial + ".meta")
                     self.fileContexts.removeValue(forKey: id)
                     count += 3
                     reportProgress(count)
@@ -1938,11 +1939,12 @@ public final class MediaBox {
                         }
                     }
                     let paths = self.storePathsForId(id)
-                    if unlink(paths.complete) == 0 {
+                    let removedComplete = unlink(paths.complete) == 0
+                    let removedPartial = unlink(paths.partial) == 0
+                    let removedMeta = unlink(paths.partial + ".meta") == 0
+                    if removedComplete || removedPartial || removedMeta {
                         removedIds.append(id)
                     }
-                    unlink(paths.partial)
-                    unlink(paths.partial + ".meta")
                     self.fileContexts.removeValue(forKey: id)
                 }
                 

@@ -154,6 +154,57 @@ class ArchiveContractTests(unittest.TestCase):
             ).fetchone(),
         )
 
+    def test_one_account_legacy_media_relationships_are_adopted(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        migration_names = (
+            "migrateDeletedMediaBlobsV1",
+            "migrateDeletedMediaMappingsV1",
+            "migrateEditedMediaBlobsV1",
+            "migrateEditedMediaMappingsV1",
+        )
+        for name in migration_names:
+            self.assertIn(f'static let {name} = """', source)
+
+        db = sqlite3.connect(":memory:")
+        db.executescript(LEGACY_SCHEMA)
+        db.execute(
+            """INSERT INTO deleted_messages
+               (peer_id, message_id, sender_id, date, text, media_description,
+                entity_create_date, peer_title, sender_name, media_resources)
+               VALUES (11, 22, 33, 44, 'deleted', 'photo', 55, 'peer', 'sender',
+                       'r1,r2,r1')"""
+        )
+        db.execute(
+            """INSERT INTO edited_messages
+               (peer_id, message_id, sender_id, date, text, media_description,
+                edit_date, version, peer_title, sender_name, media_resources)
+               VALUES (11, 22, 33, 44, 'old', 'photo', 66, 0, 'peer', 'sender',
+                       'r2,r3')"""
+        )
+        db.execute("ALTER TABLE deleted_messages RENAME TO deleted_messages_legacy_v1")
+        db.execute("ALTER TABLE edited_messages RENAME TO edited_messages_legacy_v1")
+        db.executescript(swift_sql(source, "schemaV2"))
+        db.execute(swift_sql(source, "migrateDeletedV1"), (777,))
+        db.execute(swift_sql(source, "migrateEditedV1"), (777,))
+        for name in migration_names:
+            db.execute(swift_sql(source, name), (777,))
+
+        self.assertEqual(
+            [(777, "r1", 0), (777, "r2", 0), (777, "r3", 0)],
+            db.execute(
+                """SELECT account_id, resource_id, copy_state
+                   FROM archived_media_blobs ORDER BY resource_id"""
+            ).fetchall(),
+        )
+        revision_id = db.execute("SELECT row_id FROM edit_revisions").fetchone()[0]
+        self.assertEqual(
+            [(0, "r1"), (0, "r2"), (revision_id, "r2"), (revision_id, "r3")],
+            db.execute(
+                """SELECT revision_id, resource_id FROM archived_message_media
+                   ORDER BY revision_id, resource_id"""
+            ).fetchall(),
+        )
+
     def test_migration_contract_quarantines_ambiguous_legacy_rows(self) -> None:
         source = STORE.read_text(encoding="utf-8")
         for token in (
@@ -175,6 +226,11 @@ class ArchiveContractTests(unittest.TestCase):
             "resourceIds: try self.mappedResourceIds(database, key: key, revisionId: 0).sorted()",
             source,
         )
+
+    def test_empty_data_is_bound_as_a_zero_length_blob(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        self.assertIn("if value.isEmpty", source)
+        self.assertIn("sqlite3_bind_zeroblob(statement, index, 0)", source)
 
     def test_planned_media_cannot_downgrade_a_complete_blob(self) -> None:
         source = STORE.read_text(encoding="utf-8")

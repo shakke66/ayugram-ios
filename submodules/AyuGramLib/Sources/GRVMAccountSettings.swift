@@ -22,9 +22,8 @@ public func grvmSettings(
         ApplicationSpecificSharedDataKeys.ayuGramSettings
     ])
     |> map { sharedData in
-        if let envelope = sharedData.entries[ApplicationSpecificSharedDataKeys.grvmAccountSettings]?.get(GRVMAccountSettings.self),
-           let settings = envelope.values[accountKey] {
-            return settings
+        if let envelope = sharedData.entries[ApplicationSpecificSharedDataKeys.grvmAccountSettings]?.get(GRVMAccountSettings.self) {
+            return envelope.values[accountKey] ?? .defaultSettings
         }
         return sharedData.entries[ApplicationSpecificSharedDataKeys.ayuGramSettings]?.get(AyuGramSettings.self) ?? .defaultSettings
     }
@@ -38,9 +37,14 @@ public func updateGRVMSettings(
     let accountKey = accountId.toInt64()
     return accountManager.transaction { transaction -> Void in
         transaction.updateSharedData(ApplicationSpecificSharedDataKeys.grvmAccountSettings, { entry in
-            var values = entry?.get(GRVMAccountSettings.self)?.values ?? [:]
+            let existingEnvelope = entry?.get(GRVMAccountSettings.self)
+            var values = existingEnvelope?.values ?? [:]
             if values[accountKey] == nil {
-                values[accountKey] = transaction.getSharedData(ApplicationSpecificSharedDataKeys.ayuGramSettings)?.get(AyuGramSettings.self) ?? .defaultSettings
+                if existingEnvelope == nil {
+                    values[accountKey] = transaction.getSharedData(ApplicationSpecificSharedDataKeys.ayuGramSettings)?.get(AyuGramSettings.self) ?? .defaultSettings
+                } else {
+                    values[accountKey] = .defaultSettings
+                }
             }
             values[accountKey] = f(values[accountKey] ?? .defaultSettings)
             return SharedPreferencesEntry(GRVMAccountSettings(values: values))
