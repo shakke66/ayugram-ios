@@ -25,26 +25,6 @@ private struct GRVMCoordinatorSettingsState {
     }
 }
 
-private func grvmStoreMessage(_ message: Message, appending attribute: MessageAttribute) -> StoreMessage {
-    return StoreMessage(
-        id: message.id,
-        customStableId: nil,
-        globallyUniqueId: message.globallyUniqueId,
-        groupingKey: message.groupingKey,
-        threadId: message.threadId,
-        timestamp: message.timestamp,
-        flags: StoreMessageFlags(message.flags),
-        tags: message.tags,
-        globalTags: message.globalTags,
-        localTags: message.localTags,
-        forwardInfo: message.forwardInfo.flatMap(StoreMessageForwardInfo.init),
-        authorId: message.author?.id,
-        text: message.text,
-        attributes: message.attributes + [attribute],
-        media: message.media
-    )
-}
-
 public final class GRVMMessageArchiveCoordinator {
     public let accountPeerId: PeerId
     public let accountRecordId: AccountRecordId
@@ -178,15 +158,10 @@ public final class GRVMMessageArchiveCoordinator {
                         if revisedKeys.contains(key),
                            !message.attributes.contains(where: { $0 is GRVMEditHistoryMessageAttribute }) {
                             let latestRevisionAt = latestRevisionDates[key] ?? message.timestamp
-                            transaction.updateMessage(messageId, update: { current in
-                                guard !current.attributes.contains(where: { $0 is GRVMEditHistoryMessageAttribute }) else {
-                                    return .skip
-                                }
-                                return .update(grvmStoreMessage(
-                                    current,
-                                    appending: GRVMEditHistoryMessageAttribute(latestRevisionAt: latestRevisionAt)
-                                ))
-                            })
+                            _ = transaction.addMessageAttribute(
+                                id: messageId,
+                                attribute: GRVMEditHistoryMessageAttribute(latestRevisionAt: latestRevisionAt)
+                            )
                         }
                     }
                 }.start()

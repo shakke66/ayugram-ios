@@ -232,6 +232,20 @@ class LocalDeletionContractTests(unittest.TestCase):
         self.assertIn("GRVMDeletedMessageAttribute(", method)
         self.assertIn("GRVMEditHistoryMessageAttribute(", method)
         self.assertIn("transaction.markMessageAsLocallyDeleted(", method)
+        self.assertIn("transaction.addMessageAttribute(", method)
+        self.assertNotIn("grvmStoreMessage(", method)
+
+    def test_attribute_only_updates_preserve_unrendered_peer_ids(self) -> None:
+        source = POSTBOX.read_text(encoding="utf-8")
+        implementation = swift_block(
+            source,
+            "fileprivate func addMessageAttribute(",
+        )
+
+        self.assertIn("intermediateMessage.forwardInfo", implementation)
+        self.assertIn("authorId: intermediateMessage.authorId", implementation)
+        self.assertIn("attributes: currentMessage.attributes + [attribute]", implementation)
+        self.assertIn("installedStoreOrUpdateMessageActionsByPeerId", implementation)
 
     def test_registry_reconciles_only_after_preparing_the_index(self) -> None:
         source = REGISTRY.read_text(encoding="utf-8")
