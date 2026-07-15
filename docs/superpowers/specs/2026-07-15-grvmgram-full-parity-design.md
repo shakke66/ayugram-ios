@@ -260,25 +260,32 @@ The pending Opus change consumes the read-state operation through confirmSynchro
 
 ## Remaining Applicable iOS Parity
 
-The current section 9 matrix in bdopus.md is the functional checklist. Applicable partial/missing behavior includes:
+The checklist in this document is canonical. The external bdopus.md audit is supporting evidence, not a dependency of the implementation scope.
+
+Applicable partial/missing behavior includes:
 
 - blocked-user filters;
 - author/forward-aware Shadow Ban;
 - per-filter case sensitivity and type/button inputs;
-- working translation-provider selection from providers available on iOS;
+- working Telegram MTProto, Google, and Yandex translation-provider selection;
+- native iOS translation only when the deployment target exposes a supported public API; otherwise the native option is hidden;
 - external-link warning control;
 - Desktop-style supported-domain link rewriting;
 - independent Webview height/width controls;
 - complete added-sticker filtering;
 - Hide/Mute/Discuss channel bottom-button behavior;
+- Desktop-equivalent Quick Admin shortcuts for Recent Actions and Admins;
 - real context-menu semantics for Local Hide, User Messages, Details, Repeat, Add Filter, and modifier state;
 - freely editable deleted/edited marks;
 - deleted-message translucency;
 - message bubble radius and single-corner behavior;
+- MD3 switch rendering through a dependency-safe low-level appearance value;
 - complete premium-status hiding;
-- Message Shot;
-- Attach/Emoji popup equivalents appropriate to touch UI;
-- crash-reporting consumer;
+- Message Shot with selected-message composition, theme, date/header controls, colorful replies, spoiler reveal, copy, and save;
+- long-press Attach and Emoji/Sticker popup equivalents for the Desktop hover popups;
+- crash-reporting consumer that stores the opt-in preference and offers local crash-log export on next launch without uploading to an AyuGram endpoint;
+- reset-settings confirmation;
+- GRVMgram-compatible alternate icon presentation;
 - seeking controls;
 - service-message time;
 - channel badge;
@@ -288,10 +295,122 @@ The current section 9 matrix in bdopus.md is the functional checklist. Applicabl
 - Send as Sticker;
 - Copy ID actions;
 - account/chat/channel profile dates;
-- Streamer privacy using iOS screen-capture APIs;
-- all other applicable entries listed in section 9.8 of bdopus.md.
+- Streamer privacy using UIScreen capture-state notifications and a privacy cover while capture is active;
+- View Filters, Show/Hide Filtered, and quick Shadow Ban/Unshadow Ban peer-menu actions;
+- Delete Own Messages in groups;
+- local Read Message while Ghost Mode is active;
+- Burn and repeat access for locally available TTL/one-view/one-play media;
+- forwarding of locally available deleted, TTL, and no-forwards messages;
+- numeric peer lookup and Open Profile by ID;
+- GIF controls;
+- top notifications;
+- rounded sticker presentation;
+- reaction seconds;
+- adaptive cover color in Saved Music;
+- official-resource/session badges rewritten for GRVMgram or removed when they only advertise AyuGram;
+- complete Message Shot subsettings.
 
 No setting remains visible if it has no consumer and no implementation in this release.
+
+### Canonical parity checklist
+
+The implementation plan must account for every applicable row below. Already-correct rows require regression verification; partial and missing rows require implementation or correction.
+
+#### AyuGram
+
+- message read-receipt suppression;
+- story-view suppression;
+- online-presence suppression;
+- typing/upload suppression;
+- automatic offline packet;
+- Read on Interact for send/reaction/poll;
+- scheduled Ghost sending;
+- three-mode silent sending;
+- pre-view Story Ghost prompt;
+- persistent deleted messages;
+- incoming/outgoing edit history;
+- correct bot-dialog deletion gate;
+- account-scoped Local Premium;
+- sponsored-content suppression.
+
+#### Filters
+
+- master filters;
+- shared filters in chats;
+- blocked-user filtering;
+- shared/reversed/per-filter-case filters;
+- type/button filter inputs;
+- author-aware Shadow Ban;
+- Select Chat, Import, Export, and Clear.
+
+#### General
+
+- translation provider;
+- story hiding;
+- external-link warning;
+- collapse/hide similar channels;
+- notification-delay control;
+- Zalgo filtering;
+- supported-domain link rewriting;
+- message seconds;
+- Telegram API/Bot API peer IDs;
+- Android Webview spoofing;
+- independent Webview dimensions;
+- sticker, GIF, and voice confirmations.
+
+#### Appearance
+
+- public GRVMgram app-icon picker;
+- notification badge hiding;
+- avatar corners;
+- single corner radius;
+- MD3 switches;
+- custom-background disabling;
+- complete premium-status hiding;
+- monospace font;
+- folder-counter hiding;
+- All Chats hiding.
+
+#### Chats
+
+- only-added sticker/emoji suggestions;
+- reactions by chat type;
+- recent-sticker count;
+- Hide/Mute/Discuss channel button;
+- Quick Admin shortcuts;
+- full Message Shot;
+- icon/text marks;
+- arbitrary deleted and edited marks;
+- tail/share/colorful-reply controls;
+- translucent deleted messages;
+- bubble radius and width;
+- every context-menu control with the correct action and modifier behavior;
+- every compose-field control;
+- touch equivalents for Attach/Emoji popups;
+- per-chat/topic View Deleted;
+- per-message History.
+
+#### Other and standalone
+
+- local crash-report export preference;
+- confirmed settings reset;
+- View Filters and filtered-message controls;
+- Delete Own Messages;
+- Read Message and Read All variants;
+- Burn and locally preserved one-view media;
+- forwarding overrides for locally available content;
+- Send as Sticker;
+- numeric lookup and Copy ID;
+- Copy Callback Data;
+- profile dates;
+- seeking and GIF controls;
+- service time and top notifications;
+- Streamer privacy;
+- channel/official badges;
+- rounded stickers and reaction seconds;
+- jump to beginning;
+- adaptive Saved Music cover;
+- every Message Shot subsetting.
 
 ## Localization and Public Branding
 
