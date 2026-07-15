@@ -150,19 +150,19 @@ public extension TelegramEngine {
         }
 
         public func deleteMessages(transaction: Transaction, ids: [MessageId]) {
-            return _internal_deleteMessages(transaction: transaction, mediaBox: self.account.postbox.mediaBox, ids: ids, deleteMedia: true, manualAddMessageThreadStatsDifference: nil)
+            _internal_applyMessageDeletion(accountPeerId: self.account.peerId, transaction: transaction, mediaBox: self.account.postbox.mediaBox, ids: ids, mode: .server(.localAction))
         }
 
         public func deleteAllMessagesWithAuthor(peerId: PeerId, authorId: PeerId, namespace: MessageId.Namespace) -> Signal<Never, NoError> {
             return self.account.postbox.transaction { transaction -> Void in
-                _internal_deleteAllMessagesWithAuthor(transaction: transaction, mediaBox: self.account.postbox.mediaBox, peerId: peerId, authorId: authorId, namespace: namespace)
+                _internal_deleteAllMessagesWithAuthor(accountPeerId: self.account.peerId, transaction: transaction, mediaBox: self.account.postbox.mediaBox, peerId: peerId, authorId: authorId, namespace: namespace)
             }
             |> ignoreValues
         }
 
         public func deleteAllMessagesWithForwardAuthor(peerId: EnginePeer.Id, forwardAuthorId: EnginePeer.Id, namespace: MessageId.Namespace) -> Signal<Never, NoError> {
             return self.account.postbox.transaction { transaction -> Void in
-                _internal_deleteAllMessagesWithForwardAuthor(transaction: transaction, mediaBox: self.account.postbox.mediaBox, peerId: peerId, forwardAuthorId: forwardAuthorId, namespace: namespace)
+                _internal_deleteAllMessagesWithForwardAuthor(accountPeerId: self.account.peerId, transaction: transaction, mediaBox: self.account.postbox.mediaBox, peerId: peerId, forwardAuthorId: forwardAuthorId, namespace: namespace)
             }
             |> ignoreValues
         }
@@ -184,7 +184,7 @@ public extension TelegramEngine {
         }
 
         public func clearHistoryInteractively(peerId: PeerId, threadId: Int64?, type: InteractiveHistoryClearingType) -> Signal<Void, NoError> {
-            return _internal_clearHistoryInteractively(postbox: self.account.postbox, peerId: peerId, threadId: threadId, type: type)
+            return _internal_clearHistoryInteractively(accountPeerId: self.account.peerId, postbox: self.account.postbox, peerId: peerId, threadId: threadId, type: type)
         }
 
         public func clearAuthorHistory(peerId: PeerId, memberId: PeerId) -> Signal<Void, NoError> {

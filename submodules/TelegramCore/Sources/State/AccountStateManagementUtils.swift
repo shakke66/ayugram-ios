@@ -4410,43 +4410,57 @@ func replayFinalState(
                     }
                 }
             case let .DeleteMessagesWithGlobalIds(ids):
-                var resourceIds: [MediaResourceId] = []
-                transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
-                    addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
-                })
-                if !resourceIds.isEmpty {
-                    let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
-                }
+                let messageIds = transaction.messageIdsForGlobalIds(ids)
+                _internal_applyMessageDeletion(
+                    accountPeerId: accountPeerId,
+                    transaction: transaction,
+                    mediaBox: mediaBox,
+                    ids: messageIds,
+                    mode: .server(.server)
+                )
                 deletedMessageIds.append(contentsOf: ids.map { .global($0) })
             case let .DeleteMessages(ids):
-                if AyuGramHooks.shouldSaveDeletedMessages?() == true {
-                    var messagesToSave: [Message] = []
-                    for id in ids {
-                        if let message = transaction.getMessage(id) {
-                            let isBotChat = (message.peers[message.id.peerId] as? TelegramUser)?.botInfo != nil
-                            if !isBotChat || AyuGramHooks.shouldSaveForBots?() == true {
-                                messagesToSave.append(message)
-                            }
-                        }
+                _internal_applyMessageDeletion(
+                    accountPeerId: accountPeerId,
+                    transaction: transaction,
+                    mediaBox: mediaBox,
+                    ids: ids,
+                    mode: .server(.server),
+                    manualAddMessageThreadStatsDifference: { id, add, remove in
+                        addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
                     }
-                    if !messagesToSave.isEmpty {
-                        AyuGramHooks.onMessagesDeleted?(messagesToSave)
-                    }
-                }
-                _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
-                    addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
-                })
+                )
                 deletedMessageIds.append(contentsOf: ids.map { .messageId($0) })
             case let .UpdateMinAvailableMessage(id):
                 if let message = transaction.getMessage(id) {
                     updatePeerChatInclusionWithMinTimestamp(transaction: transaction, id: id.peerId, minTimestamp: message.timestamp, forceRootGroupIfNotExists: false)
                 }
-                var resourceIds: [MediaResourceId] = []
-                transaction.deleteMessagesInRange(peerId: id.peerId, namespace: id.namespace, minId: 1, maxId: id.id, forEachMedia: { media in
-                    addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+                let shouldPreserve = AyuGramHooks.shouldSaveDeletedMessages?(accountPeerId) == true
+                var messageIds: [MessageId] = []
+                var hasLocallyDeletedMessage = false
+                transaction.withAllMessages(peerId: id.peerId, namespace: id.namespace, { message in
+                    if message.id.id >= 1 && message.id.id <= id.id {
+                        messageIds.append(message.id)
+                        hasLocallyDeletedMessage = hasLocallyDeletedMessage || isLocallyDeletedMessage(message.attributes)
+                    }
+                    return true
                 })
-                if !resourceIds.isEmpty {
-                    let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+                if shouldPreserve || hasLocallyDeletedMessage {
+                    _internal_applyMessageDeletion(
+                        accountPeerId: accountPeerId,
+                        transaction: transaction,
+                        mediaBox: mediaBox,
+                        ids: messageIds,
+                        mode: .server(.minimumAvailable)
+                    )
+                } else {
+                    var resourceIds: [MediaResourceId] = []
+                    transaction.deleteMessagesInRange(peerId: id.peerId, namespace: id.namespace, minId: 1, maxId: id.id, forEachMedia: { media in
+                        addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+                    })
+                    if !resourceIds.isEmpty {
+                        let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+                    }
                 }
             case let .UpdatePeerChatInclusion(peerId, groupId, changedGroup):
                 let currentInclusion = transaction.getPeerChatListInclusion(peerId)
@@ -5908,7 +5922,7 @@ func replayFinalState(
         inner: while true {
             let keychain = (transaction.getPeerChatState(peerId) as? SecretChatState)?.keychain
             if processSecretChatIncomingEncryptedOperations(transaction: transaction, peerId: peerId) {
-                let processResult = processSecretChatIncomingDecryptedOperations(encryptionProvider: encryptionProvider, mediaBox: mediaBox, transaction: transaction, peerId: peerId)
+                let processResult = processSecretChatIncomingDecryptedOperations(accountPeerId: accountPeerId, encryptionProvider: encryptionProvider, mediaBox: mediaBox, transaction: transaction, peerId: peerId)
                 if !processResult.addedMessages.isEmpty {
                     let currentInclusion = transaction.getPeerChatListInclusion(peerId)
                     if let groupId = currentInclusion.groupId, groupId == Namespaces.PeerGroup.archive {
@@ -6031,7 +6045,7 @@ func replayFinalState(
     for (uniqueId, messageIdValue) in finalState.state.updatedOutgoingUniqueMessageIds {
         if let peerId = removePossiblyDeliveredMessagesUniqueIds[uniqueId] {
             let messageId = MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: messageIdValue)
-            deleteMessagesInteractively(transaction: transaction, stateManager: nil, postbox: postbox, messageIds: [messageId], type: .forEveryone, deleteAllInGroup: false, removeIfPossiblyDelivered: false)
+            deleteMessagesInteractively(accountPeerId: accountPeerId, transaction: transaction, stateManager: nil, postbox: postbox, messageIds: [messageId], type: .forEveryone, deleteAllInGroup: false, removeIfPossiblyDelivered: false)
         }
     }
     

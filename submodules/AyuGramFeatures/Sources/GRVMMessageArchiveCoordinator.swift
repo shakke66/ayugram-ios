@@ -25,6 +25,45 @@ private struct GRVMCoordinatorSettingsState {
     }
 }
 
+private func grvmEntitiesData(_ message: Message) -> Data {
+    guard let attribute = message.attributes.first(where: { $0 is TextEntitiesMessageAttribute }) else {
+        return Data()
+    }
+    let encoder = PostboxEncoder()
+    encoder.encodeRootObject(attribute)
+    return encoder.makeData()
+}
+
+private func grvmMediaSummary(_ media: [Media]) -> String {
+    return media.compactMap { item -> String? in
+        if item is TelegramMediaImage {
+            return "photo"
+        } else if let file = item as? TelegramMediaFile {
+            if file.isInstantVideo {
+                return "video_message"
+            } else if file.isVideo {
+                return "video"
+            } else if file.isVoice {
+                return "voice"
+            } else if file.isSticker {
+                return file.isAnimatedSticker ? "animated_sticker" : "sticker"
+            } else if file.isMusic {
+                return "audio"
+            } else {
+                return "document:\(file.fileName ?? "unknown")"
+            }
+        } else if item is TelegramMediaContact {
+            return "contact"
+        } else if item is TelegramMediaMap {
+            return "location"
+        } else if item is TelegramMediaPoll {
+            return "poll"
+        } else {
+            return nil
+        }
+    }.joined(separator: ",")
+}
+
 public final class GRVMMessageArchiveCoordinator {
     public let accountPeerId: PeerId
     public let accountRecordId: AccountRecordId
@@ -192,6 +231,81 @@ public final class GRVMMessageArchiveCoordinator {
             messageId: message.id.id,
             threadId: message.threadId ?? 0
         )
+    }
+
+    public func preserveDeletedMessages(_ messages: [Message], source: GRVMDeletionSource) -> [MessageId: [String]] {
+        let settings = self.settingsSnapshot()
+        guard settings.saveDeletedMessages else {
+            return [:]
+        }
+
+        var uniqueMessages: [GRVMMessageKey: Message] = [:]
+        for message in messages {
+            let directBot = message.id.peerId.namespace == Namespaces.Peer.CloudUser
+                && (message.peers[message.id.peerId] as? TelegramUser)?.botInfo != nil
+            if directBot && !settings.saveForBots {
+                continue
+            }
+            uniqueMessages[self.messageKey(message)] = message
+        }
+        guard !uniqueMessages.isEmpty else {
+            return [:]
+        }
+
+        let deletedAt = Int32(Date().timeIntervalSince1970)
+        var archivedMessages: [GRVMArchivedMessage] = []
+        var plannedMedia: [GRVMMessageKey: [GRVMArchivedMedia]] = [:]
+        var resources: [GRVMMessageKey: [(GRVMMediaResourceReference, GRVMArchivedMedia)]] = [:]
+        var result: [MessageId: [String]] = [:]
+
+        for (key, message) in uniqueMessages {
+            let messageResources = grvmMediaResources(message.media)
+            let records = messageResources.map {
+                self.mediaStore.plannedRecord(accountId: self.accountRecordId.int64, resource: $0)
+            }
+            let resourceIds = messageResources.map { $0.id.stringRepresentation }
+            archivedMessages.append(GRVMArchivedMessage(
+                key: key,
+                senderId: message.author?.id.toInt64() ?? 0,
+                timestamp: message.timestamp,
+                deletedAt: deletedAt,
+                text: message.text,
+                entitiesData: grvmEntitiesData(message),
+                mediaSummary: grvmMediaSummary(message.media),
+                resourceIds: resourceIds,
+                peerTitle: message.peers[message.id.peerId]?.debugDisplayTitle ?? "",
+                senderName: message.author?.debugDisplayTitle ?? ""
+            ))
+            plannedMedia[key] = records
+            resources[key] = Array(zip(messageResources, records))
+            result[message.id] = resourceIds
+        }
+
+        do {
+            try self.store.saveDeleted(archivedMessages, media: plannedMedia)
+        } catch {
+            return [:]
+        }
+        self.index.insertDeleted(Set(uniqueMessages.keys))
+
+        for pairs in resources.values {
+            for (resource, record) in pairs {
+                self.disposables.add(self.mediaStore.archive(
+                    record,
+                    resource: resource,
+                    mediaBox: self.mediaBox
+                ).start(next: { [weak self] record in
+                    guard let self else {
+                        return
+                    }
+                    self.queue.async {
+                        try? self.store.updateMedia(record)
+                    }
+                }))
+            }
+        }
+        _ = source
+        return result
     }
 
     public func hasEditHistory(_ id: MessageId) -> Bool {

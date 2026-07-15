@@ -5,7 +5,8 @@ public final class AyuGramHooks {
     // MARK: - Spy Mode
     public static var onMessagesDeleted: (([Message]) -> Void)?
     public static var onMessageEdited: ((Message) -> Void)?
-    public static var shouldSaveDeletedMessages: (() -> Bool)?
+    public static var shouldSaveDeletedMessages: ((PeerId) -> Bool)?
+    public static var preserveDeletedMessages: ((PeerId, [Message], GRVMDeletionSource) -> [MessageId: [String]])?
     public static var shouldSaveEditHistory: (() -> Bool)?
     public static var shouldPreserveOneTimeMedia: (() -> Bool)?
 

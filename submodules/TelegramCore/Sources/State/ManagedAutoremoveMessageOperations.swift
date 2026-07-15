@@ -37,7 +37,7 @@ private final class ManagedAutoremoveMessageOperationsHelper {
     }
 }
 
-func managedAutoremoveMessageOperations(network: Network, postbox: Postbox, isRemove: Bool) -> Signal<Void, NoError> {
+func managedAutoremoveMessageOperations(accountPeerId: PeerId, network: Network, postbox: Postbox, isRemove: Bool) -> Signal<Void, NoError> {
     return Signal { _ in
         let helper = Atomic(value: ManagedAutoremoveMessageOperationsHelper())
         
@@ -83,7 +83,13 @@ func managedAutoremoveMessageOperations(network: Network, postbox: Postbox, isRe
 
                     if let message = transaction.getMessage(entry.messageId) {
                         if message.id.peerId.namespace == Namespaces.Peer.SecretChat || isRemove {
-                            _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [entry.messageId])
+                            _internal_applyMessageDeletion(
+                                accountPeerId: accountPeerId,
+                                transaction: transaction,
+                                mediaBox: postbox.mediaBox,
+                                ids: [entry.messageId],
+                                mode: .server(.ttl)
+                            )
                         } else if AyuGramHooks.shouldPreserveOneTimeMedia?() == true {
                             // AyuGram: keep one-time media, just remove the autoclear timer
                             transaction.updateMessage(message.id, update: { currentMessage in

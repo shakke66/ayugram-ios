@@ -56,7 +56,21 @@ public func _internal_deleteMessages(transaction: Transaction, mediaBox: MediaBo
     })
 }
 
-func _internal_deleteAllMessagesWithAuthor(transaction: Transaction, mediaBox: MediaBox, peerId: PeerId, authorId: PeerId, namespace: MessageId.Namespace) {
+func _internal_deleteAllMessagesWithAuthor(accountPeerId: PeerId, transaction: Transaction, mediaBox: MediaBox, peerId: PeerId, authorId: PeerId, namespace: MessageId.Namespace) {
+    let shouldPreserve = AyuGramHooks.shouldSaveDeletedMessages?(accountPeerId) == true
+    var ids: [MessageId] = []
+    var hasLocallyDeletedMessage = false
+    transaction.withAllMessages(peerId: peerId, namespace: namespace, { message in
+        if message.author?.id == authorId {
+            ids.append(message.id)
+            hasLocallyDeletedMessage = hasLocallyDeletedMessage || isLocallyDeletedMessage(message.attributes)
+        }
+        return true
+    })
+    if shouldPreserve || hasLocallyDeletedMessage {
+        _internal_applyMessageDeletion(accountPeerId: accountPeerId, transaction: transaction, mediaBox: mediaBox, ids: ids, mode: .server(.localAction))
+        return
+    }
     var resourceIds: [MediaResourceId] = []
     transaction.removeAllMessagesWithAuthor(peerId, authorId: authorId, namespace: namespace, forEachMedia: { media in
         addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
@@ -66,7 +80,21 @@ func _internal_deleteAllMessagesWithAuthor(transaction: Transaction, mediaBox: M
     }
 }
 
-func _internal_deleteAllMessagesWithForwardAuthor(transaction: Transaction, mediaBox: MediaBox, peerId: PeerId, forwardAuthorId: PeerId, namespace: MessageId.Namespace) {
+func _internal_deleteAllMessagesWithForwardAuthor(accountPeerId: PeerId, transaction: Transaction, mediaBox: MediaBox, peerId: PeerId, forwardAuthorId: PeerId, namespace: MessageId.Namespace) {
+    let shouldPreserve = AyuGramHooks.shouldSaveDeletedMessages?(accountPeerId) == true
+    var ids: [MessageId] = []
+    var hasLocallyDeletedMessage = false
+    transaction.withAllMessages(peerId: peerId, namespace: namespace, { message in
+        if message.forwardInfo?.author?.id == forwardAuthorId {
+            ids.append(message.id)
+            hasLocallyDeletedMessage = hasLocallyDeletedMessage || isLocallyDeletedMessage(message.attributes)
+        }
+        return true
+    })
+    if shouldPreserve || hasLocallyDeletedMessage {
+        _internal_applyMessageDeletion(accountPeerId: accountPeerId, transaction: transaction, mediaBox: mediaBox, ids: ids, mode: .server(.localAction))
+        return
+    }
     var resourceIds: [MediaResourceId] = []
     transaction.removeAllMessagesWithForwardAuthor(peerId, forwardAuthorId: forwardAuthorId, namespace: namespace, forEachMedia: { media in
         addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
@@ -76,7 +104,21 @@ func _internal_deleteAllMessagesWithForwardAuthor(transaction: Transaction, medi
     }
 }
 
-func _internal_clearHistory(transaction: Transaction, mediaBox: MediaBox, peerId: PeerId, threadId: Int64?, namespaces: MessageIdNamespaces) {
+func _internal_clearHistory(accountPeerId: PeerId, transaction: Transaction, mediaBox: MediaBox, peerId: PeerId, threadId: Int64?, namespaces: MessageIdNamespaces, source: GRVMDeletionSource = .localAction) {
+    let shouldPreserve = AyuGramHooks.shouldSaveDeletedMessages?(accountPeerId) == true
+    var ids: [MessageId] = []
+    var hasLocallyDeletedMessage = false
+    transaction.withAllMessages(peerId: peerId, { message in
+        if namespaces.contains(message.id.namespace) && (threadId == nil || message.threadId == threadId) {
+            ids.append(message.id)
+            hasLocallyDeletedMessage = hasLocallyDeletedMessage || isLocallyDeletedMessage(message.attributes)
+        }
+        return true
+    })
+    if shouldPreserve || hasLocallyDeletedMessage {
+        _internal_applyMessageDeletion(accountPeerId: accountPeerId, transaction: transaction, mediaBox: mediaBox, ids: ids, mode: .server(source))
+        return
+    }
     if peerId.namespace == Namespaces.Peer.SecretChat {
         var resourceIds: [MediaResourceId] = []
         transaction.withAllMessages(peerId: peerId, { message in
@@ -91,7 +133,24 @@ func _internal_clearHistory(transaction: Transaction, mediaBox: MediaBox, peerId
     })
 }
 
-func _internal_clearHistoryInRange(transaction: Transaction, mediaBox: MediaBox, peerId: PeerId, threadId: Int64?, minTimestamp: Int32, maxTimestamp: Int32, namespaces: MessageIdNamespaces) {
+func _internal_clearHistoryInRange(accountPeerId: PeerId, transaction: Transaction, mediaBox: MediaBox, peerId: PeerId, threadId: Int64?, minTimestamp: Int32, maxTimestamp: Int32, namespaces: MessageIdNamespaces) {
+    let shouldPreserve = AyuGramHooks.shouldSaveDeletedMessages?(accountPeerId) == true
+    var ids: [MessageId] = []
+    var hasLocallyDeletedMessage = false
+    transaction.withAllMessages(peerId: peerId, { message in
+        if namespaces.contains(message.id.namespace)
+            && (threadId == nil || message.threadId == threadId)
+            && message.timestamp >= minTimestamp
+            && message.timestamp <= maxTimestamp {
+            ids.append(message.id)
+            hasLocallyDeletedMessage = hasLocallyDeletedMessage || isLocallyDeletedMessage(message.attributes)
+        }
+        return true
+    })
+    if shouldPreserve || hasLocallyDeletedMessage {
+        _internal_applyMessageDeletion(accountPeerId: accountPeerId, transaction: transaction, mediaBox: mediaBox, ids: ids, mode: .server(.localAction))
+        return
+    }
     if peerId.namespace == Namespaces.Peer.SecretChat {
         var resourceIds: [MediaResourceId] = []
         transaction.withAllMessages(peerId: peerId, { message in

@@ -1311,7 +1311,7 @@ public extension TelegramEngine {
                 
                 transaction.setMessageHistoryThreadInfo(peerId: id, threadId: threadId, info: nil)
                 
-                _internal_clearHistory(transaction: transaction, mediaBox: self.account.postbox.mediaBox, peerId: id, threadId: threadId, namespaces: .not(Namespaces.Message.allNonRegular))
+                _internal_clearHistory(accountPeerId: self.account.peerId, transaction: transaction, mediaBox: self.account.postbox.mediaBox, peerId: id, threadId: threadId, namespaces: .not(Namespaces.Message.allNonRegular))
             }
             |> ignoreValues
         }
@@ -1323,7 +1323,7 @@ public extension TelegramEngine {
                     
                     transaction.setMessageHistoryThreadInfo(peerId: id, threadId: threadId, info: nil)
                     
-                    _internal_clearHistory(transaction: transaction, mediaBox: self.account.postbox.mediaBox, peerId: id, threadId: threadId, namespaces: .not(Namespaces.Message.allNonRegular))
+                    _internal_clearHistory(accountPeerId: self.account.peerId, transaction: transaction, mediaBox: self.account.postbox.mediaBox, peerId: id, threadId: threadId, namespaces: .not(Namespaces.Message.allNonRegular))
                 }
             }
             |> ignoreValues

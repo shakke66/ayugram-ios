@@ -938,12 +938,32 @@ func _internal_fetchAndUpdateCachedPeerData(accountPeerId: PeerId, peerId rawPee
                                             })
                                         
                                             if let minAvailableMessageId = minAvailableMessageId, minAvailableMessageIdUpdated {
-                                                var resourceIds: [MediaResourceId] = []
-                                                transaction.deleteMessagesInRange(peerId: peerId, namespace: minAvailableMessageId.namespace, minId: 1, maxId: minAvailableMessageId.id, forEachMedia: { media in
-                                                    addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+                                                let shouldPreserve = AyuGramHooks.shouldSaveDeletedMessages?(accountPeerId) == true
+                                                var messageIds: [MessageId] = []
+                                                var hasLocallyDeletedMessage = false
+                                                transaction.withAllMessages(peerId: peerId, namespace: minAvailableMessageId.namespace, { message in
+                                                    if message.id.id >= 1 && message.id.id <= minAvailableMessageId.id {
+                                                        messageIds.append(message.id)
+                                                        hasLocallyDeletedMessage = hasLocallyDeletedMessage || isLocallyDeletedMessage(message.attributes)
+                                                    }
+                                                    return true
                                                 })
-                                                if !resourceIds.isEmpty {
-                                                    let _ = postbox.mediaBox.removeCachedResources(Array(Set(resourceIds))).start()
+                                                if shouldPreserve || hasLocallyDeletedMessage {
+                                                    _internal_applyMessageDeletion(
+                                                        accountPeerId: accountPeerId,
+                                                        transaction: transaction,
+                                                        mediaBox: postbox.mediaBox,
+                                                        ids: messageIds,
+                                                        mode: .server(.minimumAvailable)
+                                                    )
+                                                } else {
+                                                    var resourceIds: [MediaResourceId] = []
+                                                    transaction.deleteMessagesInRange(peerId: peerId, namespace: minAvailableMessageId.namespace, minId: 1, maxId: minAvailableMessageId.id, forEachMedia: { media in
+                                                        addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+                                                    })
+                                                    if !resourceIds.isEmpty {
+                                                        let _ = postbox.mediaBox.removeCachedResources(Array(Set(resourceIds))).start()
+                                                    }
                                                 }
                                             }
                                         case .chatFull:

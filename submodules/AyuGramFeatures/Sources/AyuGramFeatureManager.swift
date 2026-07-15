@@ -15,8 +15,11 @@ public final class AyuGramFeatureManager {
 
     public func wireHooks() {
         // MARK: - Spy Mode
-        AyuGramHooks.shouldSaveDeletedMessages = { [weak self] in
-            return self?.currentSettings.saveDeletedMessages ?? false
+        AyuGramHooks.shouldSaveDeletedMessages = { [weak self] accountPeerId in
+            return self?.registry.service(accountPeerId: accountPeerId)?.settingsSnapshot().saveDeletedMessages ?? false
+        }
+        AyuGramHooks.preserveDeletedMessages = { [weak self] accountPeerId, messages, source in
+            return self?.registry.service(accountPeerId: accountPeerId)?.preserveDeletedMessages(messages, source: source) ?? [:]
         }
         AyuGramHooks.shouldSaveEditHistory = { [weak self] in
             return self?.currentSettings.saveEditHistory ?? false

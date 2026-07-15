@@ -64,7 +64,7 @@ struct SecretChatOperationProcessResult {
     let addedMessages: [StoreMessage]
 }
 
-func processSecretChatIncomingDecryptedOperations(encryptionProvider: EncryptionProvider, mediaBox: MediaBox, transaction: Transaction, peerId: PeerId) -> SecretChatOperationProcessResult {
+func processSecretChatIncomingDecryptedOperations(accountPeerId: PeerId, encryptionProvider: EncryptionProvider, mediaBox: MediaBox, transaction: Transaction, peerId: PeerId) -> SecretChatOperationProcessResult {
     if let state = transaction.getPeerChatState(peerId) as? SecretChatState, let peer = transaction.getPeer(peerId) as? TelegramSecretChat {
         var removeTagLocalIndices: [Int32] = []
         var updatedState = state
@@ -295,10 +295,16 @@ func processSecretChatIncomingDecryptedOperations(encryptionProvider: Encryption
                                                 }
                                             }
                                         }
-                                        _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: filteredMessageIds)
+                                        _internal_applyMessageDeletion(
+                                            accountPeerId: accountPeerId,
+                                            transaction: transaction,
+                                            mediaBox: mediaBox,
+                                            ids: filteredMessageIds,
+                                            mode: .server(.secretRecall)
+                                        )
                                     }
                                 case .clearHistory:
-                                    _internal_clearHistory(transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
+                                    _internal_clearHistory(accountPeerId: accountPeerId, transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all, source: .secretRecall)
                                 case let .markMessagesContentAsConsumed(globallyUniqueIds):
                                     var messageIds: [MessageId] = []
                                     for id in globallyUniqueIds {
