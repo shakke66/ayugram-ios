@@ -5675,7 +5675,12 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             )
                         }
                         guard let threadData = threadData else {
-                            return []
+                            return grvmArchiveContextMenuItems(
+                                context: context,
+                                sourceController: strongSelf,
+                                peerId: peer.id,
+                                threadId: threadId
+                            )
                         }
                         
                         var items: [ContextMenuItem] = []

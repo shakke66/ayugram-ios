@@ -241,22 +241,92 @@ class HistoryUIContractTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, value)
 
-    def test_deleted_actions_reach_every_chat_menu_path(self) -> None:
-        sources = [
-            CHAT_CONTROLLER.read_text(encoding="utf-8"),
-            BOT_FORUM_MENU.read_text(encoding="utf-8"),
-            SAVED_MESSAGES_MENU.read_text(encoding="utf-8"),
-            CHAT_LIST_MENU.read_text(encoding="utf-8"),
-            ARCHIVE_MENU_ITEMS.read_text(encoding="utf-8"),
-        ]
-        combined = "\n".join(sources)
+    def test_regular_and_reply_archive_menu_paths_keep_exact_scopes(self) -> None:
+        value = CHAT_CONTROLLER.read_text(encoding="utf-8")
+        regular = window(value, "case .peer:", 5000)
+        reply = window(value, "case let .replyThread(message):", 26000)
 
-        self.assertIn("grvmArchiveContextMenuItems", combined)
-        self.assertGreaterEqual(combined.count("grvmArchiveContextMenuItems"), 5)
-        self.assertIn("context.account.peerId", combined)
-        self.assertIn("threadId", combined)
-        self.assertIn("View Deleted", combined)
-        self.assertIn("Clear Deleted", combined)
+        for token in (
+            "grvmArchiveContextMenuItems(",
+            "context: context",
+            "sourceController: strongSelf",
+            "peerId: peer.id",
+            "threadId: nil",
+        ):
+            with self.subTest(route="regular", token=token):
+                self.assertIn(token, regular)
+
+        self.assertIn("let threadId = message.threadId", reply)
+        nil_thread_data = window(reply, "guard let threadData = threadData else {", 700)
+        self.assertNotIn("return []", nil_thread_data)
+        for token in (
+            "return grvmArchiveContextMenuItems(",
+            "context: context",
+            "sourceController: strongSelf",
+            "peerId: peer.id",
+            "threadId: threadId",
+        ):
+            with self.subTest(route="reply_nil_thread_data", token=token):
+                self.assertIn(token, nil_thread_data)
+
+        final_reply_append = reply.rindex("items.append(contentsOf: grvmArchiveContextMenuItems(")
+        final_reply = reply[final_reply_append : final_reply_append + 500]
+        self.assertIn("peerId: peer.id", final_reply)
+        self.assertIn("threadId: threadId", final_reply)
+
+    def test_bot_forum_archive_menu_uses_chat_location_scope(self) -> None:
+        value = BOT_FORUM_MENU.read_text(encoding="utf-8")
+        section = window(value, "items.append(contentsOf: grvmArchiveContextMenuItems(", 500)
+
+        for token in (
+            "context: self.context",
+            "sourceController: self",
+            "peerId: peerId",
+            "threadId: self.chatLocation.threadId",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, section)
+
+    def test_forum_root_archive_menu_uses_peer_without_thread(self) -> None:
+        value = CHAT_LIST_MENU.read_text(encoding="utf-8")
+        section = window(value, "items.append(contentsOf: grvmArchiveContextMenuItems(", 500)
+
+        for token in (
+            "context: context",
+            "sourceController: sourceController",
+            "peerId: peerId",
+            "threadId: nil",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, section)
+
+    def test_saved_messages_archive_menu_uses_own_peer_scope(self) -> None:
+        value = SAVED_MESSAGES_MENU.read_text(encoding="utf-8")
+        section = window(value, "items.append(contentsOf: grvmArchiveContextMenuItems(", 500)
+
+        for token in (
+            "context: context",
+            "sourceController: sourceController",
+            "peerId: context.account.peerId",
+            "threadId: nil",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, section)
+
+    def test_shared_archive_submenu_forwards_scope_to_view_and_clear(self) -> None:
+        value = ARCHIVE_MENU_ITEMS.read_text(encoding="utf-8")
+
+        for token in (
+            'text: "View Deleted"',
+            'text: "Clear Deleted"',
+            "grvmDeletedMessagesController(",
+            "peerId: peerId",
+            "threadId: threadId",
+            "AyuGramFeatures.clearDeleted?(",
+            "context.account.peerId, peerId, threadId",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, value)
 
     def test_legacy_global_history_is_informational_and_database_api_is_retired(self) -> None:
         edited = EDITED_CONTROLLER.read_text(encoding="utf-8")
