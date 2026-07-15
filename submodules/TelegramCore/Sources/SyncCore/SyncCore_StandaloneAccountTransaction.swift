@@ -45,6 +45,12 @@ public let telegramPostboxSeedConfiguration: SeedConfiguration = {
             return nil
         },
         existingMessageTags: MessageTags.all,
+        locallyDeletedMessageTags: [
+            .unseenPersonalMessage,
+            .unseenReaction,
+            .unseenPollVote,
+            .pinned
+        ],
         messageTagsWithSummary: [.unseenPersonalMessage, .pinned, .video, .photo, .gif, .music, .voiceOrInstantVideo, .webPage, .file, .unseenReaction, .unseenPollVote],
         messageTagsWithThreadSummary: [.unseenPersonalMessage, .unseenReaction, .unseenPollVote],
         existingGlobalMessageTags: GlobalMessageTags.all,

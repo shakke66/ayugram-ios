@@ -542,6 +542,15 @@ public final class Transaction {
         assert(!self.disposed)
         self.postbox?.updateMessage(transaction: self, id: id, update: update)
     }
+
+    public func markMessageAsLocallyDeleted(id: MessageId, attribute: MessageAttribute) -> Bool {
+        assert(!self.disposed)
+        return self.postbox?.markMessageAsLocallyDeleted(
+            transaction: self,
+            id: id,
+            attribute: attribute
+        ) ?? false
+    }
     
     public func offsetPendingMessagesTimestamps(lowerBound: MessageId, excludeIds: Set<MessageId>, timestamp: Int32) {
         assert(!self.disposed)
@@ -3029,6 +3038,46 @@ final class PostboxImpl {
                 }
             }
         }
+    }
+
+    fileprivate func markMessageAsLocallyDeleted(transaction: Transaction, id: MessageId, attribute: MessageAttribute) -> Bool {
+        guard let index = self.messageHistoryIndexTable.getIndex(id), let intermediateMessage = self.messageHistoryTable.getMessage(index) else {
+            return false
+        }
+        let currentMessage = self.renderIntermediateMessage(intermediateMessage)
+        let storeForwardInfo: StoreMessageForwardInfo?
+        if let forwardInfo = intermediateMessage.forwardInfo {
+            storeForwardInfo = StoreMessageForwardInfo(authorId: forwardInfo.authorId, sourceId: forwardInfo.sourceId, sourceMessageId: forwardInfo.sourceMessageId, date: forwardInfo.date, authorSignature: forwardInfo.authorSignature, psaType: forwardInfo.psaType, flags: forwardInfo.flags)
+        } else {
+            storeForwardInfo = nil
+        }
+        let message = StoreMessage(
+            id: intermediateMessage.id,
+            customStableId: nil,
+            globallyUniqueId: intermediateMessage.globallyUniqueId,
+            groupingKey: intermediateMessage.groupingKey,
+            threadId: intermediateMessage.threadId,
+            timestamp: intermediateMessage.timestamp,
+            flags: StoreMessageFlags(intermediateMessage.flags),
+            tags: intermediateMessage.tags,
+            globalTags: intermediateMessage.globalTags,
+            localTags: intermediateMessage.localTags,
+            forwardInfo: storeForwardInfo,
+            authorId: intermediateMessage.authorId,
+            text: intermediateMessage.text,
+            attributes: currentMessage.attributes,
+            media: currentMessage.media
+        )
+        guard let updatedMessage = self.messageHistoryTable.markMessageAsLocallyDeleted(id, message: message, attribute: attribute, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &self.currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations) else {
+            return false
+        }
+
+        if let bag = self.installedStoreOrUpdateMessageActionsByPeerId[id.peerId] {
+            for action in bag.copyItems() {
+                action.addOrUpdate(messages: [updatedMessage], transaction: transaction)
+            }
+        }
+        return true
     }
     
     fileprivate func offsetPendingMessagesTimestamps(lowerBound: MessageId, excludeIds: Set<MessageId>, timestamp: Int32) {
