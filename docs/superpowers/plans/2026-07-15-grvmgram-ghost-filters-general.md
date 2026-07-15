@@ -114,6 +114,7 @@ public static var shouldSuppressStoryRead: ((PeerId) -> Bool)?
 public static var shouldSuppressContentRead: ((PeerId) -> Bool)?
 public static var shouldSuppressUploadProgress: ((PeerId) -> Bool)?
 public static var shouldForceOfflineAfterOnline: ((PeerId) -> Bool)?
+public static var shouldSuggestGhostForStories: ((PeerId) -> Bool)?
 public static var shouldMarkReadAfterAction: ((PeerId) -> Bool)?
 public static var shouldUseScheduledMessages: ((PeerId) -> Bool)?
 public static var sendWithoutSoundMode: ((PeerId) -> Int32)?
@@ -180,9 +181,12 @@ The old `shouldIncreaseWebviewSize`, text-only filter closure, zero-argument Gho
 - `submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift`
 - `submodules/TelegramCore/Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift`
 - `submodules/TelegramCore/Sources/State/ManagedSynchronizeViewStoriesOperations.swift`
+- `submodules/TelegramCore/Sources/TelegramEngine/Messages/ReplyThreadHistory.swift`
+- `submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift`
+- `submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift`
+- `submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift`
 - `submodules/TelegramCore/Sources/State/MessageReactions.swift`
 - `submodules/TelegramCore/Sources/TelegramEngine/Messages/Translate.swift`
-- `submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift`
 - `submodules/TelegramCore/BUILD`
 - `submodules/TranslateUI/Sources/ChatTranslation.swift`
 - `submodules/TelegramUI/Sources/ChatController.swift`
@@ -190,7 +194,14 @@ The old `shouldIncreaseWebviewSize`, text-only filter closure, zero-argument Gho
 - `submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift`
 - `submodules/TelegramUI/Sources/ChatInterfaceStateContextQueries.swift`
 - `submodules/TelegramUI/Sources/AppDelegate.swift`
+- `submodules/TelegramUI/Sources/SharedNotificationManager.swift`
+- `submodules/TelegramUI/Sources/Chat/ChatControllerMediaRecording.swift`
 - `submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/StoryContainerScreen.swift`
+- `submodules/TelegramUI/Components/ChatListHeaderComponent/Sources/ChatListHeaderComponent.swift`
+- `submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift`
+- `submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift`
+- `submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift`
+- `submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift`
 - `submodules/WebUI/Sources/WebAppWebView.swift`
 - `submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift`
 - `submodules/AyuGramSettingsUI/Sources/AyuGramFiltersController.swift`
@@ -330,6 +341,9 @@ git commit -m "feat: define account scoped ghost and filter settings"
 - Modify: `submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift`
 - Modify: `submodules/TelegramCore/Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift`
 - Modify: `submodules/TelegramCore/Sources/State/ManagedSynchronizeViewStoriesOperations.swift`
+- Modify: `submodules/TelegramCore/Sources/TelegramEngine/Messages/ReplyThreadHistory.swift`
+- Modify: `submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift`
+- Modify: `submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift`
 - Modify: `submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift`
 - Test: `Tests/GRVMgramContracts/test_ghost_runtime_contract.py`
 
@@ -365,6 +379,18 @@ class GhostRuntimeContractTests(unittest.TestCase):
         ui = self.source("submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift")
         self.assertIn("ghostLockedComponents", ui)
         self.assertIn("Locked Components", ui)
+
+    def test_reply_threads_do_not_bypass_ghost(self) -> None:
+        source = self.source("submodules/TelegramCore/Sources/TelegramEngine/Messages/ReplyThreadHistory.swift")
+        self.assertIn("shouldSuppressReadReceipts?(self.account.peerId)", source)
+        self.assertIn("readDiscussion", source)
+        self.assertIn("readSavedHistory", source)
+
+    def test_interactive_content_read_receives_account_id(self) -> None:
+        source = self.source("submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift")
+        self.assertIn("accountPeerId: PeerId", source)
+        self.assertIn("shouldSuppressContentRead?(accountPeerId)", source)
+        self.assertNotIn("shouldSuppressContentRead?()", source)
 ```
 
 - [ ] **Step 2: Verify RED**
@@ -395,9 +421,11 @@ Assign `typingAndUploads` to both `shouldSuppressTyping` and `shouldSuppressUplo
 
 - `ManagedSynchronizePeerReadStates` uses `stateManager.accountPeerId` and retains the already-proven transaction that calls `confirmSynchronizedIncomingReadState(peerId:)` before completing the operation.
 - Story synchronization and content-consumption managers use `stateManager.accountPeerId`. Their existing `withTakenOperation`/operation-log removal remains intact.
+- `_internal_markMessageContentAsConsumedInteractively` receives `accountPeerId` from `TelegramEngine.Messages`'s `self.account.peerId`; its producer-side content-read suppression uses that exact ID as well as the managed operation consumer. This closes the earlier zero-argument check before an operation is enqueued.
 - `ManagedLocalInputActivities` already receives `accountPeerId`; pass it into typing and upload hooks.
 - `AccountTaskManager` and `AccountStateManager` use their existing `accountPeerId` fields.
 - Extend `AccountPresenceManager.init` with `accountPeerId: PeerId`, and pass `self.peerId` from `Account.swift` at its construction site.
+- In `ReplyThreadHistory.applyMaxReadIndex`, keep the existing local thread counters/summary update, but skip both direct `messages.readDiscussion` and `messages.readSavedHistory` requests when `shouldSuppressReadReceipts?(account.peerId)` is true. This direct-network path does not pass through `ManagedSynchronizePeerReadStates` and must be gated independently.
 
 Do not suppress the mandatory offline packet sent while leaving the app. Suppress only attempts to advertise online state or active input.
 
@@ -420,7 +448,7 @@ Expected: PASS, including the `confirmSynchronizedIncomingReadState` guard.
 - [ ] **Step 8: Commit Ghost component wiring**
 
 ```powershell
-git add submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift submodules/TelegramCore/Sources/State/AccountTaskManager.swift submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift submodules/TelegramCore/Sources/Account/Account.swift submodules/TelegramCore/Sources/State/ManagedSynchronizePeerReadStates.swift submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift submodules/TelegramCore/Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift submodules/TelegramCore/Sources/State/ManagedSynchronizeViewStoriesOperations.swift submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift Tests/GRVMgramContracts/test_ghost_runtime_contract.py
+git add submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift submodules/TelegramCore/Sources/State/AccountTaskManager.swift submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift submodules/TelegramCore/Sources/Account/Account.swift submodules/TelegramCore/Sources/State/ManagedSynchronizePeerReadStates.swift submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift submodules/TelegramCore/Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift submodules/TelegramCore/Sources/State/ManagedSynchronizeViewStoriesOperations.swift submodules/TelegramCore/Sources/TelegramEngine/Messages/ReplyThreadHistory.swift submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift Tests/GRVMgramContracts/test_ghost_runtime_contract.py
 git commit -m "fix: complete account scoped ghost mode"
 ```
 
@@ -512,7 +540,7 @@ Remove the old boolean switch from `AyuGramCoreController`; render a selector/di
 
 Move the suggestion to the first path that would call `component.content.markAsSeen(id:)` around `StoryContainerScreen.swift:1704`. For one story-screen instance:
 
-- if suggestion is disabled or Story Ghost is already effective, continue immediately;
+- if `shouldSuggestGhostForStories?(context.account.peerId)` is false or Story Ghost is already effective for that account, continue immediately;
 - otherwise suspend the first mark operation and present `textAlertController` with `Enable Ghost Mode` and `View Normally`;
 - `Enable Ghost Mode` writes the exact account setting, waits until the coordinator snapshot has received the updated value, then continues through the now-suppressed mark path;
 - `View Normally` performs the original mark once;
@@ -800,6 +828,8 @@ External requests:
 
 Set `URLRequest.timeoutInterval = 15.0`, require HTTP 2xx, validate JSON types and one output per input, and map timeout/HTTP/malformed/count mismatch to the existing `.generic` translation error. Never silently return the source text as a successful translation.
 
+For Google, issue one encoded request per input string with at most four requests in flight and restore original order before writing attributes; this avoids ambiguous segmentation of multiple `q` values. For Yandex, send repeated `text` form fields in one request and require its returned `text` array count to match. Empty input arrays complete without a request.
+
 - [ ] **Step 4: Make provider choice account-scoped in UI and engine calls**
 
 `AyuGramGeneralController` offers Telegram, Google, and Yandex only. It writes `translationProvider` through `updateGRVMSettings` for `context.account.peerId`. `AyuGramFeatureManager` implements `translationProvider(accountPeerId)` from the exact coordinator snapshot. In `TranslateUI/Sources/ChatTranslation.swift`, resolve it with `context.account.peerId` and pass the typed value into `context.engine.messages.translateMessages`. The network helper receives the provider as an argument and never reads mutable global state.
@@ -827,6 +857,7 @@ git commit -m "feat: add working translation providers"
 - Create: `submodules/TelegramUI/Sources/GRVMLinkPreviewRewrite.swift`
 - Modify: `submodules/TelegramUI/Sources/ChatController.swift`
 - Modify: `submodules/TelegramUI/Sources/ChatInterfaceStateContextQueries.swift`
+- Modify: `submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift`
 - Modify: `submodules/TelegramUI/BUILD`
 - Modify: `submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift`
 - Modify: `submodules/AyuGramSettingsUI/Sources/AyuGramGeneralController.swift`
@@ -876,12 +907,14 @@ Return the original string for a non-HTTP(S) scheme, parse failure, unsupported 
 
 At `ChatInterfaceStateContextQueries.swift:559`, retain original detected URLs in `UrlPreviewState` for edit detection and UI. Build a separate rewritten array only when `shouldImproveLinkPreviews?(context.account.peerId)` is true, and pass it to `webpagePreview`. This prevents an edit loop where the composer text and remembered preview URL disagree.
 
+Convert the existing rendered-webpage consumer in `ChatMessageWebpageBubbleContentNode` to `shouldImproveLinkPreviews?(item.context.account.peerId)`. It remains a presentation hint only; URL rewriting stays centralized in the composer preview request.
+
 - [ ] **Step 6: Verify and commit**
 
 ```powershell
 python -m unittest Tests.GRVMgramContracts.test_general_integrations_contract.GeneralLinkContractTests -v
 git diff --check
-git add submodules/TelegramUI/Sources/GRVMLinkPreviewRewrite.swift submodules/TelegramUI/Sources/ChatController.swift submodules/TelegramUI/Sources/ChatInterfaceStateContextQueries.swift submodules/TelegramUI/BUILD submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift submodules/AyuGramSettingsUI/Sources/AyuGramGeneralController.swift Tests/GRVMgramContracts/test_general_integrations_contract.py
+git add submodules/TelegramUI/Sources/GRVMLinkPreviewRewrite.swift submodules/TelegramUI/Sources/ChatController.swift submodules/TelegramUI/Sources/ChatInterfaceStateContextQueries.swift submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift submodules/TelegramUI/BUILD submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift submodules/AyuGramSettingsUI/Sources/AyuGramGeneralController.swift Tests/GRVMgramContracts/test_general_integrations_contract.py
 git commit -m "feat: finish link warning and preview controls"
 ```
 
@@ -893,6 +926,15 @@ Expected: tests PASS and commit succeeds.
 
 **Files:**
 - Modify: `submodules/WebUI/Sources/WebAppWebView.swift`
+- Modify: `submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift`
+- Modify: `submodules/TelegramUI/Sources/AppDelegate.swift`
+- Modify: `submodules/TelegramUI/Sources/SharedNotificationManager.swift`
+- Modify: `submodules/TelegramUI/Sources/ChatController.swift`
+- Modify: `submodules/TelegramUI/Sources/Chat/ChatControllerMediaRecording.swift`
+- Modify: `submodules/TelegramUI/Components/ChatListHeaderComponent/Sources/ChatListHeaderComponent.swift`
+- Modify: `submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift`
+- Modify: `submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift`
+- Modify: `submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift`
 - Modify: `submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift`
 - Modify: `submodules/AyuGramSettingsUI/Sources/AyuGramGeneralController.swift`
 - Test: `Tests/GRVMgramContracts/test_general_integrations_contract.py`
@@ -957,7 +999,7 @@ Expected: all tests PASS; `git diff --check` has no output.
 - [ ] **Step 7: Commit independent Webview controls and regression guards**
 
 ```powershell
-git add submodules/WebUI/Sources/WebAppWebView.swift submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift submodules/AyuGramSettingsUI/Sources/AyuGramGeneralController.swift Tests/GRVMgramContracts/test_general_integrations_contract.py Tests/GRVMgramContracts/test_general_regressions_contract.py
+git add submodules/WebUI/Sources/WebAppWebView.swift submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift submodules/TelegramUI/Sources/AppDelegate.swift submodules/TelegramUI/Sources/SharedNotificationManager.swift submodules/TelegramUI/Sources/ChatController.swift submodules/TelegramUI/Sources/Chat/ChatControllerMediaRecording.swift submodules/TelegramUI/Components/ChatListHeaderComponent/Sources/ChatListHeaderComponent.swift submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift submodules/AyuGramSettingsUI/Sources/AyuGramGeneralController.swift Tests/GRVMgramContracts/test_general_integrations_contract.py Tests/GRVMgramContracts/test_general_regressions_contract.py
 git commit -m "feat: finish general settings parity"
 ```
 
@@ -979,6 +1021,7 @@ Internal factory names such as `ayuGramFilterEditorController` stay unchanged fo
 - [ ] Run all six Python modules from Task 8 with fresh output.
 - [ ] Run `git diff --check`.
 - [ ] Run `rg -n "shouldSuppress(ReadReceipts|Presence|Typing|StoryRead|ContentRead|UploadProgress): \(\(\) -> Bool\)|isMessageHiddenByFilter: \(\(Int64, String\)|shouldIncreaseWebviewSize" submodules -g '*.swift'` and confirm no runtime declarations/consumers remain.
+- [ ] Run `rg -n "shouldSuppress(ReadReceipts|ContentRead|StoryRead)\?\(\)|shouldSuggestGhostForStories\?\(\)" submodules/TelegramCore submodules/TelegramUI -g '*.swift'` and confirm no zero-argument call remains, including `ReplyThreadHistory` and interactive content consumption.
 - [ ] Run `rg -n "translate\.googleapis\.com|translate\.yandex\.net|api[_-]?key|AIza" submodules/TelegramCore/Sources/GRVMExternalTranslation.swift` and confirm only the two approved hosts are present and no key is embedded.
 - [ ] Run `rg -n "ayugrambot|extera|dpaste|AyuGramDocs|github\.com/AyuGram"` across files changed by this plan and confirm no public endpoint/reference was introduced.
 - [ ] Inspect `git status --short` and stage only files owned by completed tasks; preserve unrelated user/agent changes.

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement the remaining applicable iOS parity features that do not belong to message lifecycle, Ghost/filters/general, or chat/appearance ownership: Send as Sticker, numeric peer lookup and IDs, local profile dates, GIF controls, seconds in reactions/service messages, rounded sticker pickers, channel-author badges, capture privacy, and adaptive Saved Music color.
+**Goal:** Implement the remaining applicable iOS parity features that do not belong to message lifecycle, Ghost/filters/general, or chat/appearance ownership: Send as Sticker, numeric peer lookup and IDs, local profile dates, media controls, precise timestamps, rounded stickers, channel-author badges, capture privacy, adaptive Saved Music color, local crash export/reset, explicit read/delete/navigation actions, and locally preserved consumable-media replay/copy.
 
-**Architecture:** Reuse Telegram's existing conversion, picker, Postbox, gallery, formatting, sticker, notification, and media-resource primitives. Pure identity parsing/formatting lives in AyuGramLib. Account-sensitive display policy is resolved with an explicit account peer ID. UIKit additions are deliberately narrow: one capture cover, one service-time pill, clipping at existing sticker image layers, one author badge, and a cached Saved Music color extraction path.
+**Architecture:** Reuse Telegram's existing conversion, picker, Postbox, engine search/read/delete, gallery, formatting, sticker, notification, enqueue, and media-resource primitives. Pure identity parsing/formatting lives in AyuGramLib. Account-sensitive policy is resolved with an explicit account peer ID. UIKit additions stay narrow; durable media operations extend the account archive coordinator and use stock viewers/uploaders rather than parallel implementations.
 
 **Tech Stack:** Swift, UIKit, Photos/LegacyMediaPickerUI, Postbox, TelegramEngine, TelegramCore, SwiftSignalKit, AsyncDisplayKit, MediaBox, Python 3.12 `unittest` source-contract tests, Bazel/rules_apple in final macOS CI.
 
@@ -134,7 +134,13 @@ public final class GRVMScreenCapturePrivacyController {
 ### Create
 
 - `submodules/AyuGramLib/Sources/GRVMPeerId.swift` - numeric grammar and Telegram/Bot API formatting.
+- `submodules/TelegramCore/Sources/GRVMReadReceiptBypass.swift` - expiring exact-read override tokens.
+- `submodules/TelegramCore/Sources/TelegramEngine/Messages/GRVMReadActions.swift` - local/forced peer read policy.
+- `submodules/TelegramCore/Sources/TelegramEngine/Messages/DeleteOwnMessages.swift` - author/topic-scoped server deletion.
+- `submodules/TelegramCore/Sources/SyncCore/GRVMPreservedConsumableMediaAttribute.swift` - durable replay marker.
+- `submodules/TelegramUI/Sources/GRVMLocalCrashExport.swift` - bounded app-log staging and session marker.
 - `submodules/TelegramUI/Sources/GRVMScreenCapturePrivacyController.swift` - capture observer and opaque cover.
+- `submodules/TelegramUI/Sources/GRVMPreservedMediaEnqueue.swift` - verified local media to standalone upload.
 - `submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/GRVMSavedMusicColor.swift` - local artwork extraction, normalization, and cache.
 - `Tests/GRVMgramContracts/test_send_as_sticker_contract.py`
 - `Tests/GRVMgramContracts/test_peer_identity_contract.py`
@@ -153,11 +159,30 @@ public final class GRVMScreenCapturePrivacyController {
 - `submodules/AyuGramLib/Sources/AyuGramSettings.swift`
 - `submodules/AyuGramLib/BUILD`
 - `submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift`
+- `submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift`
 - `submodules/TelegramCore/Sources/AyuGramHooks.swift`
 - `submodules/TelegramCore/Sources/TelegramEngine/Contacts/TelegramEngineContacts.swift`
+- `submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift`
+- `submodules/TelegramCore/Sources/TelegramEngine/Messages/ApplyMaxReadIndexInteractively.swift`
+- `submodules/TelegramCore/Sources/TelegramEngine/Messages/ReplyThreadHistory.swift`
+- `submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift`
+- `submodules/TelegramCore/Sources/State/ManagedSynchronizePeerReadStates.swift`
+- `submodules/TelegramCore/Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift`
+- `submodules/TelegramCore/Sources/State/SynchronizeConsumeMessageContentsOperation.swift`
+- `submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift`
+- `submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift`
+- `submodules/TelegramCore/Sources/SyncCore/SyncCore_SynchronizeConsumeMessageContentsOperation.swift`
+- `submodules/TelegramCore/Sources/Account/AccountManager.swift`
+- `submodules/AccountContext/Sources/AccountContext.swift`
 - `submodules/MediaPickerUI/Sources/MediaPickerScreen.swift`
 - `submodules/TelegramUI/Sources/ChatControllerOpenAttachmentMenu.swift`
+- `submodules/TelegramUI/Sources/ChatController.swift`
 - `submodules/TelegramUI/Sources/Chat/ChatControllerPaste.swift`
+- `submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift`
+- `submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift`
+- `submodules/TelegramUI/Sources/ChatControllerScrollToPointInHistory.swift`
+- `submodules/TelegramUI/Sources/OpenChatMessage.swift`
+- `submodules/TelegramUI/Sources/AccountContext.swift`
 - `submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift`
 - `submodules/ChatListUI/BUILD`
 - `submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift`
@@ -168,6 +193,10 @@ public final class GRVMScreenCapturePrivacyController {
 - `submodules/TelegramStringFormatting/Sources/PresenceStrings.swift`
 - `submodules/Components/ReactionListContextMenuContent/Sources/ReactionListContextMenuContent.swift`
 - `submodules/TelegramUI/Components/Chat/ChatMessageActionBubbleContentNode/Sources/ChatMessageActionBubbleContentNode.swift`
+- `submodules/TelegramUI/Components/Chat/ChatMessageItemView/Sources/ChatMessageItemView.swift`
+- `submodules/TelegramUI/Components/MediaManager/PeerMessagesMediaPlaylist/Sources/PeerMessagesMediaPlaylist.swift`
+- `submodules/GalleryData/Sources/GalleryData.swift`
+- `submodules/GalleryUI/Sources/SecretMediaPreviewController.swift`
 - `submodules/StickerPackPreviewUI/Sources/StickerPackPreviewGridItem.swift`
 - `submodules/TelegramUI/Components/EntityKeyboard/Sources/EmojiPagerContentComponent.swift`
 - `submodules/TelegramUI/Components/EntityKeyboard/Sources/EmojiKeyboardItemLayer.swift`
@@ -175,7 +204,6 @@ public final class GRVMScreenCapturePrivacyController {
 - `submodules/TelegramUI/Sources/AppDelegate.swift`
 - `submodules/AyuGramSettingsUI/Sources/AyuGramOtherController.swift`
 - `submodules/AyuGramSettingsUI/Sources/AyuGramAppearanceController.swift`
-- relevant Bazel `BUILD` files only when a new cross-module dependency is required.
 
 ---
 
@@ -294,8 +322,6 @@ Expected: PASS and no whitespace errors.
 **Files:**
 - Create: `submodules/AyuGramLib/Sources/GRVMPeerId.swift`
 - Modify: `submodules/AyuGramLib/BUILD`
-- Modify: `submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift`
-- Modify: `submodules/TelegramCore/Sources/AyuGramHooks.swift`
 - Modify: `submodules/TelegramCore/Sources/TelegramEngine/Contacts/TelegramEngineContacts.swift`
 - Modify: `submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift`
 - Modify: `submodules/ChatListUI/BUILD`
@@ -374,7 +400,7 @@ Format through `stringForFullDate` with current presentation data. Do not infer 
 ```powershell
 python -m unittest Tests.GRVMgramContracts.test_peer_identity_contract -v
 git diff --check
-git add submodules/AyuGramLib/Sources/GRVMPeerId.swift submodules/AyuGramLib/BUILD submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift submodules/TelegramCore/Sources/AyuGramHooks.swift submodules/TelegramCore/Sources/TelegramEngine/Contacts/TelegramEngineContacts.swift submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift submodules/ChatListUI/BUILD submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD Tests/GRVMgramContracts/test_peer_identity_contract.py
+git add submodules/AyuGramLib/Sources/GRVMPeerId.swift submodules/AyuGramLib/BUILD submodules/TelegramCore/Sources/TelegramEngine/Contacts/TelegramEngineContacts.swift submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift submodules/ChatListUI/BUILD submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD Tests/GRVMgramContracts/test_peer_identity_contract.py
 git commit -m "feat: add local peer lookup ids and profile dates"
 ```
 
@@ -739,9 +765,57 @@ Expected: PASS.
 - Modify: `submodules/AyuGramSettingsUI/Sources/AyuGramOtherController.swift`
 - Modify: `submodules/TelegramUI/Sources/AppDelegate.swift`
 
+**Exact local-only interface:**
+
+```swift
+public struct GRVMLocalCrashExportBundle {
+    public let urls: [URL]
+    public let fileCount: Int
+    public let totalBytes: Int64
+}
+
+public final class GRVMLocalCrashExport {
+    public init(rootPath: String)
+    public func beginForegroundSession(accountPeerId: PeerId)
+    public func markSessionClean()
+    public func previousSessionEndedUnexpectedly(accountPeerId: PeerId) -> Bool
+    public func stageExport() -> Signal<GRVMLocalCrashExportBundle?, NoError>
+    public func cleanup(_ bundle: GRVMLocalCrashExportBundle)
+}
+```
+
 - [ ] **Step 1: Write the failing local-only contract**
 
-Require the opt-in setting to be account-scoped, local `.ips`/log discovery under canonical app-container directories, a bounded native share-sheet export, no upload/network endpoint, and an alert confirmation before resetting only the active account's GRVM settings.
+```python
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+EXPORT = ROOT / "submodules/TelegramUI/Sources/GRVMLocalCrashExport.swift"
+APP = ROOT / "submodules/TelegramUI/Sources/AppDelegate.swift"
+OTHER = ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramOtherController.swift"
+
+
+class CrashResetContractTests(unittest.TestCase):
+    def test_export_is_bounded_and_local(self) -> None:
+        source = EXPORT.read_text(encoding="utf-8")
+        for token in ("collectLogs", "collectShortLogFiles", "resolvingSymlinksInPath", "isRegularFile", "16 * 1024 * 1024", "cleanup"):
+            self.assertIn(token, source)
+        for forbidden in ("urlsession", "appcenter", "github.com", "ayugram"):
+            self.assertNotIn(forbidden, source.lower())
+
+    def test_app_does_not_start_remote_crash_upload(self) -> None:
+        source = APP.read_text(encoding="utf-8")
+        self.assertNotIn("AppCenter.start", source)
+        self.assertIn("previousSessionEndedUnexpectedly", source)
+
+    def test_reset_is_confirmed_and_account_scoped(self) -> None:
+        source = OTHER.read_text(encoding="utf-8")
+        self.assertIn("textAlertController", source)
+        self.assertIn("updateGRVMSettings", source)
+        self.assertIn("context.account.peerId", source)
+        self.assertNotIn("updateAyuGramSettings(accountManager:", source)
+```
 
 - [ ] **Step 2: Run RED**
 
@@ -749,11 +823,47 @@ Require the opt-in setting to be account-scoped, local `.ips`/log discovery unde
 python -m unittest Tests.GRVMgramContracts.test_crash_reset_contract -v
 ```
 
-- [ ] **Step 3: Implement export and reset**
+Expected: FAIL because the switch has no consumer, reset writes the legacy global settings value without confirmation, and AppCenter upload starts independently of the preference.
 
-Discover only regular files under known crash/log roots, reject symlinks/out-of-container canonical paths, cap count and aggregate bytes, and present `UIActivityViewController`. On the next launch, offer export only when opted in and files exist. Reset uses `updateGRVMSettings(accountId:context.account.peerId, ...)` after confirmation; cancellation performs no write.
+- [ ] **Step 3: Implement a foreground-session marker without claiming access to iOS `.ips` files**
 
-- [ ] **Step 4: Run GREEN and commit**
+Store one small atomic JSON marker under `<rootPath>/grvm-local-crash/`, containing account peer ID, foreground start timestamp, and `active`. On `applicationDidBecomeActive`, inspect the previous marker for the primary account and then atomically write `active = true`. On `applicationDidEnterBackground` and `applicationWillTerminate`, write `active = false`. A true marker on the next launch means only "the foreground session ended unexpectedly"; the UI must not call it a symbolicated iOS crash report.
+
+iOS does not expose system Analytics `.ips` files to a sandboxed application. Export only Telegram's own app logs from `Logger.shared.collectLogs()` and `collectShortLogFiles()`. Do not scan outside the app container and do not install a signal/exception handler.
+
+- [ ] **Step 4: Stage a bounded immutable export**
+
+Call `Logger.shared.sync()`, combine normal and critical logs, sort newest first, and accept at most eight regular files with an aggregate maximum of 16 MiB. Resolve the app root and each candidate with `resolvingSymlinksInPath`; reject a candidate unless it remains below the canonical root, has `.isRegularFile == true`, and is not a symlink. Copy accepted files to a unique temporary directory before sharing so the logger cannot mutate them during export.
+
+`stageExport()` returns nil when no safe file exists. Present `UIActivityViewController` with the staged file URLs, include file count/total bytes in the confirmation, and call `cleanup` from both completion and cancellation paths. No network request or automatic recipient is configured.
+
+- [ ] **Step 5: Wire opt-in and remove remote crash startup**
+
+Remove the `AppCenter.start(... Crashes.self ...)` block from `AppDelegate`; keeping an SDK import/build dependency temporarily is harmless, but no crash service may start or upload. After the primary account settings signal is available:
+
+- keep the marker only while `crashReportingEnabled` is true;
+- if the prior primary-account marker was active and safe logs exist, offer `Export Local Logs` or `Not Now` once;
+- never present an offer for a different account's marker;
+- add a manual `Export Local Logs` row in Other while the preference is enabled.
+
+The preference controls local prompting/export only. Turning it off marks the current session clean and removes its marker.
+
+- [ ] **Step 6: Confirm reset and reset only settings**
+
+The destructive row presents `textAlertController`; cancellation performs no write. Confirmation calls:
+
+```swift
+updateGRVMSettings(
+    accountId: context.account.peerId,
+    accountManager: context.sharedContext.accountManager
+) { _ in
+    AyuGramSettings.defaultSettings
+}
+```
+
+It does not clear archived messages, backed-up media, another account's settings, Telegram preferences, or authorization. The coordinator receives the new snapshot through the account plan's existing subscription.
+
+- [ ] **Step 7: Run GREEN and commit**
 
 ```powershell
 python -m unittest Tests.GRVMgramContracts.test_crash_reset_contract -v
@@ -762,17 +872,95 @@ git add submodules/TelegramUI/Sources/GRVMLocalCrashExport.swift submodules/Tele
 git commit -m "feat: add local crash export and safe reset"
 ```
 
+Expected: PASS and no remote crash-service startup remains.
+
+---
+
 ### Task 9: Add own-message deletion, read variants, callback copy, and jump to beginning
 
 **Files:**
+- Create: `submodules/TelegramCore/Sources/GRVMReadReceiptBypass.swift`
+- Create: `submodules/TelegramCore/Sources/TelegramEngine/Messages/GRVMReadActions.swift`
+- Create: `submodules/TelegramCore/Sources/TelegramEngine/Messages/DeleteOwnMessages.swift`
 - Create: `Tests/GRVMgramContracts/test_peer_message_actions_contract.py`
+- Modify: `submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift`
+- Modify: `submodules/TelegramCore/Sources/TelegramEngine/Messages/ApplyMaxReadIndexInteractively.swift`
+- Modify: `submodules/TelegramCore/Sources/TelegramEngine/Messages/ReplyThreadHistory.swift`
+- Modify: `submodules/TelegramCore/Sources/State/ManagedSynchronizePeerReadStates.swift`
+- Modify: `submodules/AccountContext/Sources/AccountContext.swift`
+- Modify: `submodules/TelegramUI/Sources/AccountContext.swift`
 - Modify: `submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift`
+- Modify: `submodules/TelegramUI/Components/Chat/ChatMessageItemView/Sources/ChatMessageItemView.swift`
 - Modify: `submodules/TelegramUI/Sources/ChatController.swift`
-- Modify: chat/peer more-menu sources identified by the contract.
+- Modify: `submodules/TelegramUI/Sources/ChatControllerScrollToPointInHistory.swift`
+
+**Exact engine interfaces:**
+
+```swift
+public enum GRVMReadMode {
+    case automatic
+    case localOnly
+    case forceServer
+}
+
+public struct GRVMDeleteOwnMessagesResult: Equatable {
+    public let matchedCount: Int
+    public let submittedCount: Int
+}
+
+public extension TelegramEngine.Messages {
+    func grvmApplyMaxReadIndex(
+        _ index: MessageIndex,
+        mode: GRVMReadMode
+    ) -> Signal<Void, NoError>
+
+    func grvmDeleteOwnMessages(
+        peerId: PeerId,
+        threadId: Int64?
+    ) -> Signal<GRVMDeleteOwnMessagesResult, NoError>
+}
+```
 
 - [ ] **Step 1: Write exact action-route tests**
 
-Require: group/topic-only Delete Own Messages with confirmation and author-filtered IDs; Read Message and Read All Locally through Postbox confirmation without a server request; Read All on Server through Telegram's stock interactive read path; Copy Callback Data from the selected reply-markup button; and Jump to Beginning through the earliest-history navigation primitive rather than loading every row.
+```python
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+class PeerMessageActionsContractTests(unittest.TestCase):
+    def source(self, path: str) -> str:
+        return (ROOT / path).read_text(encoding="utf-8")
+
+    def test_own_delete_search_is_author_and_topic_scoped(self) -> None:
+        source = self.source("submodules/TelegramCore/Sources/TelegramEngine/Messages/DeleteOwnMessages.swift")
+        self.assertIn("fromId: account.peerId", source)
+        self.assertIn("threadId: threadId", source)
+        self.assertIn("message.author?.id == account.peerId", source)
+        self.assertIn("type: .forEveryone", source)
+
+    def test_local_read_consumes_sync_operation(self) -> None:
+        source = self.source("submodules/TelegramCore/Sources/TelegramEngine/Messages/GRVMReadActions.swift")
+        self.assertIn("case .localOnly", source)
+        self.assertIn("confirmSynchronizedIncomingReadState", source)
+
+    def test_forced_server_read_is_narrow_and_expiring(self) -> None:
+        source = self.source("submodules/TelegramCore/Sources/GRVMReadReceiptBypass.swift")
+        for token in ("accountPeerId", "peerId", "maxIncomingReadId", "expiresAt"):
+            self.assertIn(token, source)
+        managed = self.source("submodules/TelegramCore/Sources/State/ManagedSynchronizePeerReadStates.swift")
+        self.assertIn("consumeIfMatching", managed)
+
+    def test_button_copy_and_history_jump_use_existing_routes(self) -> None:
+        button = self.source("submodules/TelegramUI/Components/Chat/ChatMessageItemView/Sources/ChatMessageItemView.swift")
+        self.assertIn("case let .callback(_, data)", button)
+        self.assertIn("UIPasteboard.general", button)
+        scroll = self.source("submodules/TelegramUI/Sources/ChatControllerScrollToPointInHistory.swift")
+        self.assertIn("scrollToStartOfHistory", scroll)
+        self.assertIn(".lowerBound", scroll)
+```
 
 - [ ] **Step 2: Run RED**
 
@@ -780,28 +968,156 @@ Require: group/topic-only Delete Own Messages with confirmation and author-filte
 python -m unittest Tests.GRVMgramContracts.test_peer_message_actions_contract -v
 ```
 
-- [ ] **Step 3: Implement local/server semantics**
+Expected: FAIL because the actions and forced/local read modes are absent.
 
-When Ghost read suppression is effective, local actions consume/update local read state only. The server variant remains explicit and uses stock networking. Delete Own Messages never includes another author and respects the selected topic.
+- [ ] **Step 3: Implement complete own-message deletion**
 
-- [ ] **Step 4: Run GREEN and commit**
+Show `Delete Own Messages` only in cloud legacy groups and group channels/megagroups, including the current forum topic; hide it in users, broadcast channels, secret chats, scheduled messages, and custom chat contents. Require a destructive confirmation before search.
+
+The engine repeatedly calls existing `searchMessages` with:
+
+```swift
+.peer(
+    peerId: peerId,
+    fromId: account.peerId,
+    tags: nil,
+    reactions: nil,
+    threadId: threadId,
+    minDate: nil,
+    maxDate: nil
+)
+```
+
+using an empty query, limit 100, and returned `SearchMessagesState` until `result.completed`. Deduplicate IDs and defensively retain only cloud messages whose `author?.id == account.peerId` and whose `threadId` equals the requested topic when non-nil. After the complete scan, submit batches of at most 100 through `deleteMessagesInteractively(... type: .forEveryone)`. Do not use `removeAllMessagesWithAuthor`, which is local-only and would leave server history intact. Cancellation before confirmation/search submits nothing.
+
+- [ ] **Step 4: Add local and explicitly forced read modes**
+
+For a peer chat, `localOnly` runs the same Postbox/state-manager mutation as `_internal_applyMaxReadIndexInteractively` and calls `transaction.confirmSynchronizedIncomingReadState(index.id.peerId)` in the same transaction, leaving no Push/Validate operation. It never sends a network request. Hide local read actions for secret chats because starting secret-media timers is not a local-only operation.
+
+`forceServer` registers a 30-second `GRVMReadReceiptBypass` keyed by exact account ID, dialog peer ID, and target max incoming ID, then invokes the stock interactive read mutation. `ManagedSynchronizePeerReadStates` consumes a token only when all three values match the Push state; unmatched/expired tokens never bypass Ghost. Remove a token on completion/failure/timeout. This is an ephemeral action token, not a settings fallback.
+
+Refactor `ReplyThreadHistory.applyMaxReadIndex` to accept `mode: GRVMReadMode = .automatic`:
+
+- all modes update only that thread's local counters/summary;
+- `.automatic` sends `readDiscussion`/`readSavedHistory` only when Ghost read suppression is false;
+- `.localOnly` never sends either request;
+- `.forceServer` sends the existing direct request regardless of Ghost.
+
+Extend the `AccountContext` protocol/implementation with a GRVM method that routes peer chats to the engine and reply threads to `ReplyThreadHistory`, preserving topic scope.
+
+- [ ] **Step 5: Wire exact menu behavior**
+
+- `Read Message` appears on one incoming cloud message while Ghost read suppression is effective and calls `.localOnly` for that selected `MessageIndex`.
+- Chat/peer More menu exposes `Read All Locally` and `Read All on Server` when the current cloud chat/topic has unread incoming messages. Use the latest loaded/top `MessageIndex`; local and forced-server modes remain distinct.
+- `Jump to Beginning` calls the existing `scrollToStartOfHistory()` implementation, whose `ChatHistoryLocationInput` uses `.lowerBound`; do not enumerate or pre-load all messages.
+- Long-pressing an inline reply-markup button extends `ChatMessageItemView.presentMessageButtonContextMenu`. For `.callback(_, data)`, let `bytes = data.makeData()`, then copy `String(data: bytes, encoding: .utf8)` when valid or lowercase hexadecimal otherwise. Keep the existing URL-button long-press path and do not execute the callback.
+
+- [ ] **Step 6: Run GREEN and commit**
 
 ```powershell
 python -m unittest Tests.GRVMgramContracts.test_peer_message_actions_contract -v
 git diff --check
-git add submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift submodules/TelegramUI/Sources/ChatController.swift Tests/GRVMgramContracts/test_peer_message_actions_contract.py
+git add submodules/TelegramCore/Sources/GRVMReadReceiptBypass.swift submodules/TelegramCore/Sources/TelegramEngine/Messages/GRVMReadActions.swift submodules/TelegramCore/Sources/TelegramEngine/Messages/DeleteOwnMessages.swift submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift submodules/TelegramCore/Sources/TelegramEngine/Messages/ApplyMaxReadIndexInteractively.swift submodules/TelegramCore/Sources/TelegramEngine/Messages/ReplyThreadHistory.swift submodules/TelegramCore/Sources/State/ManagedSynchronizePeerReadStates.swift submodules/AccountContext/Sources/AccountContext.swift submodules/TelegramUI/Sources/AccountContext.swift submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift submodules/TelegramUI/Components/Chat/ChatMessageItemView/Sources/ChatMessageItemView.swift submodules/TelegramUI/Sources/ChatController.swift submodules/TelegramUI/Sources/ChatControllerScrollToPointInHistory.swift Tests/GRVMgramContracts/test_peer_message_actions_contract.py
 git commit -m "feat: add GRVMgram peer message actions"
 ```
+
+Expected: PASS; local mode produces no synchronization operation and forced mode cannot bypass another account/dialog/read ID.
+
+---
 
 ### Task 10: Add Burn, local one-view replay, and forwarding overrides
 
 **Files:**
+- Create: `submodules/TelegramCore/Sources/SyncCore/GRVMPreservedConsumableMediaAttribute.swift`
+- Create: `submodules/TelegramUI/Sources/GRVMPreservedMediaEnqueue.swift`
 - Create: `Tests/GRVMgramContracts/test_preserved_media_actions_contract.py`
-- Modify: message context menus, gallery/player entry points, forwarding/enqueue paths, and `GRVMMessageArchiveCoordinator`.
+- Modify: `submodules/TelegramCore/Sources/Account/AccountManager.swift`
+- Modify: `submodules/TelegramCore/Sources/AyuGramHooks.swift`
+- Modify: `submodules/TelegramCore/Sources/SyncCore/SyncCore_SynchronizeConsumeMessageContentsOperation.swift`
+- Modify: `submodules/TelegramCore/Sources/State/SynchronizeConsumeMessageContentsOperation.swift`
+- Modify: `submodules/TelegramCore/Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift`
+- Modify: `submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift`
+- Modify: `submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift`
+- Modify: `submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift`
+- Modify: `submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift`
+- Modify: `submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift`
+- Modify: `submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift`
+- Modify: `submodules/GalleryData/Sources/GalleryData.swift`
+- Modify: `submodules/GalleryUI/Sources/SecretMediaPreviewController.swift`
+- Modify: `submodules/TelegramUI/Components/MediaManager/PeerMessagesMediaPlaylist/Sources/PeerMessagesMediaPlaylist.swift`
+- Modify: `submodules/TelegramUI/Sources/OpenChatMessage.swift`
+- Modify: `submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift`
+- Modify: `submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift`
+
+**Exact preservation interfaces:**
+
+```swift
+public final class GRVMPreservedConsumableMediaAttribute: MessageAttribute, Equatable {
+    public let resourceIds: [String]
+    public let media: [Media]
+    public let preparedAt: Int32
+}
+
+public extension GRVMMessageArchiveCoordinator {
+    func prepareConsumableMedia(_ message: Message) -> Signal<Bool, NoError>
+    func restoreArchivedMedia(for message: Message) -> Signal<Bool, NoError>
+}
+
+public static var prepareConsumableMedia: ((PeerId, Message) -> Signal<Bool, NoError>)?
+```
+
+Extend the stock API compatibly:
+
+```swift
+public func markMessageContentAsConsumedInteractively(
+    messageId: MessageId,
+    force: Bool = false
+) -> Signal<Void, NoError>
+```
 
 - [ ] **Step 1: Write availability and safety tests**
 
-Cover deleted, TTL, one-view photo/video, one-play voice/video, no-forwards, cache-present, archive-present, and unavailable resources. Require original `MediaResourceId` restoration, visible unavailable errors, stock upload progress, and no mutation of server permission/protection flags.
+```python
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+class PreservedMediaActionsContractTests(unittest.TestCase):
+    def source(self, path: str) -> str:
+        return (ROOT / path).read_text(encoding="utf-8")
+
+    def test_force_consume_is_persisted_in_operation(self) -> None:
+        operation = self.source("submodules/TelegramCore/Sources/SyncCore/SyncCore_SynchronizeConsumeMessageContentsOperation.swift")
+        self.assertIn("let force: Bool", operation)
+        self.assertIn('decodeInt32ForKey("f"', operation)
+        managed = self.source("submodules/TelegramCore/Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift")
+        self.assertIn("!operation.force", managed)
+
+    def test_consumed_media_has_a_persistent_marker(self) -> None:
+        attribute = self.source("submodules/TelegramCore/Sources/SyncCore/GRVMPreservedConsumableMediaAttribute.swift")
+        self.assertIn("resourceIds", attribute)
+        self.assertIn("media", attribute)
+        self.assertIn("encodeObjectArray", attribute)
+        self.assertIn("preparedAt", attribute)
+        account = self.source("submodules/TelegramCore/Sources/Account/AccountManager.swift")
+        self.assertIn("GRVMPreservedConsumableMediaAttribute", account)
+
+    def test_local_copy_uses_standalone_upload_and_reports_unavailable(self) -> None:
+        source = self.source("submodules/TelegramUI/Sources/GRVMPreservedMediaEnqueue.swift")
+        self.assertIn("LocalFileReferenceMediaResource", source)
+        self.assertIn(".standalone", source)
+        self.assertIn("case unavailable", source)
+        for forbidden in ("copyProtectionEnabled = false", "isCopyProtected = false", "noForwards = false"):
+            self.assertNotIn(forbidden, source)
+
+    def test_replay_does_not_consume_again(self) -> None:
+        gallery = self.source("submodules/GalleryUI/Sources/SecretMediaPreviewController.swift")
+        self.assertIn("consumeOnOpen", gallery)
+        playlist = self.source("submodules/TelegramUI/Components/MediaManager/PeerMessagesMediaPlaylist/Sources/PeerMessagesMediaPlaylist.swift")
+        self.assertIn("consumeViewOnce", playlist)
+```
 
 - [ ] **Step 2: Run RED**
 
@@ -809,22 +1125,61 @@ Cover deleted, TTL, one-view photo/video, one-play voice/video, no-forwards, cac
 python -m unittest Tests.GRVMgramContracts.test_preserved_media_actions_contract -v
 ```
 
-- [ ] **Step 3: Implement Burn/replay**
+Expected: FAIL because forced content consumption, durable consumable metadata, replay mode, and standalone local-copy enqueue do not exist.
 
-Burn invokes Telegram's local destructive/expiry action after confirmation. Replay restores a verified persistent blob when necessary and opens the stock viewer/player without re-consuming the local one-view/one-play copy.
+- [ ] **Step 3: Preserve a consumable resource before first consumption**
 
-- [ ] **Step 4: Implement local forwarding**
+`prepareConsumableMedia` is account-scoped and succeeds only when the coordinator belongs to `message.id`'s active account and at least the primary photo/file resource is complete in MediaBox. Reuse `GRVMMediaResourceCollector` and `GRVMArchivedMediaStore.archive`; do not fetch. After all selected complete resources reach durable archive state, attach `GRVMPreservedConsumableMediaAttribute` to the same Postbox message in one transaction. Store sorted stable resource-ID strings, original image/file descriptors through Postbox `encodeObjectArray`, and `preparedAt`; media objects contain metadata/resource references, not payload bytes or absolute archive paths.
 
-When stock forwarding is forbidden but bytes are locally available, construct a normal new outgoing enqueue/upload with preserved representable caption/entities and progress. If bytes are unavailable, do not send an empty placeholder.
+Wire `AyuGramHooks.prepareConsumableMedia(accountPeerId,message)` through the exact account registry. Before normal first opening in `GalleryData`/`SecretMediaPreviewController`, and before one-play voice/instant-video is marked consumed in `PeerMessagesMediaPlaylist`, await this signal when `saveDeletedMessages` is enabled. Failure does not fabricate an archive marker; stock viewing may continue, but replay will honestly be unavailable.
 
-- [ ] **Step 5: Run GREEN and commit**
+- [ ] **Step 4: Keep prepared media metadata while Telegram marks it consumed**
+
+Register `GRVMPreservedConsumableMediaAttribute` in `AccountManager`'s Postbox decoder table. Pass `accountPeerId` into `markMessageContentAsConsumedRemotely` from `AccountStateManagementUtils`. When the message has the preserved attribute, update consumed/countdown attributes and tags normally but do not replace its original `TelegramMediaImage`/`TelegramMediaFile` with `TelegramMediaExpiredContent`. Apply the same guard in `ManagedAutoremoveMessageOperations` and server-message merge branches that would replace prepared media with expired content; retain the local attribute and descriptor array. The lifecycle plan still decides when a whole TTL message becomes locally deleted.
+
+Do not retain original media merely because Ghost is enabled. The durable marker is required, preventing a UI row that points at bytes that were never backed up.
+
+- [ ] **Step 5: Make Burn an explicit server content-read operation**
+
+Desktop Burn means `messages.readMessageContents`/`channels.readMessageContents`, not a local file deletion. Show Burn for one incoming, unconsumed TTL/view-once message with media. Confirm because it is irreversible on Telegram. Try `prepareConsumableMedia` first when the main resource is local, then call `markMessageContentAsConsumedInteractively(messageId:force:true)`.
+
+Add `force` to `SynchronizeConsumeMessageContentsOperation`, encoded as key `"f"` with decode default false. The operation builder preserves it. Both the interactive producer and `ManagedSynchronizeConsumeMessageContentsOperations` ignore Ghost content-read suppression only when `operation.force == true`; all automatic consumption remains suppressed. Direct channel/user/group requests and PTS handling stay stock.
+
+- [ ] **Step 6: Add replay without a second receipt**
+
+`Replay` appears only when the preserved attribute exists and `restoreArchivedMedia(for:)` verifies/restores every primary resource under its original `MediaResourceId`. If a later server merge already replaced the visible media, restore the attribute's descriptor array into the local Postbox message only after resource verification. On failure, show a localized unavailable alert and do not open an empty viewer.
+
+- Add `consumeOnOpen: Bool = true` to `SecretMediaPreviewController`; Replay passes false, normal opening passes true.
+- Add `consumeViewOnce: Bool = true` to `PeerMessagesMediaPlaylist`; Replay passes false and builds playback data with `isViewOnce = false`, while normal playlists retain current one-play behavior.
+- Reuse `OpenChatMessage`/stock gallery and media manager after restoration. Do not clone a custom player.
+
+- [ ] **Step 7: Implement local-copy forwarding as a new upload**
+
+Stock Forward remains unchanged for ordinary messages. For a deleted, TTL/one-view/one-play, or copy-protected message, show `Forward Local Copy` only when current MediaBox data or an archived blob can provide the complete primary resource. This action never sends a server forward reference.
+
+`GRVMPreservedMediaEnqueue`:
+
+- restores/verifies resources first;
+- creates a unique temporary hard link/copy and a `LocalFileReferenceMediaResource`;
+- clones only representable image/file dimensions, MIME type, filename, duration, audio/video/sticker attributes, caption, and `TextEntitiesMessageAttribute`;
+- assigns a new local media ID and `.standalone(media:)` reference;
+- strips source forward info, reply markup callbacks, autoremove/one-view attributes, and copy-protection metadata;
+- sends through the normal enqueue/upload path so stock progress, cancellation, retry, paid-message checks, and error handling remain active.
+
+Text-only protected content becomes a normal new text message with safe entities. Unsupported media kinds or missing bytes return a typed `.unsupported`/`.unavailable` error and enqueue nothing. This creates a user-authorized new message; it does not mutate the source message, server permissions, or Telegram's protection flags.
+
+- [ ] **Step 8: Run GREEN and commit exact files only**
 
 ```powershell
 python -m unittest Tests.GRVMgramContracts.test_preserved_media_actions_contract -v
 git diff --check
-git add submodules/TelegramCore submodules/TelegramUI submodules/AyuGramFeatures Tests/GRVMgramContracts/test_preserved_media_actions_contract.py
+git add submodules/TelegramCore/Sources/SyncCore/GRVMPreservedConsumableMediaAttribute.swift submodules/TelegramCore/Sources/Account/AccountManager.swift submodules/TelegramCore/Sources/AyuGramHooks.swift submodules/TelegramCore/Sources/SyncCore/SyncCore_SynchronizeConsumeMessageContentsOperation.swift submodules/TelegramCore/Sources/State/SynchronizeConsumeMessageContentsOperation.swift submodules/TelegramCore/Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift submodules/TelegramCore/Sources/TelegramEngine/Messages/MarkMessageContentAsConsumedInteractively.swift submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift submodules/GalleryData/Sources/GalleryData.swift submodules/GalleryUI/Sources/SecretMediaPreviewController.swift submodules/TelegramUI/Components/MediaManager/PeerMessagesMediaPlaylist/Sources/PeerMessagesMediaPlaylist.swift submodules/TelegramUI/Sources/GRVMPreservedMediaEnqueue.swift submodules/TelegramUI/Sources/OpenChatMessage.swift submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift Tests/GRVMgramContracts/test_preserved_media_actions_contract.py
 git commit -m "feat: add preserved media replay and forwarding"
 ```
+
+Expected: PASS; no directory-wide `git add` is used, preserving the user's unrelated Ghost change.
+
+---
 
 ### Task 11: Enforce official-resource boundaries and run the standalone release gate
 
@@ -846,6 +1201,10 @@ The module enumerates every file owned by this plan and asserts:
 - Streamer privacy uses public capture-state API;
 - GIF PiP stays gated while controls are visible;
 - notification top-overlay implementation remains present;
+- AppCenter crash upload is not started and local export stays inside the canonical app root;
+- local read leaves no synchronization operation, while force-server bypass tokens match account/dialog/max ID and expire;
+- Burn is the explicit forced content-read route, replay requires a durable marker, and local forwarding uses a new standalone upload;
+- no task commit command stages an entire `submodules/TelegramCore`, `submodules/TelegramUI`, or `submodules/AyuGramFeatures` directory;
 - no new settings field named for an unimplemented standalone row is introduced.
 
 The final localization/branding plan owns repository-wide public AyuGram name/link removal. This gate prevents this plan from adding or depending on those sources.
