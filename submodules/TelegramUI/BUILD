@@ -242,6 +242,7 @@ swift_library(
         "//submodules/DebugSettingsUI:DebugSettingsUI",
         "//submodules/AyuGramFeatures:AyuGramFeatures",
         "//submodules/AyuGramLib:AyuGramLib",
+        "//submodules/AyuGramSettingsUI:AyuGramSettingsUI",
         "//submodules/ImportStickerPackUI:ImportStickerPackUI",
         "//submodules/GradientBackground:GradientBackground",
         "//submodules/WallpaperBackgroundNode:WallpaperBackgroundNode",

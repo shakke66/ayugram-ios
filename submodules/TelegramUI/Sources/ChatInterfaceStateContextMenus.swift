@@ -37,6 +37,7 @@ import ChatMessageItemView
 import ChatMessageBubbleItemNode
 import AdsInfoScreen
 import AdsReportScreen
+import AyuGramSettingsUI
  
 private struct MessageContextMenuData {
     let starStatus: Bool?
@@ -2197,6 +2198,29 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 actions.insert(.separator, at: 0)
             }
             actions.insert(.custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: false, isEdit: true, stats: MessageReadStats(reactionCount: 0, peers: [], readTimestamps: [:]), action: nil), false), at: 0)
+        }
+
+        if messages.count == 1,
+           (message.attributes.contains(where: { $0 is GRVMEditHistoryMessageAttribute })
+                || AyuGramHooks.hasEditHistory?(context.account.peerId, message.id) == true) {
+            if !actions.isEmpty {
+                actions.insert(.separator, at: 0)
+            }
+            actions.insert(.action(ContextMenuActionItem(
+                text: "History",
+                icon: { theme in
+                    generateTintedImage(
+                        image: UIImage(bundleImageName: "Chat/Context Menu/History"),
+                        color: theme.contextMenu.primaryColor
+                    )
+                },
+                action: { _, dismiss in
+                    dismiss(.default)
+                    controllerInteraction.navigationController()?.pushViewController(
+                        grvmMessageHistoryController(context: context, messageId: message.id)
+                    )
+                }
+            )), at: 0)
         }
         
         if !actions.isEmpty, case .separator = actions[0] {

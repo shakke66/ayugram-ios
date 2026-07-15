@@ -66,6 +66,7 @@ import ReactionSelectionNode
 import ReactionListContextMenuContent
 import AttachmentUI
 import AttachmentTextInputPanelNode
+import AyuGramSettingsUI
 import MediaPickerUI
 import ChatPresentationInterfaceState
 import Pasteboard
@@ -5646,7 +5647,13 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             f(.dismissWithoutContent)
                             self?.interfaceInteraction?.beginMessageSearch(.everything, "")
                         })))
-                                                
+                        items.append(contentsOf: grvmArchiveContextMenuItems(
+                            context: context,
+                            sourceController: strongSelf,
+                            peerId: peer.id,
+                            threadId: nil
+                        ))
+
                         return items
                     }
                 case let .replyThread(message):
@@ -5660,7 +5667,12 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     )
                     |> map { peerNotificationSettings, threadData, globalNotificationSettings -> [ContextMenuItem] in
                         guard let channel = peer as? TelegramChannel else {
-                            return []
+                            return grvmArchiveContextMenuItems(
+                                context: context,
+                                sourceController: strongSelf,
+                                peerId: peer.id,
+                                threadId: threadId
+                            )
                         }
                         guard let threadData = threadData else {
                             return []
@@ -5914,6 +5926,13 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                 })))
                             }
                         }
+
+                        items.append(contentsOf: grvmArchiveContextMenuItems(
+                            context: context,
+                            sourceController: strongSelf,
+                            peerId: peer.id,
+                            threadId: threadId
+                        ))
 
                         return items
                     }

@@ -44,6 +44,7 @@ import UrlHandling
 import AvatarNode
 import AppBundle
 import LocalizedPeerData
+import AyuGramSettingsUI
 import PhoneNumberFormat
 import SettingsUI
 import UrlWhitelist
@@ -443,6 +444,13 @@ extension ChatControllerImpl {
                 self.push(controller)
             })))
         }
+
+        items.append(contentsOf: grvmArchiveContextMenuItems(
+            context: self.context,
+            sourceController: self,
+            peerId: peerId,
+            threadId: self.chatLocation.threadId
+        ))
 
         let presentationData = self.presentationData
         

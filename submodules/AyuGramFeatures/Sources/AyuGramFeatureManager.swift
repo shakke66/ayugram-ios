@@ -1,4 +1,5 @@
 import Postbox
+import SwiftSignalKit
 import TelegramCore
 import AyuGramLib
 
@@ -23,6 +24,25 @@ public final class AyuGramFeatureManager {
         }
         AyuGramHooks.preserveEditRevision = { [weak self] accountPeerId, message in
             return self?.registry.service(accountPeerId: accountPeerId)?.preserveEditRevision(message) ?? false
+        }
+        AyuGramHooks.hasEditHistory = { [weak self] accountPeerId, messageId in
+            return self?.registry.service(accountPeerId: accountPeerId)?.hasEditHistory(messageId) ?? false
+        }
+        AyuGramFeatures.deletedMessages = { [weak self] accountPeerId, peerId, threadId, query in
+            return self?.registry.service(accountPeerId: accountPeerId)?.deletedMessages(
+                peerId: peerId,
+                threadId: threadId,
+                query: query
+            ) ?? .single([])
+        }
+        AyuGramFeatures.clearDeleted = { [weak self] accountPeerId, peerId, threadId in
+            return self?.registry.service(accountPeerId: accountPeerId)?.clearDeleted(
+                peerId: peerId,
+                threadId: threadId
+            ) ?? .single([])
+        }
+        AyuGramFeatures.editHistory = { [weak self] accountPeerId, messageId in
+            return self?.registry.service(accountPeerId: accountPeerId)?.editHistory(messageId) ?? .single([])
         }
         AyuGramHooks.shouldPreserveOneTimeMedia = { [weak self] in
             return self?.currentSettings.saveDeletedMessages ?? false

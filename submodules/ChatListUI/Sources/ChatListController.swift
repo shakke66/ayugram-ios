@@ -54,6 +54,7 @@ import TextFormat
 import AvatarUploadToastScreen
 import AdsInfoScreen
 import AdsReportScreen
+import AyuGramSettingsUI
 import SearchBarNode
 import ChatListFilterTabContainerNode
 import HeaderPanelContainerComponent
@@ -3847,6 +3848,13 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                     sourceController.push(controller)
                 })))
             }
+
+            items.append(contentsOf: grvmArchiveContextMenuItems(
+                context: context,
+                sourceController: sourceController,
+                peerId: peerId,
+                threadId: nil
+            ))
 
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
             let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)

@@ -18,6 +18,30 @@ CONTEXT_EXTRACTION = (
 )
 HOOKS = ROOT / "submodules/TelegramCore/Sources/AyuGramHooks.swift"
 MANAGER = ROOT / "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
+FEATURES = ROOT / "submodules/AyuGramFeatures/Sources/AyuGramFeatures.swift"
+HISTORY_CONTROLLER = (
+    ROOT / "submodules/AyuGramSettingsUI/Sources/GRVMMessageHistoryController.swift"
+)
+DELETED_CONTROLLER = (
+    ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramDeletedMessagesController.swift"
+)
+EDITED_CONTROLLER = (
+    ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramEditedMessagesController.swift"
+)
+CONTEXT_MENU = TELEGRAM_UI / "Sources/ChatInterfaceStateContextMenus.swift"
+CHAT_CONTROLLER = TELEGRAM_UI / "Sources/ChatController.swift"
+BOT_FORUM_MENU = TELEGRAM_UI / "Sources/Chat/ChatControllerOpenPeer.swift"
+SAVED_MESSAGES_MENU = (
+    TELEGRAM_UI
+    / "Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift"
+)
+CHAT_LIST_MENU = ROOT / "submodules/ChatListUI/Sources/ChatListController.swift"
+LEGACY_DB = ROOT / "submodules/AyuGramLib/Sources/AyuDeletedMessagesDB.swift"
+ARCHIVE_MENU_ITEMS = (
+    ROOT / "submodules/AyuGramSettingsUI/Sources/GRVMArchiveContextMenuItems.swift"
+)
+TELEGRAM_UI_BUILD = TELEGRAM_UI / "BUILD"
+SETTINGS_UI_BUILD = ROOT / "submodules/AyuGramSettingsUI/BUILD"
 
 
 def window(value: str, anchor: str, size: int) -> str:
@@ -128,6 +152,140 @@ class HistoryUIContractTests(unittest.TestCase):
         self.assertGreaterEqual(len(call_sites), 10)
         self.assertTrue(any("Sticker" in name for name in call_sites))
         self.assertTrue(any("File" in name for name in call_sites))
+
+    def test_per_message_history_loads_exact_revisions_and_current_message(self) -> None:
+        self.assertTrue(HISTORY_CONTROLLER.exists(), "per-message History controller is missing")
+        value = HISTORY_CONTROLLER.read_text(encoding="utf-8")
+
+        for token in (
+            "public func grvmMessageHistoryController(",
+            "messageId: MessageId",
+            "AyuGramFeatures.editHistory?(context.account.peerId, messageId)",
+            "context.account.postbox.transaction",
+            "transaction.getMessage(messageId)",
+            "sorted",
+            "versions.append",
+            "PostboxDecoder(buffer: MemoryBuffer(data: data))",
+            "TextEntitiesMessageAttribute",
+            "stringWithAppliedEntities(",
+            "mediaSummary",
+            "resourceIds",
+            "ChatList_Search_NoResults",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, value)
+
+    def test_history_action_is_exact_and_visible_only_for_one_saved_message(self) -> None:
+        value = CONTEXT_MENU.read_text(encoding="utf-8")
+
+        for token in (
+            "messages.count == 1",
+            "$0 is GRVMEditHistoryMessageAttribute",
+            "AyuGramHooks.hasEditHistory?(context.account.peerId, message.id) == true",
+            "grvmMessageHistoryController(context: context, messageId: message.id)",
+            'UIImage(bundleImageName: "Chat/Context Menu/History")',
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, value)
+
+    def test_archive_ui_bridge_is_account_scoped(self) -> None:
+        hooks = HOOKS.read_text(encoding="utf-8")
+        manager = MANAGER.read_text(encoding="utf-8")
+        self.assertTrue(FEATURES.exists(), "async archive UI bridge is missing")
+        features = FEATURES.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "public static var hasEditHistory: ((PeerId, MessageId) -> Bool)?",
+            hooks,
+        )
+        for token in ("deletedMessages", "clearDeleted", "editHistory"):
+            with self.subTest(token=token):
+                self.assertIn("public static var " + token, features)
+        self.assertGreaterEqual(manager.count("registry.service(accountPeerId: accountPeerId)"), 6)
+
+    def test_deleted_archive_uses_exact_scope_search_and_message_actions(self) -> None:
+        value = DELETED_CONTROLLER.read_text(encoding="utf-8")
+
+        for token in (
+            "public func grvmDeletedMessagesController(",
+            "peerId: PeerId? = nil",
+            "threadId: Int64? = nil",
+            "context.account.peerId",
+            "AyuGramFeatures.deletedMessages?(",
+            "peerId, threadId, query",
+            "ItemListSingleLineInputItem",
+            "textUpdated:",
+            "MessageId(",
+            "peerId: PeerId(message.key.peerId)",
+            "namespace: message.key.namespace",
+            "id: message.key.messageId",
+            "subject: .message(id: .id(messageId)",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, value)
+        message_item = window(value, "case let .message(_, _, message):", 2500)
+        self.assertNotIn("action: {}", message_item)
+        self.assertIn("arguments.openMessage(messageId)", message_item)
+
+    def test_clear_deleted_confirms_waits_for_cleanup_and_refreshes_after_emission(self) -> None:
+        value = DELETED_CONTROLLER.read_text(encoding="utf-8")
+
+        for token in (
+            "standardTextAlertController(",
+            "AyuGramFeatures.clearDeleted?(",
+            "context.account.peerId",
+            "peerId, threadId",
+            ".start(next:",
+            "refreshToken.set",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, value)
+
+    def test_deleted_actions_reach_every_chat_menu_path(self) -> None:
+        sources = [
+            CHAT_CONTROLLER.read_text(encoding="utf-8"),
+            BOT_FORUM_MENU.read_text(encoding="utf-8"),
+            SAVED_MESSAGES_MENU.read_text(encoding="utf-8"),
+            CHAT_LIST_MENU.read_text(encoding="utf-8"),
+            ARCHIVE_MENU_ITEMS.read_text(encoding="utf-8"),
+        ]
+        combined = "\n".join(sources)
+
+        self.assertIn("grvmArchiveContextMenuItems", combined)
+        self.assertGreaterEqual(combined.count("grvmArchiveContextMenuItems"), 5)
+        self.assertIn("context.account.peerId", combined)
+        self.assertIn("threadId", combined)
+        self.assertIn("View Deleted", combined)
+        self.assertIn("Clear Deleted", combined)
+
+    def test_legacy_global_history_is_informational_and_database_api_is_retired(self) -> None:
+        edited = EDITED_CONTROLLER.read_text(encoding="utf-8")
+        legacy = LEGACY_DB.read_text(encoding="utf-8")
+
+        self.assertNotIn("AyuDeletedMessagesDB", edited)
+        self.assertIn("GRVMgram History", edited)
+        self.assertIn("@available(*, deprecated", legacy)
+        self.assertIn("public enum AyuDeletedMessagesDB", legacy)
+        for token in (
+            "getDeletedMessages",
+            "getAllDeletedMessages",
+            "getEditHistory",
+            "getAllEditedMessages",
+            "isMessageDeleted",
+            "hasEditHistory",
+        ):
+            with self.subTest(token=token):
+                self.assertNotIn(token, legacy)
+
+    def test_telegram_ui_owns_the_one_way_settings_ui_dependency(self) -> None:
+        telegram_ui = TELEGRAM_UI_BUILD.read_text(encoding="utf-8")
+        settings_ui = SETTINGS_UI_BUILD.read_text(encoding="utf-8")
+
+        self.assertIn(
+            '"//submodules/AyuGramSettingsUI:AyuGramSettingsUI"',
+            telegram_ui,
+        )
+        self.assertNotIn("//submodules/TelegramUI:TelegramUI", settings_ui)
 
 
 if __name__ == "__main__":

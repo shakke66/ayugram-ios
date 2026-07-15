@@ -1,123 +1,253 @@
 import Foundation
 import UIKit
+import AccountContext
+import AyuGramFeatures
+import AyuGramLib
 import Display
-import SwiftSignalKit
+import ItemListUI
 import Postbox
+import SwiftSignalKit
 import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
-import ItemListUI
-import PresentationDataUtils
-import AccountContext
-import AyuGramLib
 
-private enum AyuDeletedSection: Int32 {
+private struct GRVMDeletedArguments {
+    let context: AccountContext
+    let updateQuery: (String) -> Void
+    let openMessage: (MessageId) -> Void
+}
+
+private enum GRVMDeletedSection: Int32 {
+    case search
     case messages
 }
 
-private enum AyuDeletedEntry: ItemListNodeEntry {
-    case header(PresentationTheme, String)
+private enum GRVMDeletedEntry: ItemListNodeEntry {
+    case search(PresentationTheme, String)
     case empty(PresentationTheme)
-    case message(Int32, PresentationTheme, String, String)
+    case message(Int32, PresentationTheme, GRVMArchivedMessage)
 
     var section: ItemListSectionId {
-        return AyuDeletedSection.messages.rawValue
+        switch self {
+        case .search:
+            return GRVMDeletedSection.search.rawValue
+        case .empty, .message:
+            return GRVMDeletedSection.messages.rawValue
+        }
     }
 
     var stableId: Int32 {
         switch self {
-        case .header:
+        case .search:
             return 0
         case .empty:
             return 1
-        case let .message(index, _, _, _):
+        case let .message(index, _, _):
             return 100 + index
         }
     }
 
-    static func ==(lhs: AyuDeletedEntry, rhs: AyuDeletedEntry) -> Bool {
+    static func ==(lhs: GRVMDeletedEntry, rhs: GRVMDeletedEntry) -> Bool {
         switch (lhs, rhs) {
-        case let (.header(_, lText), .header(_, rText)):
-            return lText == rText
+        case let (.search(_, lhsQuery), .search(_, rhsQuery)):
+            return lhsQuery == rhsQuery
         case (.empty, .empty):
             return true
-        case let (.message(lIndex, _, lText, lDate), .message(rIndex, _, rText, rDate)):
-            return lIndex == rIndex && lText == rText && lDate == rDate
+        case let (.message(lhsIndex, _, lhsMessage), .message(rhsIndex, _, rhsMessage)):
+            return lhsIndex == rhsIndex && lhsMessage == rhsMessage
         default:
             return false
         }
     }
 
-    static func <(lhs: AyuDeletedEntry, rhs: AyuDeletedEntry) -> Bool {
+    static func <(lhs: GRVMDeletedEntry, rhs: GRVMDeletedEntry) -> Bool {
         return lhs.stableId < rhs.stableId
     }
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
+        let arguments = arguments as! GRVMDeletedArguments
         switch self {
-        case let .header(_, text):
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
+        case let .search(_, query):
+            return ItemListSingleLineInputItem(
+                context: arguments.context,
+                presentationData: presentationData,
+                title: NSAttributedString(),
+                text: query,
+                placeholder: presentationData.strings.Common_Search,
+                type: .regular(capitalization: false, autocorrection: false),
+                clearType: .always,
+                sectionId: self.section,
+                textUpdated: { value in
+                    arguments.updateQuery(value)
+                },
+                action: {
+                    arguments.updateQuery(query)
+                },
+                cleared: {
+                    arguments.updateQuery("")
+                }
+            )
         case .empty:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("No deleted messages have been saved yet."), sectionId: self.section)
-        case let .message(_, _, text, dateLabel):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: text, label: dateLabel, sectionId: self.section, style: .blocks, action: {})
+            return ItemListTextItem(
+                presentationData: presentationData,
+                text: .plain(presentationData.strings.ChatList_Search_NoResults),
+                sectionId: self.section
+            )
+        case let .message(_, _, message):
+            let messageId = MessageId(
+                peerId: PeerId(message.key.peerId),
+                namespace: message.key.namespace,
+                id: message.key.messageId
+            )
+            var body = message.text
+            if body.isEmpty {
+                body = message.mediaSummary.isEmpty ? "[empty]" : "[\(message.mediaSummary)]"
+            } else if !message.mediaSummary.isEmpty {
+                body = "[\(message.mediaSummary)] \(body)"
+            }
+            let author = [message.senderName, message.peerTitle]
+                .filter { !$0.isEmpty }
+                .joined(separator: " - ")
+            if !author.isEmpty {
+                body = "\(author): \(body)"
+            }
+            if !message.resourceIds.isEmpty {
+                body += " [\(message.resourceIds.count) archived resources]"
+            }
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+            return ItemListDisclosureItem(
+                presentationData: presentationData,
+                icon: nil,
+                title: body,
+                label: formatter.string(from: Date(timeIntervalSince1970: TimeInterval(message.deletedAt))),
+                sectionId: self.section,
+                style: .blocks,
+                action: {
+                    arguments.openMessage(messageId)
+                }
+            )
         }
     }
 }
 
-private func ayuDeletedEntries(messages: [AyuSavedMessage], presentationData: PresentationData) -> [AyuDeletedEntry] {
-    var entries: [AyuDeletedEntry] = []
-    entries.append(.header(presentationData.theme, "Recent Deleted Messages"))
-
+private func grvmDeletedEntries(
+    messages: [GRVMArchivedMessage],
+    query: String,
+    presentationData: PresentationData
+) -> [GRVMDeletedEntry] {
+    var entries: [GRVMDeletedEntry] = [.search(presentationData.theme, query)]
     if messages.isEmpty {
         entries.append(.empty(presentationData.theme))
-        return entries
+    } else {
+        entries.append(contentsOf: messages.enumerated().map { index, message in
+            .message(Int32(index), presentationData.theme, message)
+        })
     }
-
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .short
-
-    var index: Int32 = 0
-    for message in messages {
-        var body = message.text
-        if body.isEmpty {
-            body = message.mediaDescription.isEmpty ? "[empty]" : "[\(message.mediaDescription)]"
-        } else if !message.mediaDescription.isEmpty {
-            body = "[\(message.mediaDescription)] \(body)"
-        }
-        let who = [message.senderName, message.peerTitle].filter { !$0.isEmpty }.joined(separator: " · ")
-        var display = who.isEmpty ? body : "\(who): \(body)"
-        if !message.mediaResourceIds.isEmpty {
-            display += " 📎"
-        }
-        let date = Date(timeIntervalSince1970: TimeInterval(message.date))
-        entries.append(.message(index, presentationData.theme, display, formatter.string(from: date)))
-        index += 1
-    }
-
     return entries
 }
 
-public func ayuGramDeletedMessagesController(context: AccountContext) -> ViewController {
-    let messages = AyuDeletedMessagesDB.shared.getAllDeletedMessages()
+/// Displays the active account's deleted-message archive for one chat or topic scope.
+public func grvmDeletedMessagesController(
+    context: AccountContext,
+    peerId: PeerId? = nil,
+    threadId: Int64? = nil
+) -> ViewController {
+    let queryPromise = ValuePromise<String>("", ignoreRepeated: true)
+    let refreshCounter = Atomic<Int>(value: 0)
+    let refreshToken = ValuePromise<Int>(0, ignoreRepeated: true)
+    let messages = combineLatest(queryPromise.get(), refreshToken.get())
+    |> mapToSignal { queryText, _ -> Signal<(String, [GRVMArchivedMessage]), NoError> in
+        let normalized = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query: String? = normalized.isEmpty ? nil : normalized
+        let result = AyuGramFeatures.deletedMessages?(
+            context.account.peerId, peerId, threadId, query
+        ) ?? .single([])
+        return result |> map { (queryText, $0) }
+    }
 
-    let signal = context.sharedContext.presentationData
-    |> map { presentationData -> (ItemListControllerState, (ItemListNodeState, Any)) in
-        let entries = ayuDeletedEntries(messages: messages, presentationData: presentationData)
+    var controller: ItemListController?
+    let arguments = GRVMDeletedArguments(
+        context: context,
+        updateQuery: { value in
+            queryPromise.set(value)
+        },
+        openMessage: { [weak controller] messageId in
+            let _ = (context.engine.data.get(
+                TelegramEngine.EngineData.Item.Peer.Peer(id: messageId.peerId)
+            )
+            |> deliverOnMainQueue).startStandalone(next: { [weak controller] peer in
+                guard let peer,
+                      let navigationController = controller?.navigationController as? NavigationController else {
+                    return
+                }
+                context.sharedContext.navigateToChatController(NavigateToChatControllerParams(
+                    navigationController: navigationController,
+                    context: context,
+                    chatLocation: .peer(peer),
+                    subject: .message(id: .id(messageId), highlight: nil, timecode: nil, setupReply: false)
+                ))
+            })
+        }
+    )
+
+    let signal = combineLatest(context.sharedContext.presentationData, messages)
+    |> map { presentationData, result -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let (query, messages) = result
+        let clear = ItemListNavigationButton(
+            content: .text("Clear"),
+            style: .regular,
+            enabled: !messages.isEmpty,
+            action: { [weak controller] in
+                let alert = standardTextAlertController(
+                    theme: AlertControllerTheme(presentationData: presentationData),
+                    title: "Clear Deleted",
+                    text: "Permanently remove the GRVMgram deleted-message archive for this chat?",
+                    actions: [
+                        TextAlertAction(
+                            type: .genericAction,
+                            title: presentationData.strings.Common_Cancel,
+                            action: {}
+                        ),
+                        TextAlertAction(type: .destructiveAction, title: "Clear", action: {
+                            let cleanup = AyuGramFeatures.clearDeleted?(
+                                context.account.peerId, peerId, threadId
+                            ) ?? .single([])
+                            let _ = cleanup.start(next: { _ in
+                                refreshToken.set(refreshCounter.modify { $0 + 1 })
+                            })
+                        })
+                    ]
+                )
+                controller?.present(alert, in: .window(.root))
+            }
+        )
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),
-            title: .text("Deleted Messages"),
+            title: .text("GRVMgram Deleted Messages"),
             leftNavigationButton: nil,
-            rightNavigationButton: nil,
+            rightNavigationButton: clear,
             backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)
         )
         let listState = ItemListNodeState(
             presentationData: ItemListPresentationData(presentationData),
-            entries: entries,
+            entries: grvmDeletedEntries(
+                messages: messages,
+                query: query,
+                presentationData: presentationData
+            ),
             style: .blocks
         )
-        return (controllerState, (listState, ()))
+        return (controllerState, (listState, arguments))
     }
 
-    return ItemListController(context: context, state: signal)
+    controller = ItemListController(context: context, state: signal)
+    return controller!
+}
+
+@available(*, deprecated, message: "Use grvmDeletedMessagesController(context:peerId:threadId:)")
+/// Compatibility entry point for the former global archive screen.
+public func ayuGramDeletedMessagesController(context: AccountContext) -> ViewController {
+    return grvmDeletedMessagesController(context: context)
 }
