@@ -76,7 +76,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MODELS = ROOT / "submodules/AyuGramLib/Sources/GRVMMessageArchiveModels.swift"
-STORE = ROOT / "submodules/AyuGramLib/Sources/GRVMMessageArchiveStore.swift"
 
 
 class ArchiveContractTests(unittest.TestCase):
@@ -84,16 +83,6 @@ class ArchiveContractTests(unittest.TestCase):
         source = MODELS.read_text(encoding="utf-8")
         for field in ("accountId", "peerId", "namespace", "messageId", "threadId"):
             self.assertIn(f"let {field}:", source)
-
-    def test_store_schema_is_account_scoped(self) -> None:
-        source = STORE.read_text(encoding="utf-8")
-        for column in ("account_id", "peer_id", "message_namespace", "message_id", "thread_id"):
-            self.assertIn(column, source)
-
-    def test_revision_schema_has_both_uniqueness_constraints(self) -> None:
-        source = STORE.read_text(encoding="utf-8")
-        self.assertIn("UNIQUE(account_id, peer_id, message_namespace, message_id, version)", source)
-        self.assertIn("UNIQUE(account_id, peer_id, message_namespace, message_id, fingerprint)", source)
 ```
 
 - [ ] **Step 2: Run the tests to verify missing files fail**
@@ -225,6 +214,7 @@ public final class GRVMMessageArchiveStore {
     public func saveRevision(_ draft: GRVMEditRevisionDraft, media: [GRVMArchivedMedia]) throws -> GRVMEditRevision
     public func updateMedia(_ record: GRVMArchivedMedia) throws
     public func deletedMessages(_ query: GRVMArchiveQuery) throws -> [GRVMArchivedMessage]
+    public func deletedMessages(keys: [GRVMMessageKey]) throws -> [GRVMArchivedMessage]
     public func editHistory(_ key: GRVMMessageKey) throws -> [GRVMEditRevision]
     public func deletedKeys(accountId: Int64) throws -> Set<GRVMMessageKey>
     public func revisedKeys(accountId: Int64) throws -> Set<GRVMMessageKey>
@@ -236,7 +226,22 @@ public final class GRVMMessageArchiveStore {
 
 - [ ] **Step 1: Extend the failing tests with executable SQL requirements**
 
-Add a test helper that extracts the triple-quoted `schemaV2` string from Swift, opens `:memory:`, executes it, and asserts:
+Add `STORE = ROOT / "submodules/AyuGramLib/Sources/GRVMMessageArchiveStore.swift"`, the account-column source check from Task 1's requirements, and uniqueness checks that include `thread_id`:
+
+```python
+def test_revision_schema_has_both_uniqueness_constraints(self) -> None:
+    source = STORE.read_text(encoding="utf-8")
+    self.assertIn(
+        "UNIQUE(account_id, peer_id, message_namespace, message_id, thread_id, version)",
+        source,
+    )
+    self.assertIn(
+        "UNIQUE(account_id, peer_id, message_namespace, message_id, thread_id, fingerprint)",
+        source,
+    )
+```
+
+Add a helper that extracts the triple-quoted `schemaV2` string from Swift, opens `:memory:`, executes it, and asserts:
 
 ```python
 def test_schema_executes_and_declares_v2_tables(self) -> None:
@@ -275,7 +280,7 @@ CREATE TABLE IF NOT EXISTS archived_messages (
     media_summary TEXT NOT NULL DEFAULT '',
     peer_title TEXT NOT NULL DEFAULT '',
     sender_name TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (account_id, peer_id, message_namespace, message_id)
+    PRIMARY KEY (account_id, peer_id, message_namespace, message_id, thread_id)
 );
 CREATE INDEX IF NOT EXISTS archived_messages_dialog
 ON archived_messages(account_id, peer_id, thread_id, deleted_at DESC);
@@ -294,11 +299,11 @@ CREATE TABLE IF NOT EXISTS edit_revisions (
     entities BLOB NOT NULL DEFAULT X'',
     media_summary TEXT NOT NULL DEFAULT '',
     resource_ids BLOB NOT NULL DEFAULT X'',
-    UNIQUE(account_id, peer_id, message_namespace, message_id, version),
-    UNIQUE(account_id, peer_id, message_namespace, message_id, fingerprint)
+    UNIQUE(account_id, peer_id, message_namespace, message_id, thread_id, version),
+    UNIQUE(account_id, peer_id, message_namespace, message_id, thread_id, fingerprint)
 );
 CREATE INDEX IF NOT EXISTS edit_revisions_message
-ON edit_revisions(account_id, peer_id, message_namespace, message_id, version);
+ON edit_revisions(account_id, peer_id, message_namespace, message_id, thread_id, version);
 
 CREATE TABLE IF NOT EXISTS archived_media_blobs (
     account_id INTEGER NOT NULL,
@@ -315,9 +320,10 @@ CREATE TABLE IF NOT EXISTS archived_message_media (
     peer_id INTEGER NOT NULL,
     message_namespace INTEGER NOT NULL,
     message_id INTEGER NOT NULL,
+    thread_id INTEGER NOT NULL DEFAULT 0,
     revision_id INTEGER NOT NULL DEFAULT 0,
     resource_id TEXT NOT NULL,
-    PRIMARY KEY (account_id, peer_id, message_namespace, message_id, revision_id, resource_id),
+    PRIMARY KEY (account_id, peer_id, message_namespace, message_id, thread_id, revision_id, resource_id),
     FOREIGN KEY (account_id, resource_id)
       REFERENCES archived_media_blobs(account_id, resource_id) ON DELETE CASCADE
 );
@@ -446,9 +452,9 @@ public final class GRVMMessageArchiveIndex {
 }
 ```
 
-- [ ] **Step 4: Define the future coordinator load contract**
+- [ ] **Step 4: Record the coordinator handoff without testing an absent file**
 
-Extend the source contract to require Task 6's coordinator to load `deletedKeys(accountId:)` and `revisedKeys(accountId:)`, then call `index.replace`. Every successful write must mutate the store first and the index second before publishing completion.
+Task 3 tests only the index that exists in this commit. Task 6 extends the contract after creating the coordinator and requires it to load `deletedKeys(accountId:)` and `revisedKeys(accountId:)`, then call `index.replace`. Every successful write must mutate the store first and the index second before publishing completion.
 
 - [ ] **Step 5: Run and commit**
 
@@ -548,7 +554,7 @@ Expected: tests PASS; the grep returns no settings-controller call.
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add submodules/AyuGramLib/Sources/GRVMAccountSettings.swift submodules/AyuGramLib/Sources/AyuGramSettings.swift submodules/TelegramUIPreferences/Sources/PostboxKeys.swift submodules/AyuGramSettingsUI/Sources Tests/GRVMgramContracts/test_account_settings_contract.py
+git add submodules/AyuGramLib/Sources/GRVMAccountSettings.swift submodules/AyuGramLib/Sources/AyuGramSettings.swift submodules/TelegramUIPreferences/Sources/PostboxKeys.swift submodules/AyuGramSettingsUI/Sources/AyuGramFiltersController.swift submodules/AyuGramSettingsUI/Sources/AyuGramShadowBanController.swift submodules/AyuGramSettingsUI/Sources/AyuGramGeneralController.swift submodules/AyuGramSettingsUI/Sources/AyuGramChatsController.swift submodules/AyuGramSettingsUI/Sources/AyuGramOtherController.swift submodules/AyuGramSettingsUI/Sources/AyuGramAppearanceController.swift submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift Tests/GRVMgramContracts/test_account_settings_contract.py
 git commit -m "feat: scope GRVMgram settings by account"
 ```
 
@@ -684,6 +690,7 @@ git commit -m "feat: preserve downloaded deleted media"
 - Modify: `submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift`
 - Modify: `submodules/TelegramUI/Sources/AppDelegate.swift:1026-1125`
 - Test: `Tests/GRVMgramContracts/test_account_registry_contract.py`
+- Modify test: `Tests/GRVMgramContracts/test_archive_index_contract.py`
 
 **Interfaces:**
 - Produces:
@@ -712,6 +719,12 @@ public final class GRVMMessageArchiveCoordinator {
 }
 
 public final class GRVMAccountFeatureRegistry {
+    public init(
+        databaseURL: URL,
+        mediaRootURL: URL,
+        accountManager: AccountManager<TelegramAccountManagerTypes>
+    )
+    public func prepare(activeAccountRecordIds: [Int64]) throws
     public func register(accountPeerId: PeerId, accountRecordId: AccountRecordId, postbox: Postbox, mediaBox: MediaBox)
     public func unregister(accountPeerId: PeerId)
     public func setPrimaryAccount(_ accountPeerId: PeerId?)
@@ -731,6 +744,7 @@ Assert:
 - AppDelegate registers contexts only after `SharedAccountContextImpl` creation;
 - `AyuGramFeatureManager` no longer owns an unsynchronized process-global `currentSettings` value;
 - Local Premium checks the tested peer against the primary service's own peer ID.
+- the coordinator loads `deletedKeys(accountId:)` and `revisedKeys(accountId:)` and publishes one `index.replace` snapshot before serving lookups.
 
 - [ ] **Step 2: Run the contract**
 
@@ -751,13 +765,15 @@ private struct RuntimeState {
 private let state = Atomic(value: RuntimeState())
 ```
 
-An event without a registered exact-account service fails closed and leaves Telegram's stock mutation path in control; it is never written into another account. Unregistering removes only that account's service. `primaryService()` reads `primaryAccountPeerId` and never falls back to an arbitrary service.
+The registry owns one shared `GRVMMessageArchiveStore`, one `GRVMArchivedMediaStore`, the account manager, and per-account settings disposables. AppDelegate constructs it with `Documents/ayugram_messages.db` and `Documents/GRVMgramDeletedMedia`. `prepare(activeAccountRecordIds:)` runs the one database migration with the complete list before any service is published.
+
+An event without a registered exact-account service fails closed and leaves Telegram's stock mutation path in control; it is never written into another account. Unregistering removes only that account's service and settings disposable. `primaryService()` reads `primaryAccountPeerId` and never falls back to an arbitrary service.
 
 Replace `AyuGramFeatureManager.currentSettings` reads with `registry.primaryService()?.settingsSnapshot()` only for compatibility hooks whose consumer has no account context. Any hook whose consumer has an `Account`, `AccountContext`, or account peer ID changes signature to accept that ID and resolves `registry.service(accountPeerId:)`; the later parity plans list and convert those consumers. Never read mutable settings or compiled filters outside an `Atomic` snapshot.
 
 - [ ] **Step 4: Subscribe to active account contexts**
 
-After `SharedAccountContextImpl` exists, subscribe to its active-account-context signal, first call `migrateGRVMSettings(accountIds:accountManager:)` for that exact authorized-account list, then call `setPrimaryAccount(primary?.account.peerId)`, register new accounts with record ID/Postbox/MediaBox, and unregister removed accounts. For each registered account, retain a `grvmSettings(accountId:accountManager:)` subscription that calls that coordinator's `updateSettings`; dispose it on unregister. Retain the active-context subscription in AppDelegate or AyuGramFeatureManager.
+After `SharedAccountContextImpl` exists, subscribe to its active-account-context signal, first call `migrateGRVMSettings(accountIds:accountManager:)` for that exact authorized-account list, then call `prepare(activeAccountRecordIds:)`, `setPrimaryAccount(primary?.account.peerId)`, register new accounts with record ID/Postbox/MediaBox, and unregister removed accounts. `register` subscribes to `grvmSettings(accountId:accountManager:)`, waits for the first exact-account snapshot before constructing/publishing the coordinator, then forwards later snapshots through `updateSettings`; it never publishes a coordinator with guessed default settings. Dispose that subscription on unregister. Retain the active-context subscription in AppDelegate or AyuGramFeatureManager.
 
 - [ ] **Step 5: Reconcile startup state**
 
@@ -765,12 +781,11 @@ Before creating any coordinator, call `store.migrate(activeAccountRecordIds:)` o
 
 Then, for each account:
 
-1. load deleted/revised keys into the in-memory index;
-2. scan locally deleted Postbox attributes in bounded transactions;
-3. attach a history marker to locally present messages whose migrated revision key exists but whose marker is absent;
-4. insert missing archive metadata rows;
-5. restore each complete archived blob whose MediaBox resource is missing;
-6. mark a row `.missing` only when its persistent archive file is absent.
+1. load deleted/revised keys into the in-memory index and publish one immutable snapshot;
+2. restore each complete archived blob whose MediaBox resource is missing;
+3. mark a row `.missing` only when its persistent archive file is absent.
+
+Do not scan or reference `GRVMDeletedMessageAttribute` or `GRVMEditHistoryMessageAttribute` in this plan: those types are created by the lifecycle plan. That later plan owns bounded, index-driven Postbox marker reconciliation after the attributes exist. Metadata remains DB-first, so the account plan does not invent rows from partial Postbox state.
 
 At startup, remove stale `*.tmp` files left by interrupted copies. Then compare final blob paths with the account's `archived_media_blobs` rows and retry deletion of unreferenced files left by a previous failed cleanup; never delete a path still referenced by the database.
 
@@ -782,7 +797,7 @@ Retain a subscription to `mediaBox.didRemoveResourceIds`. Intersect each emitted
 python -m unittest Tests.GRVMgramContracts.test_account_registry_contract -v
 python -m unittest discover -s Tests/GRVMgramContracts -p "test_*.py" -v
 git diff --check
-git add submodules/AyuGramFeatures/Sources submodules/AyuGramLib/Sources submodules/TelegramUI/Sources/AppDelegate.swift Tests/GRVMgramContracts/test_account_registry_contract.py
+git add submodules/AyuGramFeatures/Sources/GRVMAccountFeatureRegistry.swift submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift submodules/TelegramUI/Sources/AppDelegate.swift Tests/GRVMgramContracts/test_account_registry_contract.py Tests/GRVMgramContracts/test_archive_index_contract.py
 git commit -m "feat: bind GRVMgram archives to accounts"
 ```
 

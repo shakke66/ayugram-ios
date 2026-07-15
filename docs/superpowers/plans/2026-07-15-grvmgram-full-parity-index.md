@@ -98,6 +98,8 @@ public final class GRVMMessageArchiveCoordinator {
 }
 
 public final class GRVMAccountFeatureRegistry {
+    public init(databaseURL: URL, mediaRootURL: URL, accountManager: AccountManager<TelegramAccountManagerTypes>)
+    public func prepare(activeAccountRecordIds: [Int64]) throws
     public func register(accountPeerId: PeerId, accountRecordId: AccountRecordId, postbox: Postbox, mediaBox: MediaBox)
     public func unregister(accountPeerId: PeerId)
     public func setPrimaryAccount(_ accountPeerId: PeerId?)

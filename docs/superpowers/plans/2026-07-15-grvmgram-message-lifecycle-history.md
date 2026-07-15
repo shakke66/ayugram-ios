@@ -266,6 +266,8 @@ git commit -m "feat: preserve deleted rows without unread drift"
 - Create: `submodules/TelegramCore/Sources/SyncCore/GRVMEditHistoryMessageAttribute.swift`
 - Modify: `submodules/TelegramCore/Sources/Account/AccountManager.swift:135`
 - Modify: `submodules/TelegramCore/Sources/SyncCore/SyncCore_StandaloneAccountTransaction.swift:114`
+- Modify: `submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift`
+- Modify: `submodules/AyuGramFeatures/Sources/GRVMAccountFeatureRegistry.swift`
 - Test: `Tests/GRVMgramContracts/test_local_deletion_contract.py`
 
 **Interfaces:**
@@ -313,12 +315,22 @@ Use keys `d`, `s`, `t`, and `r` for deleted timestamp/source/topic/resources; us
 
 Register both types in `telegramUIDeclareEncodables`/AccountManager next to `EditedMessageAttribute`. When server attributes merge, retain the previous local deleted/history attributes unless an explicit force-cleanup transaction removed them.
 
-- [ ] **Step 5: Run and commit**
+- [ ] **Step 5: Reconcile migrated markers after the attribute types exist**
+
+Add `GRVMMessageArchiveCoordinator.reconcilePersistentMessageState()`. Read one immutable deleted/revised index snapshot, chunk keys in groups of at most 100, load deletion records through `store.deletedMessages(keys:)`, and fetch only those exact `MessageId`s in bounded Postbox transactions. For a locally present row:
+
+- apply `GRVMDeletedMessageAttribute` from its archived deletion record when the deleted index contains the exact account/peer/namespace/message/thread key and no deletion marker exists;
+- attach `GRVMEditHistoryMessageAttribute` when the revised index contains the exact key and no history marker exists;
+- leave absent Postbox rows absent and never synthesize a Telegram message from archive summary data.
+
+Modify `GRVMAccountFeatureRegistry.register` to invoke reconciliation only after the coordinator has loaded and published its database index snapshot. This lifecycle commit introduces both attribute classes and the call, so the earlier account-storage commits remain buildable. Extend the source contract to require batching, exact-account keys, and the registry call.
+
+- [ ] **Step 6: Run and commit**
 
 ```powershell
 python -m unittest Tests.GRVMgramContracts.test_local_deletion_contract -v
 git diff --check
-git add submodules/TelegramCore/Sources/SyncCore/GRVMDeletedMessageAttribute.swift submodules/TelegramCore/Sources/SyncCore/GRVMEditHistoryMessageAttribute.swift submodules/TelegramCore/Sources/Account/AccountManager.swift submodules/TelegramCore/Sources/SyncCore/SyncCore_StandaloneAccountTransaction.swift Tests/GRVMgramContracts/test_local_deletion_contract.py
+git add submodules/TelegramCore/Sources/SyncCore/GRVMDeletedMessageAttribute.swift submodules/TelegramCore/Sources/SyncCore/GRVMEditHistoryMessageAttribute.swift submodules/TelegramCore/Sources/Account/AccountManager.swift submodules/TelegramCore/Sources/SyncCore/SyncCore_StandaloneAccountTransaction.swift submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift submodules/AyuGramFeatures/Sources/GRVMAccountFeatureRegistry.swift Tests/GRVMgramContracts/test_local_deletion_contract.py
 git commit -m "feat: persist GRVMgram message state"
 ```
 
