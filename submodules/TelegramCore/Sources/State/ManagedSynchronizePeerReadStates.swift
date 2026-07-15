@@ -91,8 +91,17 @@ private final class SynchronizePeerReadStatesContextImpl {
                         |> ignoreValues
                     case let .Push(_, thenSync):
                         if AyuGramHooks.shouldSuppressReadReceipts?() == true {
-                            signal = .complete()
+                            // Ghost mode: don't push the read state to the server, but confirm the
+                            // operation locally. A bare `.complete()` finishes synchronously and,
+                            // since the operation stays pending in the postbox view, the completed
+                            // handler re-enters update() inline on the same queue forever — stack
+                            // overflow (crash cluster B, builds 2735). The transaction both consumes
+                            // the operation and makes completion asynchronous.
+                            signal = self.postbox.transaction { transaction -> Void in
+                                transaction.confirmSynchronizedIncomingReadState(peerId)
+                            }
                             |> castError(PeerReadStateValidationError.self)
+                            |> ignoreValues
                         } else {
                             signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: stateManager, peerId: peerId, push: true, validate: thenSync)
                             |> ignoreValues
