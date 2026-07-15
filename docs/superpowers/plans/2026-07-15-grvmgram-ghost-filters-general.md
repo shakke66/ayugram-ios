@@ -182,7 +182,9 @@ The old `shouldIncreaseWebviewSize`, text-only filter closure, zero-argument Gho
 - `submodules/TelegramCore/Sources/State/ManagedSynchronizeViewStoriesOperations.swift`
 - `submodules/TelegramCore/Sources/State/MessageReactions.swift`
 - `submodules/TelegramCore/Sources/TelegramEngine/Messages/Translate.swift`
+- `submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift`
 - `submodules/TelegramCore/BUILD`
+- `submodules/TranslateUI/Sources/ChatTranslation.swift`
 - `submodules/TelegramUI/Sources/ChatController.swift`
 - `submodules/TelegramUI/Components/ChatControllerInteraction/Sources/ChatControllerInteraction.swift`
 - `submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift`
@@ -577,6 +579,7 @@ Expected: FAIL because the existing manager compiles only two global string arra
 
 Filter applicability is exact:
 
+- when `enableFilters` is false, matching returns no IDs and no message/activity/reaction is hidden;
 - `peerId` limits the filter to that dialog;
 - `excludedPeerIds` suppresses that filter in listed dialogs;
 - a global filter always applies to channel dialogs;

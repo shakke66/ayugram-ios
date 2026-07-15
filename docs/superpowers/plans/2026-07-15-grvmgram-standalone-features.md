@@ -75,6 +75,14 @@ public func grvmFormatPeerId(
 ) -> String
 ```
 
+The General plan provides these exact account-aware display hooks, which this plan consumes:
+
+```swift
+public static var shouldShowDialogID: ((PeerId) -> Bool)?
+public static var peerIdDisplayMode: ((PeerId) -> Int32)?
+public static var shouldShowSeconds: ((PeerId) -> Bool)?
+```
+
 ```swift
 public extension TelegramEngine.Contacts {
     func localPeers(
@@ -151,6 +159,7 @@ public final class GRVMScreenCapturePrivacyController {
 - `submodules/TelegramUI/Sources/ChatControllerOpenAttachmentMenu.swift`
 - `submodules/TelegramUI/Sources/Chat/ChatControllerPaste.swift`
 - `submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift`
+- `submodules/ChatListUI/BUILD`
 - `submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift`
 - `submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift`
 - `submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD`
@@ -285,9 +294,13 @@ Expected: PASS and no whitespace errors.
 **Files:**
 - Create: `submodules/AyuGramLib/Sources/GRVMPeerId.swift`
 - Modify: `submodules/AyuGramLib/BUILD`
+- Modify: `submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift`
+- Modify: `submodules/TelegramCore/Sources/AyuGramHooks.swift`
 - Modify: `submodules/TelegramCore/Sources/TelegramEngine/Contacts/TelegramEngineContacts.swift`
 - Modify: `submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift`
+- Modify: `submodules/ChatListUI/BUILD`
 - Modify: `submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift`
+- Modify: `submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD`
 - Test: `Tests/GRVMgramContracts/test_peer_identity_contract.py`
 
 - [ ] **Step 1: Write executable parser truth-table tests and source contracts**
@@ -335,13 +348,15 @@ Deduplicate candidates while preserving order.
 | legacy group | raw numeric ID | `-<raw>` |
 | channel/megagroup | raw numeric ID | `-100<raw>` |
 
-Replace private `ayuFormatPeerId` in `PeerInfoProfileItems.swift:26` and use the common formatter for every Copy ID action. The account-aware display-mode hook chooses hidden/Telegram/Bot API presentation; the copy menu offers both explicit formats regardless of current display mode.
+Replace private `ayuFormatPeerId` in `PeerInfoProfileItems.swift:26` and use the common formatter for every Copy ID action. Evaluate `shouldShowDialogID?(context.account.peerId)` and `peerIdDisplayMode?(context.account.peerId)`; target peer identity is never used as the settings account. The account-aware display mode chooses hidden/Telegram/Bot API presentation. A tap copies the displayed format; the row's existing long-press/context action offers both explicit formats regardless of current display mode.
 
 - [ ] **Step 5: Read candidate peers from Postbox only**
 
 Implement `TelegramEngine.Contacts.localPeers(ids:)` as one `postbox.transaction`, retrieving locally stored peers/cached data for each ID and returning renderable peers in input order. Missing peers are omitted. No network fallback is scheduled.
 
 At `ChatListSearchListPaneNode.swift:2195-2364`, parse the current query, request local peers, prepend them to `foundLocalPeers`, and dedupe the combined list by `peerId`. Guard the async result with the current query token so stale numeric results do not enter a newer search. Existing row selection already opens the peer/profile and remains authoritative.
+
+Add `//submodules/AyuGramLib:AyuGramLib` plus `import AyuGramLib` to `ChatListUI` and `PeerInfoScreen`; these are one-way UI -> library dependencies. Do not move the parser into TelegramCore or add a TelegramCore -> AyuGramLib dependency.
 
 - [ ] **Step 6: Add only dates Telegram stores locally**
 
@@ -359,7 +374,7 @@ Format through `stringForFullDate` with current presentation data. Do not infer 
 ```powershell
 python -m unittest Tests.GRVMgramContracts.test_peer_identity_contract -v
 git diff --check
-git add submodules/AyuGramLib/Sources/GRVMPeerId.swift submodules/AyuGramLib/BUILD submodules/TelegramCore/Sources/TelegramEngine/Contacts/TelegramEngineContacts.swift submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift Tests/GRVMgramContracts/test_peer_identity_contract.py
+git add submodules/AyuGramLib/Sources/GRVMPeerId.swift submodules/AyuGramLib/BUILD submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift submodules/TelegramCore/Sources/AyuGramHooks.swift submodules/TelegramCore/Sources/TelegramEngine/Contacts/TelegramEngineContacts.swift submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift submodules/ChatListUI/BUILD submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD Tests/GRVMgramContracts/test_peer_identity_contract.py
 git commit -m "feat: add local peer lookup ids and profile dates"
 ```
 
@@ -492,7 +507,7 @@ Existing call sites compile and retain minute precision. Do not duplicate 12/24-
 
 - [ ] **Step 5: Add a separate service-time pill**
 
-In `ChatMessageActionBubbleContentNode`, add a small text/background node aligned to the action bubble's lower trailing edge. It uses the message timestamp, current date/time format, and `withSeconds: true` only when the account-scoped `showSecondsInMessages` policy is enabled. Include the pill's width/height in async layout and hit-test geometry.
+In `ChatMessageActionBubbleContentNode`, add a small text/background node aligned to the action bubble's lower trailing edge. It uses the message timestamp, current date/time format, and `withSeconds: true` only when `shouldShowSeconds?(item.context.account.peerId)` is enabled. Include the pill's width/height in async layout and hit-test geometry.
 
 Suppress the extra pill for action cards with `image != nil`, large media-only actions, and suggested-post cards whose own layout already owns a timestamp. Do not append the time to localized service text, because that breaks entity ranges and line wrapping.
 
@@ -572,8 +587,6 @@ Expected: PASS.
 
 **Files:**
 - Modify: `submodules/AyuGramLib/Sources/AyuGramSettings.swift`
-- Modify: `submodules/TelegramCore/Sources/AyuGramHooks.swift`
-- Modify: `submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift`
 - Create: `submodules/TelegramUI/Sources/GRVMScreenCapturePrivacyController.swift`
 - Modify: `submodules/TelegramUI/Sources/AppDelegate.swift`
 - Modify: `submodules/AyuGramSettingsUI/Sources/AyuGramOtherController.swift`
@@ -646,7 +659,7 @@ After the main window assignment around `AppDelegate.swift:399-417`, create one 
 ```powershell
 python -m unittest Tests.GRVMgramContracts.test_streamer_privacy_contract -v
 git diff --check
-git add submodules/AyuGramLib/Sources/AyuGramSettings.swift submodules/TelegramCore/Sources/AyuGramHooks.swift submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift submodules/TelegramUI/Sources/GRVMScreenCapturePrivacyController.swift submodules/TelegramUI/Sources/AppDelegate.swift submodules/AyuGramSettingsUI/Sources/AyuGramOtherController.swift Tests/GRVMgramContracts/test_streamer_privacy_contract.py
+git add submodules/AyuGramLib/Sources/AyuGramSettings.swift submodules/TelegramUI/Sources/GRVMScreenCapturePrivacyController.swift submodules/TelegramUI/Sources/AppDelegate.swift submodules/AyuGramSettingsUI/Sources/AyuGramOtherController.swift Tests/GRVMgramContracts/test_streamer_privacy_contract.py
 git commit -m "feat: add screen capture privacy cover"
 ```
 
