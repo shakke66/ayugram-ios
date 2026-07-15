@@ -16,6 +16,7 @@ enum MessageHistoryIndexOperation {
 private let HistoryEntryTypeMask: Int8 = 1
 private let HistoryEntryTypeMessage: Int8 = 0
 private let HistoryEntryMessageFlagIncoming: Int8 = 1 << 1
+private let HistoryEntryMessageFlagLocallyDeleted: Int8 = 1 << 2
 
 private func readHistoryIndexEntry(_ peerId: PeerId, namespace: MessageId.Namespace, key: ValueBoxKey, value: ReadBuffer) -> MessageIndex {
     var flags: Int8 = 0
@@ -169,13 +170,38 @@ final class MessageHistoryIndexTable: Table {
             operations.append(.UpdateTimestamp(MessageIndex(id: id, timestamp: previousIndex.timestamp), timestamp))
         }
     }
+
+    func markMessageLocallyDeleted(_ id: MessageId) -> Bool {
+        let key = self.key(id)
+        guard let value = self.valueBox.get(self.table, key: key) else {
+            return false
+        }
+        var flags: Int8 = 0
+        value.read(&flags, offset: 0, length: 1)
+        guard (flags & HistoryEntryTypeMask) == HistoryEntryTypeMessage,
+              (flags & HistoryEntryMessageFlagLocallyDeleted) == 0 else {
+            return false
+        }
+        flags &= ~HistoryEntryMessageFlagIncoming
+        flags |= HistoryEntryMessageFlagLocallyDeleted
+
+        let updatedValue = WriteBuffer()
+        updatedValue.write(&flags, offset: 0, length: 1)
+        if value.length > 1 {
+            updatedValue.write(value.memory.advanced(by: 1), offset: 0, length: value.length - 1)
+        }
+        self.valueBox.set(self.table, key: key, value: updatedValue)
+        return true
+    }
     
     private func justInsertMessage(_ message: InternalStoreMessage, operations: inout [MessageHistoryIndexOperation]) {
         let index = MessageIndex(id: message.id, timestamp: message.timestamp)
         
         let value = WriteBuffer()
         var flags: Int8 = HistoryEntryTypeMessage
-        if !message.flags.intersection(.IsIncomingMask).isEmpty {
+        if isLocallyDeletedMessage(message.attributes) {
+            flags |= HistoryEntryMessageFlagLocallyDeleted
+        } else if !message.flags.intersection(.IsIncomingMask).isEmpty {
             flags |= HistoryEntryMessageFlagIncoming
         }
         var timestamp: Int32 = index.timestamp
@@ -228,7 +254,8 @@ final class MessageHistoryIndexTable: Table {
             self.valueBox.range(self.table, start: self.key(MessageId(peerId: peerId, namespace: namespace, id: minId)).predecessor, end: self.key(MessageId(peerId: peerId, namespace: namespace, id: maxId)).successor, values: { _, value in
                 var flags: Int8 = 0
                 value.read(&flags, offset: 0, length: 1)
-                if (flags & HistoryEntryMessageFlagIncoming) != 0 {
+                if (flags & HistoryEntryMessageFlagIncoming) != 0
+                    && (flags & HistoryEntryMessageFlagLocallyDeleted) == 0 {
                     count += 1
                 }
                 return true
@@ -248,7 +275,8 @@ final class MessageHistoryIndexTable: Table {
             if let value = self.valueBox.get(self.table, key: self.key(MessageId(peerId: peerId, namespace: namespace, id: id))) {
                 var flags: Int8 = 0
                 value.read(&flags, offset: 0, length: 1)
-                if (flags & HistoryEntryMessageFlagIncoming) != 0 {
+                if (flags & HistoryEntryMessageFlagIncoming) != 0
+                    && (flags & HistoryEntryMessageFlagLocallyDeleted) == 0 {
                     count += 1
                 }
                 if !self.messageHistoryHoleIndexTable.containing(id: MessageId(peerId: peerId, namespace: namespace, id: id)).isEmpty {

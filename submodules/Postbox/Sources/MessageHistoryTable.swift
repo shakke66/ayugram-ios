@@ -3008,7 +3008,9 @@ final class MessageHistoryTable: Table {
             let key = self.key(index)
             if let value = self.valueBox.get(self.table, key: key) {
                 let entry = self.readIntermediateEntry(key, value: value)
-                if entry.message.id.namespace == namespace && !entry.message.flags.intersection(.IsIncomingMask).isEmpty {
+                if entry.message.id.namespace == namespace
+                    && !entry.message.flags.intersection(.IsIncomingMask).isEmpty
+                    && !isLocallyDeletedMessage(entry.message.attributes) {
                     count += 1
                 }
             } else {
@@ -3030,7 +3032,9 @@ final class MessageHistoryTable: Table {
         if fromIndex <= toIndex {
             self.valueBox.range(self.table, start: self.key(fromIndex).predecessor, end: self.key(toIndex).successor, values: { key, value in
                 let entry = self.readIntermediateEntry(key, value: value)
-                if entry.message.id.namespace == namespace && !entry.message.flags.intersection(.IsIncomingMask).isEmpty {
+                if entry.message.id.namespace == namespace
+                    && !entry.message.flags.intersection(.IsIncomingMask).isEmpty
+                    && !isLocallyDeletedMessage(entry.message.attributes) {
                     count += 1
                     messageIds.append(entry.message.id)
                 }
