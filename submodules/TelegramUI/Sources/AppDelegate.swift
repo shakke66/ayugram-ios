@@ -236,6 +236,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     private var accountManager: AccountManager<TelegramAccountManagerTypes>?
     private var accountManagerState: AccountManagerState?
     private var ayuGramFeatureManager: AyuGramFeatureManager?
+    private var grvmAccountFeatureRegistry: GRVMAccountFeatureRegistry?
+    private let grvmActiveAccountsDisposable = MetaDisposable()
+    private let grvmAppIconDisposable = MetaDisposable()
     
     private var contextValue: AuthorizedApplicationContext?
     private let context = Promise<AuthorizedApplicationContext?>()
@@ -1023,24 +1026,16 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         telegramUIDeclareEncodables()
         initializeAccountManagement()
 
-        let ayuFeatureManager = AyuGramFeatureManager()
-        ayuFeatureManager.wireHooks(accountManager: accountManager)
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let grvmRegistry = GRVMAccountFeatureRegistry(
+            databaseURL: documentsURL.appendingPathComponent("ayugram_messages.db"),
+            mediaRootURL: documentsURL.appendingPathComponent("GRVMgramDeletedMedia", isDirectory: true),
+            accountManager: accountManager
+        )
+        self.grvmAccountFeatureRegistry = grvmRegistry
+        let ayuFeatureManager = AyuGramFeatureManager(registry: grvmRegistry)
+        ayuFeatureManager.wireHooks()
         self.ayuGramFeatureManager = ayuFeatureManager
-
-        if #available(iOS 10.3, *) {
-            let _ = (ayuGramSettings(accountManager: accountManager)
-            |> take(1)
-            |> deliverOnMainQueue).start(next: { settings in
-                let desiredIconName: String? = settings.selectedAppIcon == "default" ? nil : settings.selectedAppIcon
-                if application.alternateIconName != desiredIconName {
-                    application.setAlternateIconName(desiredIconName, completionHandler: { error in
-                        if let error = error {
-                            Logger.shared.log("App \(self.episodeId)", "failed to apply AyuGram app icon \(String(describing: desiredIconName)) with error \(error.localizedDescription)")
-                        }
-                    })
-                }
-            })
-        }
 
         if isUITest,
            let deleteIdx = CommandLine.arguments.firstIndex(of: "--delete-test-account"),
@@ -1135,6 +1130,56 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     }
                 }
             }, appDelegate: self, testingEnvironment: isUITest)
+
+            let grvmActiveAccounts = sharedContext.activeAccountContexts
+            |> mapToSignal { primary, accounts, _ -> Signal<(AccountContext?, [(AccountRecordId, AccountContext, Int32)]), NoError> in
+                let accountPeerIds = accounts.map { $0.1.account.peerId }
+                return migrateGRVMSettings(accountIds: accountPeerIds, accountManager: accountManager)
+                |> then(.single((primary, accounts)))
+            }
+            |> deliverOnMainQueue
+            self.grvmActiveAccountsDisposable.set(grvmActiveAccounts.start(next: { [weak self] primary, accounts in
+                guard let self, let registry = self.grvmAccountFeatureRegistry else {
+                    return
+                }
+                let activeRecordIds = accounts.map { $0.0.int64 }
+                do {
+                    try registry.prepare(activeAccountRecordIds: activeRecordIds)
+                } catch {
+                    Logger.shared.log("App \(self.episodeId)", "GRVMgram archive startup failed: \(error)")
+                    return
+                }
+
+                let activePeerIds = Set(accounts.map { $0.1.account.peerId })
+                for peerId in registry.ownPeerIds().subtracting(activePeerIds) {
+                    registry.unregister(accountPeerId: peerId)
+                }
+                registry.setPrimaryAccount(primary?.account.peerId)
+                for (recordId, context, _) in accounts {
+                    registry.register(
+                        accountPeerId: context.account.peerId,
+                        accountRecordId: recordId,
+                        postbox: context.account.postbox,
+                        mediaBox: context.account.postbox.mediaBox
+                    )
+                }
+                if #available(iOS 10.3, *), let primary {
+                    self.grvmAppIconDisposable.set((grvmSettings(accountId: primary.account.peerId, accountManager: accountManager)
+                    |> take(1)
+                    |> deliverOnMainQueue).start(next: { settings in
+                        let desiredIconName: String? = settings.selectedAppIcon == "default" ? nil : settings.selectedAppIcon
+                        if application.alternateIconName != desiredIconName {
+                            application.setAlternateIconName(desiredIconName, completionHandler: { error in
+                                if let error {
+                                    Logger.shared.log("App \(self.episodeId)", "failed to apply GRVMgram app icon \(String(describing: desiredIconName)) with error \(error.localizedDescription)")
+                                }
+                            })
+                        }
+                    }))
+                } else {
+                    self.grvmAppIconDisposable.set(nil)
+                }
+            }))
             
             presentationDataPromise.set(sharedContext.presentationData)
             

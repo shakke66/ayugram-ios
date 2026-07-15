@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 INDEX = ROOT / "submodules/AyuGramLib/Sources/GRVMMessageArchiveIndex.swift"
+COORDINATOR = ROOT / "submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"
 
 
 class ArchiveIndexContractTests(unittest.TestCase):
@@ -30,6 +31,16 @@ class ArchiveIndexContractTests(unittest.TestCase):
             self.assertIn(method, source)
         self.assertIn("self.state.modify", source)
         self.assertIn("self.state.swap", source)
+
+    def test_coordinator_loads_both_account_indexes_before_serving(self) -> None:
+        self.assertTrue(COORDINATOR.exists())
+        source = COORDINATOR.read_text(encoding="utf-8")
+        deleted = source.index("store.deletedKeys(accountId: accountRecordId.int64)")
+        revised = source.index("store.revisedKeys(accountId: accountRecordId.int64)")
+        replace = source.index("index.replace(")
+        self.assertLess(deleted, replace)
+        self.assertLess(revised, replace)
+        self.assertEqual(source.count("index.replace("), 1)
 
 
 if __name__ == "__main__":

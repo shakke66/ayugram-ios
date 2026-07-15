@@ -207,7 +207,7 @@ public extension Peer {
     }
     
     var isPremium: Bool {
-        if AyuGramHooks.isLocalPremiumEnabled?() == true {
+        if AyuGramHooks.isLocalPremiumEnabled?(self.id) == true {
             return true
         }
         switch self {

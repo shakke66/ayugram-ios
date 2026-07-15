@@ -44,6 +44,10 @@ class MediaArchiveContractTests(unittest.TestCase):
             self.assertIn(token, source)
         self.assertNotIn("Data(contentsOf:", source)
         self.assertNotIn("fetchedResource", source)
+        self.assertIn(
+            'relativePath.hasPrefix("\\(record.accountId)/blobs/")',
+            source,
+        )
 
     def test_media_box_reports_only_successfully_unlinked_ids(self) -> None:
         source = MEDIA_BOX.read_text(encoding="utf-8")

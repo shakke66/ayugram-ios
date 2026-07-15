@@ -237,6 +237,11 @@ class ArchiveContractTests(unittest.TestCase):
         self.assertIn("archived_media_blobs.copy_state = 2", source)
         self.assertIn("excluded.copy_state = 1", source)
 
+    def test_media_lookup_batches_large_cache_removal_events(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        self.assertIn("sqliteVariableBatchSize", source)
+        self.assertIn("stride(from: 0, to: uniqueResourceIds.count", source)
+
     def test_query_iteration_does_not_swallow_sqlite_errors(self) -> None:
         source = STORE.read_text(encoding="utf-8")
         self.assertIn("private func readRows", source)

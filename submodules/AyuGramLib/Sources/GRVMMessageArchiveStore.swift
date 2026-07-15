@@ -10,6 +10,8 @@ public enum GRVMArchiveError: Error {
 }
 
 public final class GRVMMessageArchiveStore {
+    private static let sqliteVariableBatchSize = 500
+
     static let schemaV2 = """
     PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS archived_messages (
@@ -439,16 +441,37 @@ public final class GRVMMessageArchiveStore {
         guard !resourceIds.isEmpty else {
             return []
         }
+        var seenResourceIds = Set<String>()
+        let uniqueResourceIds = resourceIds.filter { seenResourceIds.insert($0).inserted }
         return try self.perform { database in
-            let placeholders = Array(repeating: "?", count: resourceIds.count).joined(separator: ",")
-            return try self.queryMedia(
+            var result: [GRVMArchivedMedia] = []
+            for start in stride(from: 0, to: uniqueResourceIds.count, by: Self.sqliteVariableBatchSize) {
+                let end = min(start + Self.sqliteVariableBatchSize, uniqueResourceIds.count)
+                let batch = Array(uniqueResourceIds[start ..< end])
+                let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
+                result.append(contentsOf: try self.queryMedia(
+                    database,
+                    sql: """
+                    SELECT account_id, resource_id, relative_path, byte_count, kind, copy_state
+                    FROM archived_media_blobs
+                    WHERE account_id = ? AND resource_id IN (\(placeholders))
+                    """,
+                    values: [.int64(accountId)] + batch.map { .text($0) }
+                ))
+            }
+            return result
+        }
+    }
+
+    public func archivedMedia(accountId: Int64) throws -> [GRVMArchivedMedia] {
+        return try self.perform { database in
+            try self.queryMedia(
                 database,
                 sql: """
                 SELECT account_id, resource_id, relative_path, byte_count, kind, copy_state
-                FROM archived_media_blobs
-                WHERE account_id = ? AND resource_id IN (\(placeholders))
+                FROM archived_media_blobs WHERE account_id = ?
                 """,
-                values: [.int64(accountId)] + resourceIds.map { .text($0) }
+                values: [.int64(accountId)]
             )
         }
     }

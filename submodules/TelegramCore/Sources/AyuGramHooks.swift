@@ -17,7 +17,7 @@ public final class AyuGramHooks {
     public static var shouldSuppressContentRead: (() -> Bool)?
 
     // MARK: - Premium & Ads
-    public static var isLocalPremiumEnabled: (() -> Bool)?
+    public static var isLocalPremiumEnabled: ((PeerId) -> Bool)?
     public static var shouldDisableAds: (() -> Bool)?
 
     // MARK: - General
