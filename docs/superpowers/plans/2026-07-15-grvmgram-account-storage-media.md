@@ -675,18 +675,27 @@ Do not persist raw resource strings as path segments.
 ```swift
 public func restoreResourceData(_ id: MediaResourceId, fromPath path: String) -> Signal<Bool, NoError> {
     return Signal { subscriber in
-        let success = self.copyResourceDataFromArchive(id, path: path)
-        if success {
-            self.resourceDataSubscribers.updated(id)
+        self.dataQueue.async {
+            let success = self.copyResourceDataFromArchive(id, path: path)
+            if success {
+                self.statusQueue.async {
+                    if let context = self.statusContexts[id] {
+                        context.status = .Local
+                        for subscriber in context.subscribers.copyItems() {
+                            subscriber(.Local)
+                        }
+                    }
+                }
+            }
+            subscriber.putNext(success)
+            subscriber.putCompletion()
         }
-        subscriber.putNext(success)
-        subscriber.putCompletion()
         return EmptyDisposable
     }
 }
 ```
 
-Implement with MediaBox's existing serial file queue and status contexts; do not call the current silent `copyResourceData(_:fromTempPath:)` wrapper.
+`resourceDataSubscribers` does not exist in this MediaBox revision. Implement with its existing serial `dataQueue` and `statusQueue`/`statusContexts`; do not call the current silent `copyResourceData(_:fromTempPath:)` wrapper. Refuse to overwrite an active `fileContext`, restore through a temporary file plus atomic rename/replace, and publish `.Local` only after the complete path exists.
 
 Alongside the existing `didRemoveResources: Signal<Void, NoError>`, add `didRemoveResourceIds: Signal<[MediaResourceId], NoError>`. Accumulate IDs only after the complete/partial/meta unlink path runs (exclude resources skipped because a file/keep context is active), and emit that exact array from both cache-removal methods.
 
