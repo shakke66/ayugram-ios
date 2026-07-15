@@ -177,20 +177,20 @@ public func ayuGramFiltersController(context: AccountContext) -> ViewController 
     let arguments = AyuGramFiltersArguments(
         context: context,
         toggleFilters: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager) { s in var s = s; s.enableFilters = value; return s }.startStandalone()
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in var s = s; s.enableFilters = value; return s }.startStandalone()
         },
         toggleFiltersInChats: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager) { s in var s = s; s.enableFiltersInChats = value; return s }.startStandalone()
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in var s = s; s.enableFiltersInChats = value; return s }.startStandalone()
         },
         toggleHideFromBlocked: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager) { s in var s = s; s.hideFromBlockedUsers = value; return s }.startStandalone()
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in var s = s; s.hideFromBlockedUsers = value; return s }.startStandalone()
         },
         presentFilterEditor: { index, current in
             let editController = promptController(context: context, text: index == nil ? "Add Filter Pattern (Regex)" : "Edit Filter Pattern (Regex)", value: current, apply: { value in
                 guard let value = value else {
                     return
                 }
-                let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager) { s in
+                let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in
                     var s = s
                     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
                     if let index = index {
@@ -214,7 +214,7 @@ public func ayuGramFiltersController(context: AccountContext) -> ViewController 
                 guard let value = value else {
                     return
                 }
-                let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager) { s in
+                let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in
                     var s = s
                     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
                     if let index = index {
@@ -238,7 +238,7 @@ public func ayuGramFiltersController(context: AccountContext) -> ViewController 
         }
     )
 
-    let signal = combineLatest(context.sharedContext.presentationData, ayuGramSettings(accountManager: context.sharedContext.accountManager))
+    let signal = combineLatest(context.sharedContext.presentationData, grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager))
     |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let entries = ayuGramFiltersEntries(settings: settings, presentationData: presentationData)
         return (

@@ -297,105 +297,105 @@ public func ayuGramCoreController(context: AccountContext) -> ViewController {
     let arguments = AyuGramCoreArguments(
         context: context,
         toggleGhostMode: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.setGhostMode(value)
                 return settings
             }).startStandalone()
         },
         toggleSuppressReadReceipts: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.suppressReadReceipts = value
                 return settings
             }).startStandalone()
         },
         toggleSuppressStoryReads: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.suppressStoryReads = value
                 return settings
             }).startStandalone()
         },
         toggleSuppressOnlineStatus: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.suppressOnlineStatus = value
                 return settings
             }).startStandalone()
         },
         toggleSuppressTypingStatus: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.suppressTypingStatus = value
                 return settings
             }).startStandalone()
         },
         toggleSuppressUploadProgress: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.suppressUploadProgress = value
                 return settings
             }).startStandalone()
         },
         toggleReadOnAction: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
-                settings.readOnAction = value
+                settings.setReadOnAction(value)
                 return settings
             }).startStandalone()
         },
         toggleUseScheduledMessages: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
-                settings.useScheduledMessages = value
+                settings.setScheduledMessages(value)
                 return settings
             }).startStandalone()
         },
         toggleSendWithoutSound: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.sendWithoutSound = value
                 return settings
             }).startStandalone()
         },
         toggleSaveDeletedMessages: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.saveDeletedMessages = value
                 return settings
             }).startStandalone()
         },
         toggleSaveEditHistory: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.saveEditHistory = value
                 return settings
             }).startStandalone()
         },
         toggleSaveForBots: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.saveForBots = value
                 return settings
             }).startStandalone()
         },
         toggleLocalPremium: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.localTelegramPremium = value
                 return settings
             }).startStandalone()
         },
         toggleDisableAds: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.disableAds = value
                 return settings
             }).startStandalone()
         },
         toggleSuggestGhostForStories: { value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager, { settings in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.suggestGhostForStories = value
                 return settings
@@ -405,7 +405,7 @@ public func ayuGramCoreController(context: AccountContext) -> ViewController {
 
     let signal = combineLatest(
         context.sharedContext.presentationData,
-        ayuGramSettings(accountManager: context.sharedContext.accountManager)
+        grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager)
     )
     |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let entries = ayuGramCoreEntries(settings: settings, presentationData: presentationData)

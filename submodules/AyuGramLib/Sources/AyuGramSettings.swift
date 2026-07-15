@@ -651,6 +651,20 @@ public struct AyuGramSettings: Codable, Equatable {
         self.suppressTypingStatus = enabled
         self.suppressUploadProgress = enabled
     }
+
+    public mutating func setReadOnAction(_ enabled: Bool) {
+        self.readOnAction = enabled
+        if enabled {
+            self.useScheduledMessages = false
+        }
+    }
+
+    public mutating func setScheduledMessages(_ enabled: Bool) {
+        self.useScheduledMessages = enabled
+        if enabled {
+            self.readOnAction = false
+        }
+    }
 }
 
 public func updateAyuGramSettings(

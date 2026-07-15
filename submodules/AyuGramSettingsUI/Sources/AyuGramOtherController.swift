@@ -139,7 +139,7 @@ public func ayuGramOtherController(context: AccountContext) -> ViewController {
     let arguments = AyuGramOtherArguments(
         context: context,
         updateBool: { keyPath, value in
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager) { s in var s = s; s[keyPath: keyPath] = value; return s }.startStandalone()
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in var s = s; s[keyPath: keyPath] = value; return s }.startStandalone()
         },
         openURL: { url in
             context.sharedContext.openExternalUrl(context: context, urlContext: .generic, url: url, forceExternal: true, presentationData: context.sharedContext.currentPresentationData.with { $0 }, navigationController: nil, dismissInput: {})
@@ -148,13 +148,13 @@ public func ayuGramOtherController(context: AccountContext) -> ViewController {
             UIPasteboard.general.string = text
         },
         resetSettings: {
-            let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager) { _ in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { _ in
                 return .defaultSettings
             }.startStandalone()
         }
     )
 
-    let signal = combineLatest(context.sharedContext.presentationData, ayuGramSettings(accountManager: context.sharedContext.accountManager))
+    let signal = combineLatest(context.sharedContext.presentationData, grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager))
     |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let entries = ayuGramOtherEntries(settings: settings, presentationData: presentationData)
         return (

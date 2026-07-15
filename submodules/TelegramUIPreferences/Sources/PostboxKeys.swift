@@ -53,6 +53,7 @@ private enum ApplicationSpecificSharedDataKeyValues: Int32 {
     case updateSettings = 21
     case chatSettings = 22
     case ayuGramSettings = 23
+    case grvmAccountSettings = 24
 }
 
 public struct ApplicationSpecificSharedDataKeys {
@@ -80,6 +81,7 @@ public struct ApplicationSpecificSharedDataKeys {
     public static let updateSettings = applicationSpecificPreferencesKey(ApplicationSpecificSharedDataKeyValues.updateSettings.rawValue)
     public static let chatSettings = applicationSpecificPreferencesKey(ApplicationSpecificSharedDataKeyValues.chatSettings.rawValue)
     public static let ayuGramSettings = applicationSpecificSharedDataKey(ApplicationSpecificSharedDataKeyValues.ayuGramSettings.rawValue)
+    public static let grvmAccountSettings = applicationSpecificSharedDataKey(ApplicationSpecificSharedDataKeyValues.grvmAccountSettings.rawValue)
 }
 
 private enum ApplicationSpecificItemCacheCollectionIdValues: Int8 {

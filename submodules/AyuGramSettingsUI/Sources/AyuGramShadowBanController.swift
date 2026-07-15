@@ -97,7 +97,7 @@ public func ayuGramShadowBanController(context: AccountContext) -> ViewControlle
                     return
                 }
                 let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                let _ = updateAyuGramSettings(accountManager: context.sharedContext.accountManager) { s in
+                let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in
                     var s = s
                     if let index = index {
                         if index >= 0 && index < s.shadowBanIds.count {
@@ -117,7 +117,7 @@ public func ayuGramShadowBanController(context: AccountContext) -> ViewControlle
         }
     )
 
-    let signal = combineLatest(context.sharedContext.presentationData, ayuGramSettings(accountManager: context.sharedContext.accountManager))
+    let signal = combineLatest(context.sharedContext.presentationData, grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager))
     |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let entries = ayuGramShadowBanEntries(settings: settings, presentationData: presentationData)
         return (
