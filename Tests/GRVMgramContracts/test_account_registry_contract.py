@@ -46,6 +46,53 @@ class AccountRegistryContractTests(unittest.TestCase):
             source,
         )
 
+    def test_registry_quiesces_old_generation_before_removal_and_replacement(self) -> None:
+        source = REGISTRY.read_text(encoding="utf-8")
+        self.assertIn('private let lifecycleQueue = Queue(name: "GRVMAccountFeatureRegistry")', source)
+        self.assertIn("private func registerOnQueue(", source)
+
+        register = source[
+            source.index("public func register(") :
+            source.index("private func registerOnQueue(")
+        ]
+        self.assertIn("self.lifecycleQueue.sync", register)
+        self.assertIn("self.registerOnQueue(", register)
+
+        register_on_queue = source[
+            source.index("private func registerOnQueue(") :
+            source.index("public func unregister(")
+        ]
+        self.assertLess(
+            register_on_queue.index("service.isBound(to: accountRecordId, postbox: postbox, mediaBox: mediaBox)"),
+            register_on_queue.index("self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: false)"),
+        )
+        self.assertIn("self.lifecycleQueue.async", register_on_queue)
+        identity = "state.settingsDisposables[accountPeerId] === settingsDisposable"
+        self.assertGreaterEqual(register_on_queue.count(identity), 2)
+        publish = register_on_queue.index("state.services[accountPeerId] = coordinator")
+        resume = register_on_queue.index("coordinator.resumePendingCleanupJobs()", publish)
+        self.assertLess(publish, resume)
+
+        unregister = source[
+            source.index("public func unregister(") :
+            source.index("private func removeRegistration(")
+        ]
+        self.assertIn("self.lifecycleQueue.sync", unregister)
+        self.assertIn("self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: true)", unregister)
+
+        removal = source[
+            source.index("private func removeRegistration(") :
+            source.index("public func setPrimaryAccount(")
+        ]
+        anchors = [
+            "let service = self.state.with",
+            "service?.shutdownForReplacement()",
+            "state.services.removeValue(forKey: accountPeerId)",
+            "disposable?.dispose()",
+        ]
+        positions = [removal.index(anchor) for anchor in anchors]
+        self.assertEqual(positions, sorted(positions))
+
     def test_app_delegate_migrates_then_registers_active_contexts(self) -> None:
         source = APP_DELEGATE.read_text(encoding="utf-8")
         for token in (

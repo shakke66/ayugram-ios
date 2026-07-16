@@ -75,7 +75,9 @@ public final class GRVMMessageArchiveCoordinator {
     private let index = GRVMMessageArchiveIndex()
     private let queue = Queue(name: "GRVMMessageArchiveCoordinator", qos: .utility)
     private let disposables = DisposableSet()
+    private let cleanupRunnerDisposable = MetaDisposable()
     private let settingsState: Atomic<GRVMCoordinatorSettingsState>
+    private var isAcceptingOperations = true
     private var isCleanupExecutorRunning = false
     private var cleanupWaiters: [UUID: [UUID: Subscriber<[MessageId], GRVMClearDeletedError>]] = [:]
     private var cleanupWaiterJobs: [UUID: UUID] = [:]
@@ -100,6 +102,7 @@ public final class GRVMMessageArchiveCoordinator {
     }
 
     deinit {
+        self.cleanupRunnerDisposable.dispose()
         self.disposables.dispose()
     }
 
@@ -125,9 +128,27 @@ public final class GRVMMessageArchiveCoordinator {
         }))
     }
 
+    func shutdownForReplacement() {
+        self.queue.sync {
+            guard self.isAcceptingOperations else {
+                return
+            }
+            self.isAcceptingOperations = false
+            self.cleanupRunnerDisposable.dispose()
+            self.isCleanupExecutorRunning = false
+            let waiters = self.takeAllCleanupWaiters()
+            for subscriber in waiters {
+                subscriber.putError(.archiveUnavailable)
+            }
+        }
+    }
+
     public func resumePendingCleanupJobs() {
         self.queue.async { [weak self] in
             guard let self else {
+                return
+            }
+            guard self.isAcceptingOperations else {
                 return
             }
             self.startCleanupExecutorIfNeeded()
@@ -171,7 +192,7 @@ public final class GRVMMessageArchiveCoordinator {
     }
 
     private func startCleanupExecutorIfNeeded() {
-        guard !self.isCleanupExecutorRunning else {
+        guard self.isAcceptingOperations, !self.isCleanupExecutorRunning else {
             return
         }
         self.isCleanupExecutorRunning = true
@@ -179,6 +200,10 @@ public final class GRVMMessageArchiveCoordinator {
     }
 
     private func drainNextCleanupJob() {
+        guard self.isAcceptingOperations else {
+            self.isCleanupExecutorRunning = false
+            return
+        }
         let job: GRVMCleanupJob?
         do {
             job = try self.store.pendingCleanupJobs(accountId: self.accountRecordId.int64).first
@@ -197,6 +222,9 @@ public final class GRVMMessageArchiveCoordinator {
                 return
             }
             self.queue.justDispatch {
+                guard self.isAcceptingOperations else {
+                    return
+                }
                 self.finishCleanupWaiters(jobId: job.id, ids: ids)
                 self.drainNextCleanupJob()
             }
@@ -205,10 +233,13 @@ public final class GRVMMessageArchiveCoordinator {
                 return
             }
             self.queue.justDispatch {
+                guard self.isAcceptingOperations else {
+                    return
+                }
                 self.failCleanupExecutor(error)
             }
         })
-        self.disposables.add(disposable)
+        self.cleanupRunnerDisposable.set(disposable)
     }
 
     private func finishCleanupWaiters(jobId: UUID, ids: [MessageId]) {
@@ -265,6 +296,9 @@ public final class GRVMMessageArchiveCoordinator {
                 return ids
             }.start(next: { ids in
                 self.queue.async {
+                    guard self.isAcceptingOperations else {
+                        return
+                    }
                     do {
                         let keys = try self.store.finalizeDeletedCleanup(id: job.id)
                         self.index.removeDeleted(Set(keys))
@@ -412,6 +446,9 @@ public final class GRVMMessageArchiveCoordinator {
     public func preserveDeletedMessages(_ messages: [Message], source: GRVMDeletionSource) -> [MessageId: [String]] {
         var result: [MessageId: [String]] = [:]
         self.queue.sync {
+            guard self.isAcceptingOperations else {
+                return
+            }
             result = self.preserveDeletedMessagesOnQueue(messages, source: source)
         }
         return result
@@ -498,6 +535,9 @@ public final class GRVMMessageArchiveCoordinator {
     public func preserveEditRevision(_ message: Message) -> Bool {
         var result = false
         self.queue.sync {
+            guard self.isAcceptingOperations else {
+                return
+            }
             result = self.preserveEditRevisionOnQueue(message)
         }
         return result
@@ -562,6 +602,10 @@ public final class GRVMMessageArchiveCoordinator {
             let waiterId = UUID()
             self.queue.async { [weak self] in
                 guard let self else {
+                    subscriber.putError(.archiveUnavailable)
+                    return
+                }
+                guard self.isAcceptingOperations else {
                     subscriber.putError(.archiveUnavailable)
                     return
                 }

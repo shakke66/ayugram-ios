@@ -249,7 +249,7 @@ class LocalDeletionContractTests(unittest.TestCase):
 
     def test_registry_reconciles_only_after_preparing_the_index(self) -> None:
         source = REGISTRY.read_text(encoding="utf-8")
-        registration = swift_block(source, "public func register(")
+        registration = swift_block(source, "private func registerOnQueue(")
         prepare = registration.index("try coordinator.prepare()")
         reconcile = registration.index("coordinator.reconcilePersistentMessageState()")
         self.assertLess(prepare, reconcile)

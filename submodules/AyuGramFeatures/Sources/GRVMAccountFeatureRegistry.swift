@@ -12,6 +12,7 @@ public final class GRVMAccountFeatureRegistry {
         var settingsDisposables: [PeerId: Disposable] = [:]
     }
 
+    private let lifecycleQueue = Queue(name: "GRVMAccountFeatureRegistry")
     private let state = Atomic<RuntimeState>(value: RuntimeState())
     private let store: GRVMMessageArchiveStore
     private let mediaStore: GRVMArchivedMediaStore
@@ -59,6 +60,22 @@ public final class GRVMAccountFeatureRegistry {
         postbox: Postbox,
         mediaBox: MediaBox
     ) {
+        self.lifecycleQueue.sync {
+            self.registerOnQueue(
+                accountPeerId: accountPeerId,
+                accountRecordId: accountRecordId,
+                postbox: postbox,
+                mediaBox: mediaBox
+            )
+        }
+    }
+
+    private func registerOnQueue(
+        accountPeerId: PeerId,
+        accountRecordId: AccountRecordId,
+        postbox: Postbox,
+        mediaBox: MediaBox
+    ) {
         let canRegister = self.state.with { state -> Bool in
             guard state.prepared else {
                 return false
@@ -73,7 +90,9 @@ public final class GRVMAccountFeatureRegistry {
             return
         }
 
-        self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: false)
+        guard self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: false) else {
+            return
+        }
         let settingsDisposable = MetaDisposable()
         _ = self.state.modify { state in
             var state = state
@@ -84,61 +103,99 @@ public final class GRVMAccountFeatureRegistry {
             guard let self else {
                 return
             }
-            if let service = self.service(accountPeerId: accountPeerId) {
-                service.updateSettings(settings)
-                return
-            }
+            self.lifecycleQueue.async { [weak self] in
+                guard let self else {
+                    return
+                }
+                guard self.state.with({ state in
+                    state.settingsDisposables[accountPeerId] === settingsDisposable
+                }) else {
+                    return
+                }
+                if let service = self.service(accountPeerId: accountPeerId) {
+                    service.updateSettings(settings)
+                    return
+                }
 
-            let coordinator = GRVMMessageArchiveCoordinator(
-                accountPeerId: accountPeerId,
-                accountRecordId: accountRecordId,
-                postbox: postbox,
-                mediaBox: mediaBox,
-                store: self.store,
-                mediaStore: self.mediaStore,
-                settings: settings
-            )
-            do {
-                try coordinator.prepare()
-            } catch {
-                return
-            }
-            var registered = false
-            _ = self.state.modify { state in
-                var state = state
-                guard state.prepared,
-                      state.settingsDisposables[accountPeerId] === settingsDisposable,
-                      state.services[accountPeerId] == nil else {
+                let coordinator = GRVMMessageArchiveCoordinator(
+                    accountPeerId: accountPeerId,
+                    accountRecordId: accountRecordId,
+                    postbox: postbox,
+                    mediaBox: mediaBox,
+                    store: self.store,
+                    mediaStore: self.mediaStore,
+                    settings: settings
+                )
+                do {
+                    try coordinator.prepare()
+                } catch {
+                    return
+                }
+                var registered = false
+                _ = self.state.modify { state in
+                    var state = state
+                    guard state.prepared,
+                          state.settingsDisposables[accountPeerId] === settingsDisposable,
+                          state.services[accountPeerId] == nil else {
+                        return state
+                    }
+                    state.services[accountPeerId] = coordinator
+                    registered = true
                     return state
                 }
-                state.services[accountPeerId] = coordinator
-                registered = true
-                return state
+                guard registered else {
+                    return
+                }
+                coordinator.resumePendingCleanupJobs()
+                coordinator.reconcilePersistentMessageState()
             }
-            guard registered else {
-                return
-            }
-            coordinator.resumePendingCleanupJobs()
-            coordinator.reconcilePersistentMessageState()
         }))
     }
 
     public func unregister(accountPeerId: PeerId) {
-        self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: true)
+        self.lifecycleQueue.sync {
+            _ = self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: true)
+        }
     }
 
-    private func removeRegistration(accountPeerId: PeerId, clearPrimary: Bool) {
+    private func removeRegistration(accountPeerId: PeerId, clearPrimary: Bool) -> Bool {
+        let service = self.state.with { state in
+            state.services[accountPeerId]
+        }
+        let settingsDisposable = self.state.with { state in
+            state.settingsDisposables[accountPeerId]
+        }
+        service?.shutdownForReplacement()
+
         var disposable: Disposable?
+        var removed = false
         _ = self.state.modify { state in
             var state = state
+            let serviceMatches: Bool
+            if let service {
+                serviceMatches = state.services[accountPeerId] === service
+            } else {
+                serviceMatches = state.services[accountPeerId] == nil
+            }
+            let disposableMatches: Bool
+            if let settingsDisposable {
+                disposableMatches = state.settingsDisposables[accountPeerId] === settingsDisposable
+            } else {
+                disposableMatches = state.settingsDisposables[accountPeerId] == nil
+            }
+            guard serviceMatches, disposableMatches else {
+                return state
+            }
             disposable = state.settingsDisposables.removeValue(forKey: accountPeerId)
             state.services.removeValue(forKey: accountPeerId)
             if clearPrimary && state.primaryAccountPeerId == accountPeerId {
                 state.primaryAccountPeerId = nil
             }
+            removed = true
             return state
         }
         disposable?.dispose()
+        return removed
     }
 
     public func setPrimaryAccount(_ accountPeerId: PeerId?) {

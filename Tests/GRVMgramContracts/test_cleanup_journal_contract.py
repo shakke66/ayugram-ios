@@ -266,7 +266,8 @@ class CleanupJournalContractTests(unittest.TestCase):
             source.index("private func startCleanupExecutorIfNeeded()") :
             source.index("private func drainNextCleanupJob(")
         ]
-        self.assertLess(start.index("guard !self.isCleanupExecutorRunning"), start.index("self.isCleanupExecutorRunning = true"))
+        accepting_guard = "guard self.isAcceptingOperations, !self.isCleanupExecutorRunning"
+        self.assertLess(start.index(accepting_guard), start.index("self.isCleanupExecutorRunning = true"))
         self.assertLess(start.index("self.isCleanupExecutorRunning = true"), start.index("self.drainNextCleanupJob()"))
 
         drain = source[
@@ -278,7 +279,7 @@ class CleanupJournalContractTests(unittest.TestCase):
         pending = pending[pending.index("public func pendingCleanupJobs(") : pending.index("public func markCleanupFilesRemoved(")]
         self.assertIn("ORDER BY created_at ASC, job_id ASC", pending)
         self.assertEqual(drain.count("self.runCleanupJob("), 1)
-        self.assertIn("self.disposables.add(disposable)", drain)
+        self.assertIn("self.cleanupRunnerDisposable.set(disposable)", drain)
         success = drain[drain.index("next: { [weak self] ids in") : drain.index("}, error: { [weak self] error in")]
         self.assertIn("self.finishCleanupWaiters(jobId: job.id, ids: ids)", success)
         self.assertIn("self.drainNextCleanupJob()", success)
@@ -303,6 +304,77 @@ class CleanupJournalContractTests(unittest.TestCase):
         self.assertIn("subscriber.putError(error)", failure)
         self.assertNotIn("subscriber.putNext", failure)
         self.assertNotIn("reconcileArchivedMedia()", failure)
+
+    def test_shutdown_quiesces_cleanup_and_rejects_stale_generation_operations(self) -> None:
+        source = COORDINATOR.read_text(encoding="utf-8")
+        self.assertIn("private var isAcceptingOperations = true", source)
+        self.assertIn("private let cleanupRunnerDisposable = MetaDisposable()", source)
+        self.assertIn("func shutdownForReplacement()", source)
+
+        deinit = source[source.index("deinit {") : source.index("func prepare() throws")]
+        self.assertLess(
+            deinit.index("self.cleanupRunnerDisposable.dispose()"),
+            deinit.index("self.disposables.dispose()"),
+        )
+
+        shutdown = source[
+            source.index("func shutdownForReplacement()") :
+            source.index("public func resumePendingCleanupJobs()")
+        ]
+        anchors = [
+            "self.queue.sync",
+            "guard self.isAcceptingOperations else",
+            "self.isAcceptingOperations = false",
+            "self.cleanupRunnerDisposable.dispose()",
+            "self.isCleanupExecutorRunning = false",
+            "let waiters = self.takeAllCleanupWaiters()",
+            "subscriber.putError(.archiveUnavailable)",
+        ]
+        positions = [shutdown.index(anchor) for anchor in anchors]
+        self.assertEqual(positions, sorted(positions))
+        for forbidden in (
+            "reconcileArchivedMedia()",
+            "markCleanupFilesRemoved(",
+            "finalizeDeletedCleanup(",
+        ):
+            self.assertNotIn(forbidden, shutdown)
+
+        resume = source[
+            source.index("public func resumePendingCleanupJobs()") :
+            source.index("private func addCleanupWaiter(")
+        ]
+        self.assertIn("guard self.isAcceptingOperations else", resume)
+
+        deleted = source[
+            source.index("public func preserveDeletedMessages(") :
+            source.index("public func preserveEditRevision(")
+        ]
+        revision = source[
+            source.index("public func preserveEditRevision(") :
+            source.index("public func clearDeleted(")
+        ]
+        clear = source[source.index("public func clearDeleted(") : source.index("public func hasEditHistory(")]
+        for operation in (deleted, revision, clear):
+            self.assertIn("guard self.isAcceptingOperations else", operation)
+
+        drain = source[
+            source.index("private func drainNextCleanupJob(") :
+            source.index("private func finishCleanupWaiters(")
+        ]
+        self.assertIn("guard self.isAcceptingOperations else", drain)
+        self.assertIn("self.cleanupRunnerDisposable.set(disposable)", drain)
+        self.assertNotIn("self.disposables.add(disposable)", drain)
+        self.assertGreaterEqual(drain.count("guard self.isAcceptingOperations else"), 3)
+
+        runner = source[
+            source.index("private func runCleanupJob(") :
+            source.index("private func reconcileArchivedMedia()")
+        ]
+        finalization = runner[runner.index("}.start(next: { ids in") :]
+        self.assertLess(
+            finalization.index("guard self.isAcceptingOperations else"),
+            finalization.index("self.store.finalizeDeletedCleanup(id: job.id)"),
+        )
 
     def test_obsolete_best_effort_cleanup_apis_are_removed(self) -> None:
         store = STORE.read_text(encoding="utf-8")
