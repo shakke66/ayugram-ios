@@ -89,10 +89,12 @@ class ArchiveContractTests(unittest.TestCase):
             source,
         )
 
-    def test_schema_executes_and_declares_v2_tables(self) -> None:
+    def test_fresh_schema_executes_and_declares_v3_tables(self) -> None:
         source = STORE.read_text(encoding="utf-8")
         db = sqlite3.connect(":memory:")
         db.executescript(swift_sql(source, "schemaV2"))
+        db.executescript(swift_sql(source, "cleanupSchemaV3"))
+        db.execute("PRAGMA user_version = 3")
         names = {
             row[0]
             for row in db.execute(
@@ -105,6 +107,7 @@ class ArchiveContractTests(unittest.TestCase):
                 "edit_revisions",
                 "archived_media_blobs",
                 "archived_message_media",
+                "cleanup_jobs",
             }
             <= names
         )
@@ -116,6 +119,37 @@ class ArchiveContractTests(unittest.TestCase):
         self.assertEqual(
             ["account_id", "peer_id", "message_namespace", "message_id", "thread_id"],
             message_pk,
+        )
+        self.assertEqual(3, db.execute("PRAGMA user_version").fetchone()[0])
+
+    def test_populated_v2_schema_upgrades_to_v3_without_data_loss(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        db = sqlite3.connect(":memory:")
+        db.executescript(swift_sql(source, "schemaV2"))
+        db.execute(
+            """INSERT INTO archived_messages (
+                   account_id, peer_id, message_namespace, message_id, thread_id,
+                   sender_id, message_timestamp, deleted_at, text
+               ) VALUES (7, 11, 0, 22, 0, 33, 44, 55, 'kept')"""
+        )
+        db.execute("PRAGMA user_version = 2")
+
+        db.executescript(swift_sql(source, "schemaV2"))
+        db.executescript(swift_sql(source, "cleanupSchemaV3"))
+        db.execute("PRAGMA user_version = 3")
+
+        self.assertEqual(
+            (7, 11, 0, 22, 0, "kept"),
+            db.execute(
+                """SELECT account_id, peer_id, message_namespace, message_id,
+                          thread_id, text FROM archived_messages"""
+            ).fetchone(),
+        )
+        self.assertEqual(3, db.execute("PRAGMA user_version").fetchone()[0])
+        self.assertIsNotNone(
+            db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cleanup_jobs'"
+            ).fetchone()
         )
 
     def test_one_account_legacy_copy_sql_attributes_every_row(self) -> None:
@@ -210,7 +244,9 @@ class ArchiveContractTests(unittest.TestCase):
         for token in (
             "BEGIN IMMEDIATE",
             "ROLLBACK",
-            "PRAGMA user_version = 2",
+            "PRAGMA user_version = 3",
+            "case 2:",
+            "case 3:",
             "activeAccountRecordIds.count == 1",
             "deleted_messages_legacy_v1",
             "edited_messages_legacy_v1",

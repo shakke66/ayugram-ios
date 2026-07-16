@@ -115,8 +115,8 @@ public struct GRVMEditRevisionDraft: Equatable {
     }
 }
 
-public struct GRVMArchivedMedia: Equatable {
-    public enum CopyState: Int32 {
+public struct GRVMArchivedMedia: Codable, Equatable {
+    public enum CopyState: Int32, Codable {
         case unavailable = 0
         case copying = 1
         case complete = 2
@@ -145,6 +145,48 @@ public struct GRVMArchivedMedia: Equatable {
         self.kind = kind
         self.copyState = copyState
     }
+}
+
+public enum GRVMCleanupPhase: Int32, Codable {
+    case planned = 0
+    case filesRemoved = 1
+}
+
+public struct GRVMCleanupJob: Codable, Equatable {
+    public let id: UUID
+    public let accountId: Int64
+    public let peerId: Int64?
+    public let threadId: Int64?
+    public let phase: GRVMCleanupPhase
+    public let createdAt: Int32
+    public let messageKeys: [GRVMMessageKey]
+    public let mediaRecords: [GRVMArchivedMedia]
+
+    public init(
+        id: UUID,
+        accountId: Int64,
+        peerId: Int64?,
+        threadId: Int64?,
+        phase: GRVMCleanupPhase,
+        createdAt: Int32,
+        messageKeys: [GRVMMessageKey],
+        mediaRecords: [GRVMArchivedMedia]
+    ) {
+        self.id = id
+        self.accountId = accountId
+        self.peerId = peerId
+        self.threadId = threadId
+        self.phase = phase
+        self.createdAt = createdAt
+        self.messageKeys = messageKeys
+        self.mediaRecords = mediaRecords
+    }
+}
+
+public enum GRVMClearDeletedError: Error, Equatable {
+    case archiveUnavailable
+    case mediaRemovalFailed(Int)
+    case databaseFinalizationFailed
 }
 
 public struct GRVMArchiveQuery: Equatable {
