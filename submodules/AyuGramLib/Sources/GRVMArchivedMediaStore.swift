@@ -11,6 +11,16 @@ private func grvmResourceFilename(_ id: MediaResourceId) -> String {
     return digest.map { String(format: "%02x", $0) }.joined()
 }
 
+public struct GRVMMediaRemovalResult: Equatable {
+    public let removed: [GRVMArchivedMedia]
+    public let failed: [GRVMArchivedMedia]
+}
+
+private struct GRVMMediaRecordKey: Hashable {
+    let accountId: Int64
+    let resourceId: String
+}
+
 public final class GRVMArchivedMediaStore {
     private let rootURL: URL
     private let fileManager: FileManager
@@ -40,46 +50,7 @@ public final class GRVMArchivedMediaStore {
     ) -> Signal<GRVMArchivedMedia, NoError> {
         return Signal { subscriber in
             self.queue.async {
-                let location = self.resourceLocation(accountId: record.accountId, id: resource.id)
-                guard let sourcePath = mediaBox.completedResourcePath(id: resource.id),
-                      let byteCount = self.fileSize(atPath: sourcePath) else {
-                    subscriber.putNext(self.terminalRecord(
-                        record,
-                        resource: resource,
-                        relativePath: location.relativePath,
-                        byteCount: 0,
-                        copyState: .unavailable
-                    ))
-                    subscriber.putCompletion()
-                    return
-                }
-
-                if self.fileSize(at: location.url) == byteCount {
-                    subscriber.putNext(self.terminalRecord(
-                        record,
-                        resource: resource,
-                        relativePath: location.relativePath,
-                        byteCount: byteCount,
-                        copyState: .complete
-                    ))
-                    subscriber.putCompletion()
-                    return
-                }
-
-                let temporaryURL = location.url.appendingPathExtension("tmp")
-                let complete = self.copyAtomically(
-                    from: URL(fileURLWithPath: sourcePath),
-                    to: location.url,
-                    temporaryURL: temporaryURL,
-                    expectedByteCount: byteCount
-                )
-                subscriber.putNext(self.terminalRecord(
-                    record,
-                    resource: resource,
-                    relativePath: location.relativePath,
-                    byteCount: complete ? byteCount : 0,
-                    copyState: complete ? .complete : .unavailable
-                ))
+                subscriber.putNext(self.archiveRecord(record, resource: resource, mediaBox: mediaBox))
                 subscriber.putCompletion()
             }
             return EmptyDisposable
@@ -94,27 +65,61 @@ public final class GRVMArchivedMediaStore {
         return mediaBox.restoreResourceData(MediaResourceId(record.resourceId), fromPath: archiveURL.path)
     }
 
-    public func remove(_ records: [GRVMArchivedMedia], completion: @escaping () -> Void = {}) {
-        self.queue.async {
+    public func removeArchivedFiles(_ records: [GRVMArchivedMedia]) -> GRVMMediaRemovalResult {
+        var removed: [GRVMArchivedMedia] = []
+        var failed: [GRVMArchivedMedia] = []
+        self.queue.sync {
+            var seen = Set<GRVMMediaRecordKey>()
             for record in records {
-                guard let url = self.archiveURL(record: record) else {
+                let key = GRVMMediaRecordKey(accountId: record.accountId, resourceId: record.resourceId)
+                guard seen.insert(key).inserted else {
                     continue
                 }
-                try? self.fileManager.removeItem(at: url)
+                guard !record.relativePath.isEmpty else {
+                    removed.append(record)
+                    continue
+                }
+                guard let url = self.archiveURL(record: record) else {
+                    failed.append(record)
+                    continue
+                }
+                let removedFinal = self.removeIfPresent(url)
+                let removedTemporary = self.removeIfPresent(url.appendingPathExtension("tmp"))
+                if removedFinal && removedTemporary {
+                    removed.append(record)
+                } else {
+                    failed.append(record)
+                }
             }
+        }
+        return GRVMMediaRemovalResult(removed: removed, failed: failed)
+    }
+
+    public func remove(_ records: [GRVMArchivedMedia], completion: @escaping () -> Void = {}) {
+        self.queue.async {
+            _ = self.removeArchivedFiles(records)
             completion()
         }
     }
 
     public func reconcile(
         accountId: Int64,
-        records: [GRVMArchivedMedia]
+        records: [GRVMArchivedMedia],
+        mediaBox: MediaBox
     ) -> Signal<[GRVMArchivedMedia], NoError> {
         return Signal { subscriber in
             self.queue.async {
                 let referencedRelativePaths = Set(records.compactMap { record -> String? in
-                    guard record.accountId == accountId,
-                          record.relativePath.hasPrefix("\(accountId)/blobs/"),
+                    guard record.accountId == accountId else {
+                        return nil
+                    }
+                    if record.copyState == .copying {
+                        return self.resourceLocation(
+                            accountId: record.accountId,
+                            id: MediaResourceId(record.resourceId)
+                        ).relativePath
+                    }
+                    guard record.relativePath.hasPrefix("\(accountId)/blobs/"),
                           self.archiveURL(record: record) != nil else {
                         return nil
                     }
@@ -133,7 +138,7 @@ public final class GRVMArchivedMediaStore {
                             continue
                         }
                         if fileURL.pathExtension == "tmp" {
-                            try? self.fileManager.removeItem(at: fileURL)
+                            _ = self.removeIfPresent(fileURL)
                             continue
                         }
                         let prefix = self.rootURL.path + "/"
@@ -142,29 +147,66 @@ public final class GRVMArchivedMediaStore {
                         }
                         let relativePath = String(fileURL.path.dropFirst(prefix.count))
                         if !referencedRelativePaths.contains(relativePath) {
-                            try? self.fileManager.removeItem(at: fileURL)
+                            _ = self.removeIfPresent(fileURL)
                         }
                     }
                 }
 
-                let missing = records.compactMap { record -> GRVMArchivedMedia? in
-                    guard record.accountId == accountId, record.copyState == .complete else {
-                        return nil
-                    }
-                    guard let url = self.archiveURL(record: record),
-                          self.fileManager.fileExists(atPath: url.path) else {
-                        return GRVMArchivedMedia(
-                            accountId: record.accountId,
-                            resourceId: record.resourceId,
-                            relativePath: record.relativePath,
-                            byteCount: record.byteCount,
-                            kind: record.kind,
-                            copyState: .missing
+                var updates: [GRVMArchivedMedia] = []
+                for record in records where record.accountId == accountId {
+                    switch record.copyState {
+                    case .copying:
+                        let resource = GRVMMediaResourceReference(
+                            id: MediaResourceId(record.resourceId),
+                            kind: record.kind
                         )
+                        let location = self.resourceLocation(accountId: record.accountId, id: resource.id)
+                        if let byteCount = self.fileSize(at: location.url) {
+                            updates.append(self.terminalRecord(
+                                record,
+                                resource: resource,
+                                relativePath: location.relativePath,
+                                byteCount: byteCount,
+                                copyState: .complete
+                            ))
+                            continue
+                        }
+
+                        let temporaryURL = location.url.appendingPathExtension("tmp")
+                        if mediaBox.completedResourcePath(id: resource.id) == nil {
+                            _ = self.removeIfPresent(temporaryURL)
+                        }
+                        let recovered = self.archiveRecord(record, resource: resource, mediaBox: mediaBox)
+                        if recovered.copyState == .complete {
+                            updates.append(recovered)
+                        } else {
+                            _ = self.removeIfPresent(temporaryURL)
+                            updates.append(self.terminalRecord(
+                                record,
+                                resource: resource,
+                                relativePath: location.relativePath,
+                                byteCount: 0,
+                                copyState: .unavailable
+                            ))
+                        }
+                    case .complete:
+                        guard let url = self.archiveURL(record: record),
+                              self.fileManager.fileExists(atPath: url.path) else {
+                            updates.append(GRVMArchivedMedia(
+                                accountId: record.accountId,
+                                resourceId: record.resourceId,
+                                relativePath: record.relativePath,
+                                byteCount: record.byteCount,
+                                kind: record.kind,
+                                copyState: .missing
+                            ))
+                            continue
+                        }
+                    case .unavailable, .missing:
+                        break
                     }
-                    return nil
                 }
-                subscriber.putNext(missing)
+                subscriber.putNext(updates)
                 subscriber.putCompletion()
             }
             return EmptyDisposable
@@ -181,6 +223,49 @@ public final class GRVMArchivedMediaStore {
             .appendingPathComponent(prefix, isDirectory: true)
             .appendingPathComponent(filename, isDirectory: false)
         return (relativePath, url)
+    }
+
+    private func archiveRecord(
+        _ record: GRVMArchivedMedia,
+        resource: GRVMMediaResourceReference,
+        mediaBox: MediaBox
+    ) -> GRVMArchivedMedia {
+        let location = self.resourceLocation(accountId: record.accountId, id: resource.id)
+        guard let sourcePath = mediaBox.completedResourcePath(id: resource.id),
+              let byteCount = self.fileSize(atPath: sourcePath) else {
+            return self.terminalRecord(
+                record,
+                resource: resource,
+                relativePath: location.relativePath,
+                byteCount: 0,
+                copyState: .unavailable
+            )
+        }
+
+        if self.fileSize(at: location.url) == byteCount {
+            return self.terminalRecord(
+                record,
+                resource: resource,
+                relativePath: location.relativePath,
+                byteCount: byteCount,
+                copyState: .complete
+            )
+        }
+
+        let temporaryURL = location.url.appendingPathExtension("tmp")
+        let complete = self.copyAtomically(
+            from: URL(fileURLWithPath: sourcePath),
+            to: location.url,
+            temporaryURL: temporaryURL,
+            expectedByteCount: byteCount
+        )
+        return self.terminalRecord(
+            record,
+            resource: resource,
+            relativePath: location.relativePath,
+            byteCount: complete ? byteCount : 0,
+            copyState: complete ? .complete : .unavailable
+        )
     }
 
     private func copyAtomically(
@@ -201,14 +286,16 @@ public final class GRVMArchivedMediaStore {
             var mutableParentURL = parentURL
             try mutableParentURL.setResourceValues(resourceValues)
 
-            try? self.fileManager.removeItem(at: temporaryURL)
+            guard self.removeIfPresent(temporaryURL) else {
+                return false
+            }
             do {
                 try self.fileManager.linkItem(at: sourceURL, to: temporaryURL)
             } catch {
                 try self.fileManager.copyItem(at: sourceURL, to: temporaryURL)
             }
             guard self.fileSize(at: temporaryURL) == expectedByteCount else {
-                try? self.fileManager.removeItem(at: temporaryURL)
+                _ = self.removeIfPresent(temporaryURL)
                 return false
             }
 
@@ -219,8 +306,18 @@ public final class GRVMArchivedMediaStore {
             }
             return self.fileSize(at: destinationURL) == expectedByteCount
         } catch {
-            try? self.fileManager.removeItem(at: temporaryURL)
+            _ = self.removeIfPresent(temporaryURL)
             return false
+        }
+    }
+
+    private func removeIfPresent(_ url: URL) -> Bool {
+        do {
+            try self.fileManager.removeItem(at: url)
+            return true
+        } catch {
+            let nsError = error as NSError
+            return nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileNoSuchFileError
         }
     }
 
@@ -235,7 +332,12 @@ public final class GRVMArchivedMediaStore {
     }
 
     private func archiveURL(record: GRVMArchivedMedia) -> URL? {
-        guard record.relativePath.hasPrefix("\(record.accountId)/blobs/") else {
+        let expected = self.resourceLocation(
+            accountId: record.accountId,
+            id: MediaResourceId(record.resourceId)
+        )
+        guard record.relativePath.hasPrefix("\(record.accountId)/blobs/"),
+              record.relativePath == expected.relativePath else {
             return nil
         }
         return self.archiveURL(relativePath: record.relativePath)

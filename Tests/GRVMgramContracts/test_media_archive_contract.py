@@ -49,6 +49,56 @@ class MediaArchiveContractTests(unittest.TestCase):
             source,
         )
 
+    def test_removal_reports_explicit_idempotent_outcomes(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        self.assertIn("struct GRVMMediaRemovalResult: Equatable", source)
+        self.assertIn("func removeArchivedFiles(", source)
+        self.assertIn("NSFileNoSuchFileError", source)
+
+        remove_section = source[
+            source.index("public func removeArchivedFiles(") :
+            source.index("public func reconcile(")
+        ]
+        self.assertNotIn("try? self.fileManager.removeItem", remove_section)
+        self.assertIn('appendingPathExtension("tmp")', remove_section)
+
+        validation_section = source[
+            source.index("private func archiveURL(record:") :
+            source.index("private func fileSize(")
+        ]
+        self.assertIn("self.resourceLocation(", validation_section)
+        self.assertIn("record.relativePath == expected.relativePath", validation_section)
+
+    def test_reconciliation_recovers_interrupted_copies(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        reconcile_section = source[
+            source.index("public func reconcile(") :
+            source.index("private func resourceLocation(")
+        ]
+        self.assertIn("mediaBox: MediaBox", reconcile_section)
+        self.assertIn("case .copying", reconcile_section)
+        self.assertIn("mediaBox.completedResourcePath", reconcile_section)
+        self.assertIn("copyState: .complete", reconcile_section)
+        self.assertIn("copyState: .unavailable", reconcile_section)
+        self.assertNotIn("try? self.fileManager.removeItem", source)
+
+        references_section = reconcile_section[
+            reconcile_section.index("let referencedRelativePaths") :
+            reconcile_section.index("let blobsURL")
+        ]
+        self.assertIn("record.copyState == .copying", references_section)
+        self.assertIn("self.resourceLocation(", references_section)
+
+    def test_archive_signal_schedules_shared_copy_helper(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        archive_section = source[
+            source.index("public func archive(") :
+            source.index("public func restore(")
+        ]
+        self.assertIn("private func archiveRecord(", source)
+        self.assertIn("self.archiveRecord(", archive_section)
+        self.assertIn("subscriber.putNext", archive_section)
+
     def test_media_box_reports_only_successfully_unlinked_ids(self) -> None:
         source = MEDIA_BOX.read_text(encoding="utf-8")
         self.assertIn("didRemoveResourceIdsPipe", source)

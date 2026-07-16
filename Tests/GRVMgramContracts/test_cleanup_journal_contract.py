@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MODELS = ROOT / "submodules/AyuGramLib/Sources/GRVMMessageArchiveModels.swift"
 STORE = ROOT / "submodules/AyuGramLib/Sources/GRVMMessageArchiveStore.swift"
+COORDINATOR = ROOT / "submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"
 
 
 class CleanupJournalContractTests(unittest.TestCase):
@@ -69,3 +70,20 @@ class CleanupJournalContractTests(unittest.TestCase):
         ]
         self.assertIn("throws -> GRVMArchivedMedia?", lookup)
         self.assertIn("return nil", lookup)
+
+    def test_reconciliation_persists_updates_before_restoring_media(self) -> None:
+        source = COORDINATOR.read_text(encoding="utf-8")
+        prepare = source[
+            source.index("func prepare() throws") :
+            source.index("public func reconcilePersistentMessageState()")
+        ]
+        self.assertIn("mediaBox: self.mediaBox", prepare)
+        self.assertIn("updatedRecords", prepare)
+        self.assertLess(
+            prepare.index("self.store.updateMedia(record)"),
+            prepare.index("self.restore("),
+        )
+        self.assertIn(
+            "updatedRecords.filter { $0.copyState == .complete }",
+            prepare,
+        )

@@ -107,19 +107,26 @@ public final class GRVMMessageArchiveCoordinator {
         let records = try self.store.archivedMedia(accountId: self.accountRecordId.int64)
         self.disposables.add(self.mediaStore.reconcile(
             accountId: self.accountRecordId.int64,
-            records: records
-        ).start(next: { [weak self] missingRecords in
+            records: records,
+            mediaBox: self.mediaBox
+        ).start(next: { [weak self] updatedRecords in
             guard let self else {
                 return
             }
             self.queue.async {
-                let missingIds = Set(missingRecords.map(\.resourceId))
-                for record in missingRecords {
-                    try? self.store.updateMedia(record)
+                do {
+                    for record in updatedRecords {
+                        try self.store.updateMedia(record)
+                    }
+                } catch {
+                    return
                 }
-                self.restore(records.filter {
-                    $0.copyState == .complete && !missingIds.contains($0.resourceId)
-                })
+                let updatedIds = Set(updatedRecords.map(\.resourceId))
+                self.restore(
+                    records.filter {
+                        $0.copyState == .complete && !updatedIds.contains($0.resourceId)
+                    } + updatedRecords.filter { $0.copyState == .complete }
+                )
             }
         }))
 
