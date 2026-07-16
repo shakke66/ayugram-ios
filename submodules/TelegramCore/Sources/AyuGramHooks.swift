@@ -17,27 +17,31 @@ public final class AyuGramHooks {
     public static var shouldPreserveOneTimeMedia: ((PeerId) -> Bool)?
 
     // MARK: - Ghost Mode
-    public static var shouldSuppressReadReceipts: (() -> Bool)?
-    public static var shouldSuppressPresence: (() -> Bool)?
-    public static var shouldSuppressTyping: (() -> Bool)?
-    public static var shouldSuppressStoryRead: (() -> Bool)?
-    public static var shouldSuppressContentRead: (() -> Bool)?
+    public static var shouldSuppressReadReceipts: ((PeerId) -> Bool)?
+    public static var shouldSuppressPresence: ((PeerId) -> Bool)?
+    public static var shouldSuppressTyping: ((PeerId) -> Bool)?
+    public static var shouldSuppressStoryRead: ((PeerId) -> Bool)?
+    public static var shouldSuppressContentRead: ((PeerId) -> Bool)?
+    public static var shouldForceOfflineAfterOnline: ((PeerId) -> Bool)?
 
     // MARK: - Premium & Ads
     public static var isLocalPremiumEnabled: ((PeerId) -> Bool)?
-    public static var shouldDisableAds: (() -> Bool)?
+    public static var shouldDisableAds: ((PeerId) -> Bool)?
 
     // MARK: - General
-    public static var shouldHideStories: (() -> Bool)?
-    public static var shouldDisableSimilarChannels: (() -> Bool)?
-    public static var shouldDisableNotificationDelay: (() -> Bool)?
-    public static var shouldShowSeconds: (() -> Bool)?
-    public static var shouldShowDialogID: (() -> Bool)?
-    public static var shouldSpoofWebviewAsAndroid: (() -> Bool)?
-    public static var shouldIncreaseWebviewSize: (() -> Bool)?
-    public static var shouldConfirmStickers: (() -> Bool)?
-    public static var shouldConfirmGIF: (() -> Bool)?
-    public static var shouldConfirmVoice: (() -> Bool)?
+    public static var shouldHideStories: ((PeerId) -> Bool)?
+    public static var shouldDisableSimilarChannels: ((PeerId) -> Bool)?
+    public static var shouldDisableNotificationDelay: ((PeerId) -> Bool)?
+    public static var shouldShowSeconds: ((PeerId) -> Bool)?
+    public static var shouldShowDialogID: ((PeerId) -> Bool)?
+    public static var shouldSpoofWebviewAsAndroid: ((PeerId) -> Bool)?
+    public static var shouldIncreaseWebviewHeight: ((PeerId) -> Bool)?
+    public static var shouldIncreaseWebviewWidth: ((PeerId) -> Bool)?
+    public static var shouldDisableExternalLinkWarning: ((PeerId) -> Bool)?
+    public static var shouldConfirmStickers: ((PeerId) -> Bool)?
+    public static var shouldConfirmGIF: ((PeerId) -> Bool)?
+    public static var shouldConfirmVoice: ((PeerId) -> Bool)?
+    public static var translationProvider: ((PeerId) -> GRVMTranslationProvider)?
 
     // MARK: - Appearance
     public static var shouldHideNotificationBadge: (() -> Bool)?
@@ -66,12 +70,12 @@ public final class AyuGramHooks {
     public static var editedMessageMark: (() -> String)?
 
     // MARK: - Sending
-    public static var shouldUseScheduledMessages: (() -> Bool)?
+    public static var shouldUseScheduledMessages: ((PeerId) -> Bool)?
     public static var shouldSendWithoutSound: (() -> Bool)?
 
     // MARK: - Reanimation (W0)
-    public static var shouldSuppressUploadProgress: (() -> Bool)?
-    public static var shouldMarkReadAfterAction: (() -> Bool)?
+    public static var shouldSuppressUploadProgress: ((PeerId) -> Bool)?
+    public static var shouldMarkReadAfterAction: ((PeerId) -> Bool)?
     public static var shouldSaveForBots: (() -> Bool)?
     public static var shouldUseMD3Switches: (() -> Bool)?
     public static var shouldDisableCustomBackgrounds: (() -> Bool)?
@@ -95,20 +99,23 @@ public final class AyuGramHooks {
     // MARK: - 6.7.8 features (W0)
     public static var shouldShowGiftButton: (() -> Bool)?
     public static var shouldShowAiEditorButton: (() -> Bool)?
-    public static var shouldSuggestGhostForStories: (() -> Bool)?
-    public static var shouldFilterZalgo: (() -> Bool)?
-    public static var shouldImproveLinkPreviews: (() -> Bool)?
+    public static var shouldSuggestGhostForStories: ((PeerId) -> Bool)?
+    public static var shouldFilterZalgo: ((PeerId) -> Bool)?
+    public static var shouldImproveLinkPreviews: ((PeerId) -> Bool)?
     public static var shouldUseSemiTransparentDeleted: (() -> Bool)?
     public static var shouldHidePremiumStatuses: (() -> Bool)?
     public static var avatarCornerRadius: (() -> Int32)?
     public static var messageBubbleRadius: (() -> Int32)?
     public static var shouldUseSingleCornerRadius: (() -> Bool)?
-    public static var peerIdDisplayMode: (() -> Int32)?     // 0 Hidden / 1 TelegramApi / 2 BotApi
-    public static var sendWithoutSoundMode: (() -> Int32)?  // 0 Never / 1 InGhost / 2 Always
+    public static var peerIdDisplayMode: ((PeerId) -> Int32)?     // 0 Hidden / 1 TelegramApi / 2 BotApi
+    public static var sendWithoutSoundMode: ((PeerId) -> Int32)?  // 0 Never / 1 InGhost / 2 Always
 
     // MARK: - Filters / shadow-ban (заполняются в W4)
-    public static var isMessageHiddenByFilter: ((Int64, String) -> Bool)?
-    public static var isShadowBanned: ((Int64) -> Bool)?
+    public static var isMessageHiddenByFilter: ((PeerId, Message) -> Bool)?
+    public static var isShadowBanned: ((PeerId, PeerId) -> Bool)?
+    public static var matchingMessageFilterIds: ((PeerId, Message) -> [String])?
+    public static var isShowingFilteredMessages: ((PeerId, PeerId) -> Bool)?
+    public static var setShowingFilteredMessages: ((PeerId, PeerId, Bool) -> Void)?
 }
 
 func grvmMergedEditStateAttributes(
