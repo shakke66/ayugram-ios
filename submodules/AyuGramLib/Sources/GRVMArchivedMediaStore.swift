@@ -159,7 +159,6 @@ public final class GRVMArchivedMediaStore {
                     }
                 }
                 guard !cleanupFailed else {
-                    subscriber.putNext([])
                     subscriber.putCompletion()
                     return
                 }
@@ -187,7 +186,6 @@ public final class GRVMArchivedMediaStore {
                         let temporaryURL = location.url.appendingPathExtension("tmp")
                         if mediaBox.completedResourcePath(id: resource.id) == nil {
                             guard self.removeIfPresent(temporaryURL) else {
-                                subscriber.putNext([])
                                 subscriber.putCompletion()
                                 return
                             }
@@ -197,7 +195,6 @@ public final class GRVMArchivedMediaStore {
                             updates.append(recovered)
                         } else {
                             guard self.removeIfPresent(temporaryURL) else {
-                                subscriber.putNext([])
                                 subscriber.putCompletion()
                                 return
                             }

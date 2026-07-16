@@ -102,24 +102,19 @@ class MediaArchiveContractTests(unittest.TestCase):
         self.assertIn("byteCount > 0", copying_section)
         self.assertIn("byteCount > 0", archive_section)
 
-    def test_failed_terminal_tmp_cleanup_keeps_copying_retryable(self) -> None:
+    def test_failed_terminal_tmp_cleanup_completes_without_next(self) -> None:
         source = STORE.read_text(encoding="utf-8")
         copying_section = source[
             source.index("case .copying:") :
             source.index("case .complete:")
         ]
-        terminal_section = copying_section[
-            copying_section.index("let recovered") :
-        ]
         cleanup_gate = "guard self.removeIfPresent(temporaryURL) else"
-        self.assertIn(cleanup_gate, terminal_section)
-        self.assertIn("subscriber.putNext([])", terminal_section)
-        self.assertLess(
-            terminal_section.index(cleanup_gate),
-            terminal_section.index("copyState: .unavailable"),
-        )
+        self.assertEqual(copying_section.count(cleanup_gate), 2)
+        self.assertEqual(copying_section.count("subscriber.putCompletion()"), 2)
+        self.assertGreaterEqual(copying_section.count("return"), 2)
+        self.assertNotIn("subscriber.putNext", copying_section)
 
-    def test_failed_orphan_cleanup_aborts_before_reconciliation_updates(self) -> None:
+    def test_failed_orphan_cleanup_completes_without_next(self) -> None:
         source = STORE.read_text(encoding="utf-8")
         reconcile_section = source[
             source.index("public func reconcile(") :
@@ -132,7 +127,12 @@ class MediaArchiveContractTests(unittest.TestCase):
         self.assertIn("var cleanupFailed = false", cleanup_section)
         self.assertGreaterEqual(cleanup_section.count("cleanupFailed = true"), 2)
         self.assertIn("guard !cleanupFailed else", cleanup_section)
-        self.assertIn("subscriber.putNext([])", cleanup_section)
+        failure_section = cleanup_section[
+            cleanup_section.index("guard !cleanupFailed else") :
+        ]
+        self.assertIn("subscriber.putCompletion()", failure_section)
+        self.assertIn("return", failure_section)
+        self.assertNotIn("subscriber.putNext", failure_section)
 
     def test_archive_signal_schedules_shared_copy_helper(self) -> None:
         source = STORE.read_text(encoding="utf-8")
