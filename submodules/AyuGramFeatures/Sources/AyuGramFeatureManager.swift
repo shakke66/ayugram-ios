@@ -252,7 +252,14 @@ public final class AyuGramFeatureManager {
         }
         AyuGramHooks.sendWithoutSoundMode = { [weak self] accountPeerId in
             guard let settings = self?.settings(accountPeerId: accountPeerId) else { return 0 }
-            return settings.sendWithoutSoundOption
+            switch settings.sendWithoutSoundOption {
+            case 2:
+                return 2
+            case 1:
+                return settings.ghostModeEnabled ? 1 : 0
+            default:
+                return 0
+            }
         }
 
         // MARK: - Filters (W4)

@@ -8341,7 +8341,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             
     func transformEnqueueMessages(_ messages: [EnqueueMessage], postpone: Bool = false) -> [EnqueueMessage] {
         let sendWithoutSoundMode = AyuGramHooks.sendWithoutSoundMode?(self.context.account.peerId) ?? 0
-        let silentPosting = self.presentationInterfaceState.interfaceState.silentPosting || sendWithoutSoundMode == 2
+        let silentPosting = self.presentationInterfaceState.interfaceState.silentPosting || sendWithoutSoundMode != 0
         return transformEnqueueMessages(messages, silentPosting: silentPosting, postpone: postpone)
     }
     

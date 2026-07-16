@@ -225,12 +225,77 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
             "sendWithoutSoundMode?(self.context.account.peerId)",
             chat,
         )
-        self.assertIn("sendWithoutSoundMode == 2", chat)
         webview = source("submodules/WebUI/Sources/WebAppWebView.swift")
         self.assertIn(
             "shouldIncreaseWebviewHeight || shouldIncreaseWebviewWidth",
             webview,
         )
+
+    def test_chat_send_gate_preserves_in_ghost_and_always_silent_modes(self) -> None:
+        manager = source(
+            "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
+        )
+        send_mode = swift_block(manager, "AyuGramHooks.sendWithoutSoundMode =")
+        chat = source("submodules/TelegramUI/Sources/ChatController.swift")
+        send_gate = swift_block(
+            chat,
+            "func transformEnqueueMessages(_ messages:",
+        )
+        comparison = re.search(
+            r"silentPosting = .* \|\| sendWithoutSoundMode\s*([!=]=)\s*(-?\d+)",
+            send_gate,
+        )
+        self.assertIsNotNone(comparison)
+        operator, raw_value = comparison.groups()
+        compared_value = int(raw_value)
+
+        switch_body = re.search(
+            r"switch\s+settings\.sendWithoutSoundOption\s*\{\s*"
+            r"case\s+2:\s*return\s+(-?\d+)\s*"
+            r"case\s+1:\s*return\s+settings\.ghostModeEnabled\s*\?\s*"
+            r"(-?\d+)\s*:\s*(-?\d+)\s*"
+            r"default:\s*return\s+(-?\d+)\s*\}",
+            send_mode,
+            re.S,
+        )
+        self.assertIsNotNone(switch_body)
+        always_mode, ghost_on_mode, ghost_off_mode, default_mode = map(
+            int,
+            switch_body.groups(),
+        )
+        settings_lookup = swift_block(
+            manager,
+            "private func settings(accountPeerId:",
+        )
+        self.assertIn("registry.service(accountPeerId: accountPeerId)", settings_lookup)
+        self.assertIn("settings(accountPeerId: accountPeerId)", send_mode)
+
+        def effective_mode(mode: int, ghost_mode_enabled: bool) -> int:
+            if mode == 2:
+                return always_mode
+            if mode == 1:
+                return ghost_on_mode if ghost_mode_enabled else ghost_off_mode
+            return default_mode
+
+        def gate_is_silent(mode: int) -> bool:
+            if operator == "!=":
+                return mode != compared_value
+            return mode == compared_value
+
+        cases = (
+            (0, False, False),
+            (0, True, False),
+            (1, False, False),
+            (1, True, True),
+            (2, False, True),
+            (2, True, True),
+        )
+        for mode, ghost_mode_enabled, expected in cases:
+            with self.subTest(mode=mode, ghost_mode_enabled=ghost_mode_enabled):
+                self.assertEqual(
+                    expected,
+                    gate_is_silent(effective_mode(mode, ghost_mode_enabled)),
+                )
 
     def test_translation_provider_normalizes_init_decode_and_direct_mutation(self) -> None:
         settings = source("submodules/AyuGramLib/Sources/AyuGramSettings.swift")
