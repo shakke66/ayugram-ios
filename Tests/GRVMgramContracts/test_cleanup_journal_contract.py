@@ -34,3 +34,18 @@ class CleanupJournalContractTests(unittest.TestCase):
         self.assertIn("DELETE FROM archived_messages", finalize[:16000])
         self.assertIn("DELETE FROM cleanup_jobs", finalize[:16000])
         self.assertIn("SELECT COUNT(*) FROM archived_message_media", finalize[:16000])
+
+    def test_invalid_media_copy_state_fails_closed_at_shared_reader(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        reader = source[
+            source.index("private func readMedia(") :
+            source.index("private func mappedResourceIds(")
+        ]
+        self.assertIn("throws -> GRVMArchivedMedia", reader)
+        self.assertIn(
+            'throw GRVMArchiveError.sqlite("invalid archived media copy state")',
+            reader,
+        )
+        self.assertNotIn("return nil", reader)
+        self.assertIn("result.append(try self.readMedia(statement))", source)
+        self.assertIn("return try self.readMedia(statement)", source)

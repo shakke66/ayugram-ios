@@ -1121,9 +1121,7 @@ public final class GRVMMessageArchiveStore {
         return try self.withStatement(database, sql: sql, values: values) { statement in
             var result: [GRVMArchivedMedia] = []
             try self.readRows(database, statement: statement) {
-                if let record = self.readMedia(statement) {
-                    result.append(record)
-                }
+                result.append(try self.readMedia(statement))
             }
             return result
         }
@@ -1214,13 +1212,13 @@ public final class GRVMMessageArchiveStore {
                 }
                 return nil
             }
-            return self.readMedia(statement)
+            return try self.readMedia(statement)
         }
     }
 
-    private func readMedia(_ statement: OpaquePointer) -> GRVMArchivedMedia? {
+    private func readMedia(_ statement: OpaquePointer) throws -> GRVMArchivedMedia {
         guard let copyState = GRVMArchivedMedia.CopyState(rawValue: sqlite3_column_int(statement, 5)) else {
-            return nil
+            throw GRVMArchiveError.sqlite("invalid archived media copy state")
         }
         return GRVMArchivedMedia(
             accountId: sqlite3_column_int64(statement, 0),
