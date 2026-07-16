@@ -90,7 +90,7 @@ func managedAutoremoveMessageOperations(accountPeerId: PeerId, network: Network,
                                 ids: [entry.messageId],
                                 mode: .server(.ttl)
                             )
-                        } else if AyuGramHooks.shouldPreserveOneTimeMedia?() == true {
+                        } else if AyuGramHooks.shouldPreserveOneTimeMedia?(accountPeerId) == true {
                             // AyuGram: keep one-time media, just remove the autoclear timer
                             transaction.updateMessage(message.id, update: { currentMessage in
                                 var storeForwardInfo: StoreMessageForwardInfo?

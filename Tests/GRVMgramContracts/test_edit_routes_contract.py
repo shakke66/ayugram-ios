@@ -30,8 +30,13 @@ class EditRouteContractTests(unittest.TestCase):
         self.assertIn("private func grvmApplyEditedMessage(", value)
         helper = window(value, "private func grvmApplyEditedMessage(", 5000)
         self.assertIn("transaction.getMessage(id)", helper)
+        self.assertIn("!grvmMessageEditContentMatches(previous: previous, incoming: message)", helper)
         self.assertIn("AyuGramHooks.preserveEditRevision?(accountPeerId, previous)", helper)
         self.assertIn("transaction.updateMessage(id", helper)
+        self.assertLess(
+            helper.index("grvmMessageEditContentMatches"),
+            helper.index("preserveEditRevision"),
+        )
         self.assertLess(
             helper.index("AyuGramHooks.preserveEditRevision?(accountPeerId, previous)"),
             helper.index("transaction.updateMessage(id"),

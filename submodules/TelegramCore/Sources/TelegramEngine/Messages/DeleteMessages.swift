@@ -206,7 +206,14 @@ func _internal_clearCallHistory(account: Account, forEveryone: Bool) -> Signal<N
         |> `catch` { success -> Signal<Void, NoError> in
             if success {
                 return account.postbox.transaction { transaction -> Void in
-                    transaction.removeAllMessagesWithGlobalTag(tag: GlobalMessageTags.Calls)
+                    let ids = transaction.messageIdsWithGlobalTag(GlobalMessageTags.Calls)
+                    _internal_applyMessageDeletion(
+                        accountPeerId: account.peerId,
+                        transaction: transaction,
+                        mediaBox: account.postbox.mediaBox,
+                        ids: ids,
+                        mode: .server(.localAction)
+                    )
                 }
             } else {
                 return .complete()

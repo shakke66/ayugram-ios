@@ -44,8 +44,8 @@ public final class AyuGramFeatureManager {
         AyuGramFeatures.editHistory = { [weak self] accountPeerId, messageId in
             return self?.registry.service(accountPeerId: accountPeerId)?.editHistory(messageId) ?? .single([])
         }
-        AyuGramHooks.shouldPreserveOneTimeMedia = { [weak self] in
-            return self?.currentSettings.saveDeletedMessages ?? false
+        AyuGramHooks.shouldPreserveOneTimeMedia = { [weak self] accountPeerId in
+            return self?.registry.service(accountPeerId: accountPeerId)?.settingsSnapshot().saveDeletedMessages ?? false
         }
 
         // MARK: - Ghost Mode

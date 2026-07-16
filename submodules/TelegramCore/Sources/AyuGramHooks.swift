@@ -8,7 +8,7 @@ public final class AyuGramHooks {
     public static var preserveDeletedMessages: ((PeerId, [Message], GRVMDeletionSource) -> [MessageId: [String]])?
     public static var preserveEditRevision: ((PeerId, Message) -> Bool)?
     public static var hasEditHistory: ((PeerId, MessageId) -> Bool)?
-    public static var shouldPreserveOneTimeMedia: (() -> Bool)?
+    public static var shouldPreserveOneTimeMedia: ((PeerId) -> Bool)?
 
     // MARK: - Ghost Mode
     public static var shouldSuppressReadReceipts: (() -> Bool)?

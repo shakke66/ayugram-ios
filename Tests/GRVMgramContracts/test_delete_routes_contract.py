@@ -9,6 +9,7 @@ APPLY = CORE / "TelegramEngine/Messages/ApplyGRVMMessageDeletion.swift"
 HOOKS = CORE / "AyuGramHooks.swift"
 COORDINATOR = ROOT / "submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"
 MANAGER = ROOT / "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
+POSTBOX = ROOT / "submodules/Postbox/Sources/Postbox.swift"
 
 
 def source(path: str) -> str:
@@ -44,6 +45,7 @@ class DeleteRouteContractTests(unittest.TestCase):
         hooks = HOOKS.read_text(encoding="utf-8")
         coordinator = COORDINATOR.read_text(encoding="utf-8")
         manager = MANAGER.read_text(encoding="utf-8")
+        autoremove = source("State/ManagedAutoremoveMessageOperations.swift")
         self.assertIn(
             "preserveDeletedMessages: ((PeerId, [Message], GRVMDeletionSource) -> [MessageId: [String]])?",
             hooks,
@@ -56,7 +58,25 @@ class DeleteRouteContractTests(unittest.TestCase):
         self.assertIn("directBot", coordinator)
         self.assertIn("try self.store.saveDeleted(", coordinator)
         self.assertIn("self.index.insertDeleted(", coordinator)
+        self.assertIn("shouldPreserveOneTimeMedia: ((PeerId) -> Bool)?", hooks)
+        self.assertIn("shouldPreserveOneTimeMedia?(accountPeerId)", autoremove)
+        self.assertIn("registry.service(accountPeerId: accountPeerId)", manager)
         self.assertGreaterEqual(manager.count("registry.service(accountPeerId: accountPeerId)"), 2)
+
+    def test_clear_call_history_collects_exact_ids_and_uses_preservation_route(self) -> None:
+        delete_messages = source("TelegramEngine/Messages/DeleteMessages.swift")
+        call_section = occurrence_window(delete_messages, "func _internal_clearCallHistory(", 1, 7000)
+        self.assertIn("messageIdsWithGlobalTag(GlobalMessageTags.Calls)", delete_messages)
+        self.assertIn("_internal_applyMessageDeletion(", call_section)
+        self.assertNotIn("removeAllMessagesWithGlobalTag", call_section)
+
+    def test_global_tag_ids_forward_and_ignore_holes(self) -> None:
+        postbox = POSTBOX.read_text(encoding="utf-8")
+        self.assertIn("public func messageIdsWithGlobalTag(_ tag: GlobalMessageTags) -> [MessageId]", postbox)
+        self.assertIn("messageIdsWithGlobalTag(tag: tag)", postbox)
+        self.assertIn("messageHistoryTable.allIndicesWithGlobalTag(tag: tag)", postbox)
+        self.assertIn("case let .message(index):", postbox)
+        self.assertIn("case .hole:", postbox)
 
     def test_every_user_visible_id_route_uses_the_helper(self) -> None:
         routes = (

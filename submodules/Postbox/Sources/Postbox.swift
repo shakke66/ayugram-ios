@@ -170,6 +170,11 @@ public final class Transaction {
         assert(!self.disposed)
         self.postbox?.removeAllMessagesWithGlobalTag(tag: tag)
     }
+
+    public func messageIdsWithGlobalTag(_ tag: GlobalMessageTags) -> [MessageId] {
+        assert(!self.disposed)
+        return self.postbox?.messageIdsWithGlobalTag(tag: tag) ?? []
+    }
     
     public func removeAllMessagesWithForwardAuthor(_ peerId: PeerId, forwardAuthorId: PeerId, namespace: MessageId.Namespace, forEachMedia: ((Media) -> Void)?) {
         assert(!self.disposed)
@@ -2338,6 +2343,17 @@ final class PostboxImpl {
     
     fileprivate func removeAllMessagesWithGlobalTag(tag: GlobalMessageTags) {
         self.messageHistoryTable.removeAllMessagesWithGlobalTag(tag: tag, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations, forEachMedia: { _ in })
+    }
+
+    fileprivate func messageIdsWithGlobalTag(tag: GlobalMessageTags) -> [MessageId] {
+        return self.messageHistoryTable.allIndicesWithGlobalTag(tag: tag).compactMap { entry in
+            switch entry {
+            case let .message(index):
+                return index.id
+            case .hole:
+                return nil
+            }
+        }
     }
     
     fileprivate func removeAllMessagesWithForwardAuthor(_ peerId: PeerId, forwardAuthorId: PeerId, namespace: MessageId.Namespace, forEachMedia: ((Media) -> Void)?) {

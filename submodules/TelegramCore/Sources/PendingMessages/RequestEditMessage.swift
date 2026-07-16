@@ -67,7 +67,8 @@ private func grvmApplyEditedMessage(
     message: StoreMessage
 ) {
     var shouldMarkHistory = false
-    if let previous = transaction.getMessage(id) {
+    if let previous = transaction.getMessage(id),
+       !grvmMessageEditContentMatches(previous: previous, incoming: message) {
         shouldMarkHistory = AyuGramHooks.preserveEditRevision?(accountPeerId, previous) == true
     }
     transaction.updateMessage(id, update: { previous in
