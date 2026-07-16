@@ -12,6 +12,22 @@ STORE = ROOT / "submodules/AyuGramLib/Sources/GRVMMessageArchiveStore.swift"
 MEDIA_STORE = ROOT / "submodules/AyuGramLib/Sources/GRVMArchivedMediaStore.swift"
 
 
+def swift_block(source: str, signature: str) -> str:
+    start = source.find(signature)
+    if start == -1:
+        raise AssertionError(f"Missing Swift block: {signature}")
+    opening_brace = source.index("{", start)
+    depth = 0
+    for index in range(opening_brace, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1]
+    raise AssertionError(f"Unterminated Swift block: {signature}")
+
+
 class AccountRegistryContractTests(unittest.TestCase):
     def test_registry_uses_explicit_atomic_account_lookups(self) -> None:
         self.assertTrue(REGISTRY.exists())
@@ -92,6 +108,43 @@ class AccountRegistryContractTests(unittest.TestCase):
         ]
         positions = [removal.index(anchor) for anchor in anchors]
         self.assertEqual(positions, sorted(positions))
+
+    def test_registry_delivers_shutdown_errors_after_lifecycle_sync(self) -> None:
+        registry = REGISTRY.read_text(encoding="utf-8")
+        coordinator = COORDINATOR.read_text(encoding="utf-8")
+
+        shutdown = swift_block(coordinator, "func shutdownForReplacement()")
+        self.assertIn(
+            "-> [Subscriber<[MessageId], GRVMClearDeletedError>]",
+            shutdown,
+        )
+        self.assertIn("return waiters", shutdown)
+        self.assertNotIn("subscriber.putError", shutdown)
+
+        register = swift_block(registry, "public func register(")
+        self.assertIn("var shutdownWaiters", register)
+        register_sync = swift_block(register, "self.lifecycleQueue.sync")
+        self.assertNotIn("self.deliverShutdownErrors", register_sync)
+        self.assertLess(
+            register.index(register_sync) + len(register_sync),
+            register.index("self.deliverShutdownErrors(shutdownWaiters)"),
+        )
+
+        unregister = swift_block(registry, "public func unregister(")
+        self.assertIn("var shutdownWaiters", unregister)
+        unregister_sync = swift_block(unregister, "self.lifecycleQueue.sync")
+        self.assertNotIn("self.deliverShutdownErrors", unregister_sync)
+        self.assertLess(
+            unregister.index(unregister_sync) + len(unregister_sync),
+            unregister.index("self.deliverShutdownErrors(shutdownWaiters)"),
+        )
+
+        removal = swift_block(registry, "private func removeRegistration(")
+        self.assertNotIn("subscriber.putError", removal)
+        delivery = swift_block(registry, "private func deliverShutdownErrors(")
+        self.assertIn("Queue.concurrentDefaultQueue().async", delivery)
+        async_delivery = swift_block(delivery, "Queue.concurrentDefaultQueue().async")
+        self.assertIn("subscriber.putError(.archiveUnavailable)", async_delivery)
 
     def test_app_delegate_migrates_then_registers_active_contexts(self) -> None:
         source = APP_DELEGATE.read_text(encoding="utf-8")

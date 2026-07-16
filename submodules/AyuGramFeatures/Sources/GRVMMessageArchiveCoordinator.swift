@@ -116,6 +116,9 @@ public final class GRVMMessageArchiveCoordinator {
                 return
             }
             self.queue.async {
+                guard self.isAcceptingOperations else {
+                    return
+                }
                 let resourceIds = ids.map(\.stringRepresentation)
                 guard let records = try? self.store.archivedMedia(
                     accountId: self.accountRecordId.int64,
@@ -128,19 +131,19 @@ public final class GRVMMessageArchiveCoordinator {
         }))
     }
 
-    func shutdownForReplacement() {
+    func shutdownForReplacement() -> [Subscriber<[MessageId], GRVMClearDeletedError>] {
+        var waiters: [Subscriber<[MessageId], GRVMClearDeletedError>] = []
         self.queue.sync {
             guard self.isAcceptingOperations else {
                 return
             }
             self.isAcceptingOperations = false
             self.cleanupRunnerDisposable.dispose()
+            self.disposables.dispose()
             self.isCleanupExecutorRunning = false
-            let waiters = self.takeAllCleanupWaiters()
-            for subscriber in waiters {
-                subscriber.putError(.archiveUnavailable)
-            }
+            waiters = self.takeAllCleanupWaiters()
         }
+        return waiters
     }
 
     public func resumePendingCleanupJobs() {
@@ -314,7 +317,7 @@ public final class GRVMMessageArchiveCoordinator {
     }
 
     private func reconcileArchivedMedia() {
-        guard !self.didStartArchivedMediaReconciliation else {
+        guard self.isAcceptingOperations, !self.didStartArchivedMediaReconciliation else {
             return
         }
         let records: [GRVMArchivedMedia]
@@ -333,6 +336,9 @@ public final class GRVMMessageArchiveCoordinator {
                 return
             }
             self.queue.async {
+                guard self.isAcceptingOperations else {
+                    return
+                }
                 do {
                     for record in updatedRecords {
                         try self.store.updateMedia(record)
@@ -366,6 +372,9 @@ public final class GRVMMessageArchiveCoordinator {
             let batchDeletedKeys = batch.filter { deletedKeys.contains($0) }
             self.queue.async { [weak self] in
                 guard let self else {
+                    return
+                }
+                guard self.isAcceptingOperations else {
                     return
                 }
 
@@ -523,6 +532,9 @@ public final class GRVMMessageArchiveCoordinator {
                         return
                     }
                     self.queue.async {
+                        guard self.isAcceptingOperations else {
+                            return
+                        }
                         try? self.store.updateMedia(record)
                     }
                 }))
@@ -590,6 +602,9 @@ public final class GRVMMessageArchiveCoordinator {
                     return
                 }
                 self.queue.async {
+                    guard self.isAcceptingOperations else {
+                        return
+                    }
                     try? self.store.updateMedia(record)
                 }
             }))
@@ -738,6 +753,9 @@ public final class GRVMMessageArchiveCoordinator {
     }
 
     private func restore(_ records: [GRVMArchivedMedia]) {
+        guard self.isAcceptingOperations else {
+            return
+        }
         for record in records {
             let id = MediaResourceId(record.resourceId)
             if self.mediaBox.completedResourcePath(id: id) == nil {

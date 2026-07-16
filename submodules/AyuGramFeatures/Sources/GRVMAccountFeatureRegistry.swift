@@ -60,14 +60,16 @@ public final class GRVMAccountFeatureRegistry {
         postbox: Postbox,
         mediaBox: MediaBox
     ) {
+        var shutdownWaiters: [Subscriber<[MessageId], GRVMClearDeletedError>] = []
         self.lifecycleQueue.sync {
-            self.registerOnQueue(
+            shutdownWaiters = self.registerOnQueue(
                 accountPeerId: accountPeerId,
                 accountRecordId: accountRecordId,
                 postbox: postbox,
                 mediaBox: mediaBox
             )
         }
+        self.deliverShutdownErrors(shutdownWaiters)
     }
 
     private func registerOnQueue(
@@ -75,7 +77,7 @@ public final class GRVMAccountFeatureRegistry {
         accountRecordId: AccountRecordId,
         postbox: Postbox,
         mediaBox: MediaBox
-    ) {
+    ) -> [Subscriber<[MessageId], GRVMClearDeletedError>] {
         let canRegister = self.state.with { state -> Bool in
             guard state.prepared else {
                 return false
@@ -87,11 +89,12 @@ public final class GRVMAccountFeatureRegistry {
             return true
         }
         guard canRegister else {
-            return
+            return []
         }
 
-        guard self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: false) else {
-            return
+        let removal = self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: false)
+        guard removal.removed else {
+            return removal.waiters
         }
         let settingsDisposable = MetaDisposable()
         _ = self.state.modify { state in
@@ -150,22 +153,28 @@ public final class GRVMAccountFeatureRegistry {
                 coordinator.reconcilePersistentMessageState()
             }
         }))
+        return removal.waiters
     }
 
     public func unregister(accountPeerId: PeerId) {
+        var shutdownWaiters: [Subscriber<[MessageId], GRVMClearDeletedError>] = []
         self.lifecycleQueue.sync {
-            _ = self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: true)
+            shutdownWaiters = self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: true).waiters
         }
+        self.deliverShutdownErrors(shutdownWaiters)
     }
 
-    private func removeRegistration(accountPeerId: PeerId, clearPrimary: Bool) -> Bool {
+    private func removeRegistration(
+        accountPeerId: PeerId,
+        clearPrimary: Bool
+    ) -> (removed: Bool, waiters: [Subscriber<[MessageId], GRVMClearDeletedError>]) {
         let service = self.state.with { state in
             state.services[accountPeerId]
         }
         let settingsDisposable = self.state.with { state in
             state.settingsDisposables[accountPeerId]
         }
-        service?.shutdownForReplacement()
+        let waiters = service?.shutdownForReplacement() ?? []
 
         var disposable: Disposable?
         var removed = false
@@ -195,7 +204,20 @@ public final class GRVMAccountFeatureRegistry {
             return state
         }
         disposable?.dispose()
-        return removed
+        return (removed, waiters)
+    }
+
+    private func deliverShutdownErrors(
+        _ waiters: [Subscriber<[MessageId], GRVMClearDeletedError>]
+    ) {
+        guard !waiters.isEmpty else {
+            return
+        }
+        Queue.concurrentDefaultQueue().async {
+            for subscriber in waiters {
+                subscriber.putError(.archiveUnavailable)
+            }
+        }
     }
 
     public func setPrimaryAccount(_ accountPeerId: PeerId?) {

@@ -326,12 +326,14 @@ class CleanupJournalContractTests(unittest.TestCase):
             "guard self.isAcceptingOperations else",
             "self.isAcceptingOperations = false",
             "self.cleanupRunnerDisposable.dispose()",
+            "self.disposables.dispose()",
             "self.isCleanupExecutorRunning = false",
-            "let waiters = self.takeAllCleanupWaiters()",
-            "subscriber.putError(.archiveUnavailable)",
+            "waiters = self.takeAllCleanupWaiters()",
+            "return waiters",
         ]
         positions = [shutdown.index(anchor) for anchor in anchors]
         self.assertEqual(positions, sorted(positions))
+        self.assertNotIn("subscriber.putError", shutdown)
         for forbidden in (
             "reconcileArchivedMedia()",
             "markCleanupFilesRemoved(",
@@ -374,6 +376,88 @@ class CleanupJournalContractTests(unittest.TestCase):
         self.assertLess(
             finalization.index("guard self.isAcceptingOperations else"),
             finalization.index("self.store.finalizeDeletedCleanup(id: job.id)"),
+        )
+
+    def test_shutdown_disposes_all_work_and_guards_stale_mutation_callbacks(self) -> None:
+        source = COORDINATOR.read_text(encoding="utf-8")
+
+        shutdown = source[
+            source.index("func shutdownForReplacement()") :
+            source.index("public func resumePendingCleanupJobs()")
+        ]
+        self.assertIn("self.disposables.dispose()", shutdown)
+        self.assertLess(
+            shutdown.index("self.cleanupRunnerDisposable.dispose()"),
+            shutdown.index("self.disposables.dispose()"),
+        )
+        self.assertLess(
+            shutdown.index("self.disposables.dispose()"),
+            shutdown.index("self.takeAllCleanupWaiters()"),
+        )
+
+        prepare = source[source.index("func prepare() throws") : source.index("func shutdownForReplacement()")]
+        did_remove = prepare[prepare.index("self.queue.async") :]
+        self.assertLess(
+            did_remove.index("guard self.isAcceptingOperations else"),
+            did_remove.index("self.store.archivedMedia("),
+        )
+        self.assertLess(
+            did_remove.index("guard self.isAcceptingOperations else"),
+            did_remove.index("self.restore("),
+        )
+
+        reconcile = source[
+            source.index("private func reconcileArchivedMedia()") :
+            source.index("public func reconcilePersistentMessageState()")
+        ]
+        reconcile_callback = reconcile[reconcile.index("self.queue.async") :]
+        self.assertLess(
+            reconcile_callback.index("guard self.isAcceptingOperations else"),
+            reconcile_callback.index("self.store.updateMedia(record)"),
+        )
+        self.assertLess(
+            reconcile_callback.index("guard self.isAcceptingOperations else"),
+            reconcile_callback.index("self.restore("),
+        )
+
+        persistent = source[
+            source.index("public func reconcilePersistentMessageState()") :
+            source.index("public func settingsSnapshot()")
+        ]
+        persistent_callback = persistent[persistent.index("self.queue.async") :]
+        self.assertLess(
+            persistent_callback.index("guard self.isAcceptingOperations else"),
+            persistent_callback.index("self.store.deletedMessages("),
+        )
+        self.assertLess(
+            persistent_callback.index("guard self.isAcceptingOperations else"),
+            persistent_callback.index("self.postbox.transaction"),
+        )
+
+        deleted = source[
+            source.index("private func preserveDeletedMessagesOnQueue(") :
+            source.index("public func preserveEditRevision(")
+        ]
+        deleted_callback = deleted[deleted.index(".start(next: { [weak self] record in") :]
+        self.assertLess(
+            deleted_callback.index("guard self.isAcceptingOperations else"),
+            deleted_callback.index("self.store.updateMedia(record)"),
+        )
+
+        revision = source[
+            source.index("private func preserveEditRevisionOnQueue(") :
+            source.index("public func clearDeleted(")
+        ]
+        revision_callback = revision[revision.index(".start(next: { [weak self] record in") :]
+        self.assertLess(
+            revision_callback.index("guard self.isAcceptingOperations else"),
+            revision_callback.index("self.store.updateMedia(record)"),
+        )
+
+        restore = source[source.index("private func restore(") :]
+        self.assertLess(
+            restore.index("guard self.isAcceptingOperations else"),
+            restore.index("self.mediaStore.restore(record, to: mediaBox)"),
         )
 
     def test_obsolete_best_effort_cleanup_apis_are_removed(self) -> None:
