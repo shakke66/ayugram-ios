@@ -51,3 +51,13 @@ public struct AyuMessageFilter: Codable, Equatable, Identifiable {
         )
     }
 }
+
+public struct AyuMessageFilterBackup: Codable, Equatable {
+    public let version: Int
+    public let filters: [AyuMessageFilter]
+
+    public init(version: Int, filters: [AyuMessageFilter]) {
+        self.version = version
+        self.filters = filters
+    }
+}

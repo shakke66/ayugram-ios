@@ -5,51 +5,49 @@ import SwiftSignalKit
 import Postbox
 import TelegramCore
 import TelegramPresentationData
-import TelegramUIPreferences
 import ItemListUI
-import PresentationDataUtils
 import AccountContext
 import AyuGramLib
-import PromptUI
 
 private final class AyuGramShadowBanArguments {
-    let context: AccountContext
-    let presentIdEditor: (Int?, String) -> Void
+    let addPeer: () -> Void
+    let removePeer: (Int64) -> Void
 
-    init(context: AccountContext, presentIdEditor: @escaping (Int?, String) -> Void) {
-        self.context = context
-        self.presentIdEditor = presentIdEditor
+    init(addPeer: @escaping () -> Void, removePeer: @escaping (Int64) -> Void) {
+        self.addPeer = addPeer
+        self.removePeer = removePeer
     }
 }
 
-private enum AyuGramShadowBanSection: Int32 {
-    case ids
-}
-
 private enum AyuGramShadowBanEntry: ItemListNodeEntry {
-    case idsHeader(PresentationTheme)
-    case shadowBanId(PresentationTheme, Int32, String)
-    case addId(PresentationTheme)
+    case header(PresentationTheme)
+    case peer(PresentationTheme, Int32, Int64)
+    case empty(PresentationTheme)
+    case add(PresentationTheme)
 
     var section: ItemListSectionId {
-        switch self {
-        case .idsHeader, .shadowBanId, .addId:
-            return AyuGramShadowBanSection.ids.rawValue
-        }
+        return 0
     }
 
     var stableId: Int32 {
         switch self {
-        case .idsHeader: return 0
-        case let .shadowBanId(_, index, _): return 100 + index
-        case .addId: return 9000
+        case .header: return 0
+        case let .peer(_, index, _): return 100 + index
+        case .empty: return 9000
+        case .add: return 9001
         }
     }
 
     static func ==(lhs: AyuGramShadowBanEntry, rhs: AyuGramShadowBanEntry) -> Bool {
         switch (lhs, rhs) {
-        case let (.shadowBanId(_, li, lv), .shadowBanId(_, ri, rv)): return li == ri && lv == rv
-        default: return lhs.stableId == rhs.stableId
+        case let (.header(lt), .header(rt)),
+             let (.empty(lt), .empty(rt)),
+             let (.add(lt), .add(rt)):
+            return lt === rt
+        case let (.peer(lt, li, lp), .peer(rt, ri, rp)):
+            return lt === rt && li == ri && lp == rp
+        default:
+            return false
         }
     }
 
@@ -60,75 +58,126 @@ private enum AyuGramShadowBanEntry: ItemListNodeEntry {
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! AyuGramShadowBanArguments
         switch self {
-        case .idsHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Shadow Banned IDs", sectionId: self.section)
-        case let .shadowBanId(_, index, id):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: id, label: "", sectionId: self.section, style: .blocks, action: {
-                arguments.presentIdEditor(Int(index), id)
-            })
-        case .addId:
-            return ItemListActionItem(presentationData: presentationData, title: "Add ID", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
-                arguments.presentIdEditor(nil, "")
-            })
+        case .header:
+            return ItemListSectionHeaderItem(
+                presentationData: presentationData,
+                text: "Shadow Ban",
+                sectionId: self.section
+            )
+        case let .peer(_, _, peerId):
+            return ItemListCheckboxItem(
+                presentationData: presentationData,
+                title: "\(peerId)",
+                style: .right,
+                checked: true,
+                zeroSeparatorInsets: false,
+                sectionId: self.section,
+                action: {},
+                deleteAction: {
+                    arguments.removePeer(peerId)
+                }
+            )
+        case .empty:
+            return ItemListTextItem(
+                presentationData: presentationData,
+                text: .plain("No shadow-banned peers"),
+                sectionId: self.section
+            )
+        case .add:
+            return ItemListActionItem(
+                presentationData: presentationData,
+                title: "Add Peer",
+                kind: .generic,
+                alignment: .natural,
+                sectionId: self.section,
+                style: .blocks,
+                action: arguments.addPeer
+            )
         }
     }
 }
 
-private func ayuGramShadowBanEntries(settings: AyuGramSettings, presentationData: PresentationData) -> [AyuGramShadowBanEntry] {
-    var entries: [AyuGramShadowBanEntry] = []
-    entries.append(.idsHeader(presentationData.theme))
-    var index: Int32 = 0
-    for id in settings.shadowBanIds {
-        entries.append(.shadowBanId(presentationData.theme, index, "\(id)"))
-        index += 1
+private func ayuGramShadowBanEntries(
+    settings: AyuGramSettings,
+    presentationData: PresentationData
+) -> [AyuGramShadowBanEntry] {
+    let theme = presentationData.theme
+    var entries: [AyuGramShadowBanEntry] = [.header(theme)]
+    for (index, peerId) in settings.shadowBanIds.enumerated() {
+        entries.append(.peer(theme, Int32(index), peerId))
     }
-    entries.append(.addId(presentationData.theme))
+    if settings.shadowBanIds.isEmpty {
+        entries.append(.empty(theme))
+    }
+    entries.append(.add(theme))
     return entries
 }
 
 public func ayuGramShadowBanController(context: AccountContext) -> ViewController {
-    var presentControllerImpl: ((ViewController, ViewControllerPresentationArguments?) -> Void)?
+    var pushControllerImpl: ((ViewController) -> Void)?
 
     let arguments = AyuGramShadowBanArguments(
-        context: context,
-        presentIdEditor: { index, current in
-            let editController = promptController(context: context, text: index == nil ? "Add Peer ID" : "Edit Peer ID", value: current, apply: { value in
-                guard let value = value else {
-                    return
-                }
-                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in
-                    var s = s
-                    if let index = index {
-                        if index >= 0 && index < s.shadowBanIds.count {
-                            if trimmed.isEmpty {
-                                s.shadowBanIds.remove(at: index)
-                            } else if let parsed = Int64(trimmed) {
-                                s.shadowBanIds[index] = parsed
-                            }
-                        }
-                    } else if let parsed = Int64(trimmed) {
-                        s.shadowBanIds.append(parsed)
+        addPeer: {
+            let controller = context.sharedContext.makePeerSelectionController(
+                PeerSelectionControllerParams(
+                    context: context,
+                    filter: [],
+                    hasContactSelector: false,
+                    title: "Select Peer"
+                )
+            )
+            controller.peerSelected = { [weak controller] peer, _ in
+                let peerId = peer.id.toInt64()
+                let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { settings in
+                    var settings = settings
+                    if !settings.shadowBanIds.contains(peerId) {
+                        settings.shadowBanIds.append(peerId)
                     }
-                    return s
+                    return settings
                 }.startStandalone()
-            })
-            presentControllerImpl?(editController, nil)
+                controller?.dismiss()
+            }
+            pushControllerImpl?(controller)
+        },
+        removePeer: { peerId in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { settings in
+                var settings = settings
+                settings.shadowBanIds.removeAll { $0 == peerId }
+                return settings
+            }.startStandalone()
         }
     )
 
-    let signal = combineLatest(context.sharedContext.presentationData, grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager))
+    let signal = combineLatest(
+        context.sharedContext.presentationData,
+        grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager)
+    )
     |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
-        let entries = ayuGramShadowBanEntries(settings: settings, presentationData: presentationData)
         return (
-            ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text("Shadow Ban"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
-            (ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks), arguments)
+            ItemListControllerState(
+                presentationData: ItemListPresentationData(presentationData),
+                title: .text("Shadow Ban"),
+                leftNavigationButton: nil,
+                rightNavigationButton: nil,
+                backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)
+            ),
+            (
+                ItemListNodeState(
+                    presentationData: ItemListPresentationData(presentationData),
+                    entries: ayuGramShadowBanEntries(
+                        settings: settings,
+                        presentationData: presentationData
+                    ),
+                    style: .blocks
+                ),
+                arguments
+            )
         )
     }
 
     let controller = ItemListController(context: context, state: signal)
-    presentControllerImpl = { [weak controller] c, p in
-        controller?.present(c, in: .window(.root), with: p)
+    pushControllerImpl = { [weak controller] child in
+        controller?.push(child)
     }
     return controller
 }

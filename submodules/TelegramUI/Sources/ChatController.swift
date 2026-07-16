@@ -5662,6 +5662,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             peerId: peer.id,
                             threadId: nil
                         ))
+                        items.append(contentsOf: strongSelf.grvmFilteredVisibilityContextMenuItems(peerId: peer.id))
 
                         return items
                     }
@@ -5681,7 +5682,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                 sourceController: strongSelf,
                                 peerId: peer.id,
                                 threadId: threadId
-                            )
+                            ) + strongSelf.grvmFilteredVisibilityContextMenuItems(peerId: peer.id)
                         }
                         guard let threadData = threadData else {
                             return grvmArchiveContextMenuItems(
@@ -5689,7 +5690,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                 sourceController: strongSelf,
                                 peerId: peer.id,
                                 threadId: threadId
-                            )
+                            ) + strongSelf.grvmFilteredVisibilityContextMenuItems(peerId: peer.id)
                         }
                         
                         var items: [ContextMenuItem] = []
@@ -5947,6 +5948,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             peerId: peer.id,
                             threadId: threadId
                         ))
+                        items.append(contentsOf: strongSelf.grvmFilteredVisibilityContextMenuItems(peerId: peer.id))
 
                         return items
                     }
@@ -8348,6 +8350,123 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         self.present(tooltipScreen, in: .current)
     }
             
+    func grvmMessageFilterContextMenuItems(
+        message: Message,
+        shadowBanPeerIds: Set<PeerId>
+    ) -> [ContextMenuItem] {
+        var items: [ContextMenuItem] = []
+        let matchingIds = AyuGramHooks.matchingMessageFilterIds?(self.context.account.peerId, message) ?? []
+        let matchingFilterIds = Set(matchingIds.compactMap { UUID(uuidString: $0) })
+        if !matchingFilterIds.isEmpty {
+            items.append(.action(ContextMenuActionItem(text: "View Filters", icon: { theme in
+                return generateTintedImage(
+                    image: UIImage(bundleImageName: "Chat/Context Menu/Search"),
+                    color: theme.actionSheet.primaryTextColor
+                )
+            }, action: { [weak self] _, completion in
+                completion(.dismissWithoutContent)
+                guard let self else {
+                    return
+                }
+                self.push(ayuGramFiltersController(context: self.context, matchingFilterIds: matchingFilterIds))
+            })))
+        }
+
+        items.append(.action(ContextMenuActionItem(text: "Add Filter", icon: { theme in
+            return generateTintedImage(
+                image: UIImage(bundleImageName: "Chat/Context Menu/Add"),
+                color: theme.actionSheet.primaryTextColor
+            )
+        }, action: { [weak self] _, completion in
+            completion(.dismissWithoutContent)
+            guard let self else {
+                return
+            }
+            self.push(ayuGramFilterEditorController(
+                context: self.context,
+                initialExpression: message.text,
+                initialPeerId: message.id.peerId
+            ))
+        })))
+
+        items.append(contentsOf: self.grvmFilteredVisibilityContextMenuItems(peerId: message.id.peerId))
+
+        var authors: [(peerId: PeerId, label: String)] = []
+        if let authorId = message.author?.id {
+            authors.append((authorId, "Author"))
+        }
+        if let forwardedAuthorId = message.forwardInfo?.author?.id,
+           !authors.contains(where: { $0.peerId == forwardedAuthorId }) {
+            authors.append((forwardedAuthorId, "Forwarded Author"))
+        }
+        for author in authors {
+            let isBanned = shadowBanPeerIds.contains(author.peerId)
+            let action = isBanned ? "Unshadow Ban" : "Shadow Ban"
+            let title = authors.count == 1 ? action : "\(action) \(author.label)"
+            items.append(.action(ContextMenuActionItem(text: title, icon: { theme in
+                return generateTintedImage(
+                    image: UIImage(bundleImageName: "Chat/Context Menu/Restrict"),
+                    color: theme.actionSheet.primaryTextColor
+                )
+            }, action: { [weak self] _, completion in
+                completion(.dismissWithoutContent)
+                self?.grvmSetShadowBanned(peerId: author.peerId, value: !isBanned)
+            })))
+        }
+        return items
+    }
+
+    private func grvmSetShadowBanned(peerId: PeerId, value: Bool) {
+        let peerValue = peerId.toInt64()
+        let _ = (updateGRVMSettings(accountId: self.context.account.peerId, accountManager: self.context.sharedContext.accountManager) { settings in
+            var settings = settings
+            if value {
+                if !settings.shadowBanIds.contains(peerValue) {
+                    settings.shadowBanIds.append(peerValue)
+                }
+            } else {
+                settings.shadowBanIds.removeAll { $0 == peerValue }
+            }
+            return settings
+        }
+        |> deliverOnMainQueue).startStandalone(completed: { [weak self] in
+            guard let self else {
+                return
+            }
+            self.chatDisplayNode.historyNode.refreshForRuntimeMessageFilterChange()
+        })
+    }
+
+    func grvmFilteredVisibilityContextMenuItems(peerId: PeerId) -> [ContextMenuItem] {
+        let isShowing = AyuGramHooks.isShowingFilteredMessages?(
+            self.context.account.peerId,
+            peerId
+        ) ?? false
+        return [
+            .action(ContextMenuActionItem(
+                text: isShowing ? "Hide Filtered" : "Show Filtered",
+                icon: { theme in
+                    return generateTintedImage(
+                        image: UIImage(bundleImageName: "Chat/Context Menu/Search"),
+                        color: theme.actionSheet.primaryTextColor
+                    )
+                },
+                action: { [weak self] _, completion in
+                    completion(.dismissWithoutContent)
+                    guard let self else {
+                        return
+                    }
+                    AyuGramHooks.setShowingFilteredMessages?(
+                        self.context.account.peerId,
+                        peerId,
+                        !isShowing
+                    )
+                    self.chatDisplayNode.historyNode.refreshForRuntimeMessageFilterChange()
+                }
+            ))
+        ]
+    }
+
     private func grvmMarkCurrentChatReadAfterAction() {
         guard AyuGramHooks.shouldMarkReadAfterAction?(self.context.account.peerId) == true else {
             return

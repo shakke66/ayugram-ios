@@ -18,6 +18,7 @@ import TooltipUI
 import TopMessageReactions
 import TelegramNotices
 import PresentationDataUtils
+import AyuGramLib
 
 extension ChatControllerImpl {
     func openMessageContextMenu(message: Message, selectAll: Bool, node: ASDisplayNode, frame: CGRect, anyRecognizer: UIGestureRecognizer?, location: CGPoint?) -> Void {
@@ -52,8 +53,13 @@ extension ChatControllerImpl {
                 peerMessageAllowedReactions(context: self.context, message: topMessage),
                 peerMessageSelectedReactions(context: self.context, message: topMessage),
                 topMessageReactions(context: self.context, message: topMessage, subPeerId: self.chatLocation.threadId.flatMap(EnginePeer.Id.init)),
-                ApplicationSpecificNotice.getChatTextSelectionTips(accountManager: self.context.sharedContext.accountManager)
-            ).startStandalone(next: { [weak self] peer, actions, allowedReactionsAndStars, selectedReactions, topReactions, chatTextSelectionTips in
+                ApplicationSpecificNotice.getChatTextSelectionTips(accountManager: self.context.sharedContext.accountManager),
+                grvmSettings(
+                    accountId: self.context.account.peerId,
+                    accountManager: self.context.sharedContext.accountManager
+                )
+                |> take(1)
+            ).startStandalone(next: { [weak self] peer, actions, allowedReactionsAndStars, selectedReactions, topReactions, chatTextSelectionTips, settings in
                 guard let self else {
                     return
                 }
@@ -68,6 +74,17 @@ extension ChatControllerImpl {
                     }
                 case .custom, .twoLists:
                     break
+                }
+                if case var .list(itemList) = actions.content {
+                    let grvmItems = self.grvmMessageFilterContextMenuItems(
+                        message: message,
+                        shadowBanPeerIds: Set(settings.shadowBanIds.map(PeerId.init))
+                    )
+                    if !grvmItems.isEmpty {
+                        itemList.append(.separator)
+                        itemList.append(contentsOf: grvmItems)
+                        actions.content = .list(itemList)
+                    }
                 }
                 
                 if allowedReactions != nil, case let .customChatContents(customChatContents) = self.presentationInterfaceState.subject {

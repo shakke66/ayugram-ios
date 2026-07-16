@@ -209,18 +209,20 @@ class LocalizationListItemNode: ItemListRevealOptionsItemNode {
         let makeTitleLayout = TextNode.asyncLayout(self.titleNode)
         let makeSubtitleLayout = TextNode.asyncLayout(self.subtitleNode)
         let editableControlLayout = ItemListEditableControlNode.asyncLayout(self.editableControlNode)
+        let reorderControlLayout = ItemListEditableReorderControlNode.asyncLayout(self.reorderControlNode)
         
         let currentItem = self.item
         
         return { item, params, neighbors in
             var leftInset: CGFloat = params.leftInset
+            let reorderInset: CGFloat = item.editing.editing && item.editing.reorderable ? 40.0 : 0.0
             
             let titleFont = Font.regular(item.presentationData.fontSize.itemListBaseFontSize)
             let subtitleFont = Font.regular(floor(item.presentationData.fontSize.itemListBaseFontSize * 13.0 / 17.0))
             
-            let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.title, font: titleFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - 50.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+            let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.title, font: titleFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - 50.0 - reorderInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
-            let (subtitleLayout, subtitleApply) = makeSubtitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.subtitle, font: subtitleFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - 50.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+            let (subtitleLayout, subtitleApply) = makeSubtitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.subtitle, font: subtitleFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - 50.0 - reorderInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
             let insets = itemListNeighborsGroupedInsets(neighbors, params)
             
@@ -237,6 +239,7 @@ class LocalizationListItemNode: ItemListRevealOptionsItemNode {
             let layout = ListViewItemNodeLayout(contentSize: contentSize, insets: insets)
             
             var editableControlSizeAndApply: (CGFloat, (CGFloat) -> ItemListEditableControlNode)?
+            var reorderControlSizeAndApply: (CGFloat, (CGFloat, Bool, ContainedViewLayoutTransition) -> ItemListEditableReorderControlNode)?
             
             var editingOffset: CGFloat = 0.0
             
@@ -244,6 +247,9 @@ class LocalizationListItemNode: ItemListRevealOptionsItemNode {
                 let sizeAndApply = editableControlLayout(item.presentationData.theme, false)
                 editableControlSizeAndApply = sizeAndApply
                 editingOffset = sizeAndApply.0
+                if item.editing.reorderable {
+                    reorderControlSizeAndApply = reorderControlLayout(item.presentationData.theme)
+                }
             }
             
             leftInset += 16.0
@@ -295,10 +301,10 @@ class LocalizationListItemNode: ItemListRevealOptionsItemNode {
                     let _ = subtitleApply()
                     
                     if let image = strongSelf.iconNode.image {
-                        transition.updateFrame(node: strongSelf.iconNode, frame: CGRect(origin: CGPoint(x: editingOffset + revealOffset + params.width - params.rightInset - image.size.width - floor((44.0 - image.size.width) / 2.0), y: floor((contentSize.height - image.size.height) / 2.0)), size: image.size))
+                        transition.updateFrame(node: strongSelf.iconNode, frame: CGRect(origin: CGPoint(x: editingOffset + revealOffset + params.width - params.rightInset - reorderInset - image.size.width - floor((44.0 - image.size.width) / 2.0), y: floor((contentSize.height - image.size.height) / 2.0)), size: image.size))
                     }
                     let activitySize = CGSize(width: 22.0, height: 22.0)
-                    transition.updateFrame(node: strongSelf.activityNode, frame: CGRect(origin: CGPoint(x: editingOffset + revealOffset + params.width - params.rightInset - activitySize.width - floor((44.0 - activitySize.width) / 2.0), y: floor((contentSize.height - activitySize.height) / 2.0)), size: activitySize))
+                    transition.updateFrame(node: strongSelf.activityNode, frame: CGRect(origin: CGPoint(x: editingOffset + revealOffset + params.width - params.rightInset - reorderInset - activitySize.width - floor((44.0 - activitySize.width) / 2.0), y: floor((contentSize.height - activitySize.height) / 2.0)), size: activitySize))
                     strongSelf.iconNode.isHidden = !item.checked || item.activity
                     
                     if strongSelf.backgroundNode.supernode == nil {
@@ -376,6 +382,27 @@ class LocalizationListItemNode: ItemListRevealOptionsItemNode {
                         transition.updateFrame(node: editableControlNode, frame: editableControlFrame, completion: { [weak editableControlNode] _ in
                             editableControlNode?.removeFromSupernode()
                         })
+                    }
+
+                    if let reorderControlSizeAndApply {
+                        if strongSelf.reorderControlNode == nil {
+                            let reorderControlNode = reorderControlSizeAndApply.1(
+                                layout.contentSize.height,
+                                false,
+                                .immediate
+                            )
+                            strongSelf.reorderControlNode = reorderControlNode
+                            strongSelf.addSubnode(reorderControlNode)
+                        }
+                        strongSelf.reorderControlNode?.frame = CGRect(
+                            x: params.width + revealOffset - params.rightInset - reorderControlSizeAndApply.0,
+                            y: 0.0,
+                            width: reorderControlSizeAndApply.0,
+                            height: layout.contentSize.height
+                        )
+                    } else if let reorderControlNode = strongSelf.reorderControlNode {
+                        strongSelf.reorderControlNode = nil
+                        reorderControlNode.removeFromSupernode()
                     }
                     
                     strongSelf.highlightedBackgroundNode.frame = CGRect(origin: CGPoint(x: 0.0, y: -UIScreenPixel), size: CGSize(width: params.width, height: contentSize.height + UIScreenPixel + UIScreenPixel))
@@ -492,15 +519,27 @@ class LocalizationListItemNode: ItemListRevealOptionsItemNode {
             editableControlFrame.origin.x = params.leftInset + offset
             transition.updateFrame(node: editableControlNode, frame: editableControlFrame)
         }
+        let reorderInset = self.reorderControlNode?.bounds.size.width ?? 0.0
+        if let reorderControlNode = self.reorderControlNode {
+            transition.updateFrame(
+                node: reorderControlNode,
+                frame: CGRect(
+                    x: params.width + offset - params.rightInset - reorderControlNode.bounds.size.width,
+                    y: reorderControlNode.frame.minY,
+                    width: reorderControlNode.bounds.size.width,
+                    height: reorderControlNode.bounds.height
+                )
+            )
+        }
         
         transition.updateFrame(node: self.titleNode, frame: CGRect(origin: CGPoint(x: editingOffset + leftInset + offset, y: self.titleNode.frame.minY), size: self.titleNode.bounds.size))
         transition.updateFrame(node: self.subtitleNode, frame: CGRect(origin: CGPoint(x: editingOffset + leftInset + offset, y: self.subtitleNode.frame.minY), size: self.subtitleNode.bounds.size))
         
         if let image = self.iconNode.image {
-            transition.updateFrame(node: self.iconNode, frame: CGRect(origin: CGPoint(x: editingOffset + offset + params.width - params.rightInset - image.size.width - floor((44.0 - image.size.width) / 2.0), y: self.iconNode.frame.minY), size: self.iconNode.bounds.size))
+            transition.updateFrame(node: self.iconNode, frame: CGRect(origin: CGPoint(x: editingOffset + offset + params.width - params.rightInset - reorderInset - image.size.width - floor((44.0 - image.size.width) / 2.0), y: self.iconNode.frame.minY), size: self.iconNode.bounds.size))
         }
         let activitySize = CGSize(width: 22.0, height: 22.0)
-        transition.updateFrame(node: self.activityNode, frame: CGRect(origin: CGPoint(x: editingOffset + offset + params.width - params.rightInset - activitySize.width - floor((44.0 - activitySize.width) / 2.0), y: floor((contentSize.height - activitySize.height) / 2.0)), size: activitySize))
+        transition.updateFrame(node: self.activityNode, frame: CGRect(origin: CGPoint(x: editingOffset + offset + params.width - params.rightInset - reorderInset - activitySize.width - floor((44.0 - activitySize.width) / 2.0), y: floor((contentSize.height - activitySize.height) / 2.0)), size: activitySize))
     }
     
     override func revealOptionsInteractivelyOpened() {
@@ -522,5 +561,14 @@ class LocalizationListItemNode: ItemListRevealOptionsItemNode {
         if let item = self.item {
             item.removeItem?(item.id)
         }
+    }
+
+    override func isReorderable(at point: CGPoint) -> Bool {
+        if let reorderControlNode = self.reorderControlNode,
+           reorderControlNode.frame.contains(point),
+           !self.isDisplayingRevealedOptions {
+            return true
+        }
+        return false
     }
 }

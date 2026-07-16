@@ -17,6 +17,8 @@ swift_library(
         "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//submodules/TelegramUIPreferences:TelegramUIPreferences",
         "//submodules/ItemListUI:ItemListUI",
+        "//submodules/AlertUI:AlertUI",
+        "//submodules/TranslateUI:TranslateUI",
         "//submodules/PresentationDataUtils:PresentationDataUtils",
         "//submodules/AccountContext:AccountContext",
         "//submodules/AyuGramFeatures:AyuGramFeatures",
@@ -24,7 +26,6 @@ swift_library(
         "//submodules/ContextUI:ContextUI",
         "//submodules/TextFormat:TextFormat",
         "//submodules/OverlayStatusController:OverlayStatusController",
-        "//submodules/PromptUI:PromptUI",
     ],
     visibility = [
         "//visibility:public",

@@ -1270,7 +1270,11 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
         
         self.beginChatHistoryTransitions(resetScrolling: true, switchedToAnotherSource: false)
     }
-    
+
+    func refreshForRuntimeMessageFilterChange() {
+        self.beginChatHistoryTransitions(resetScrolling: true, switchedToAnotherSource: false)
+    }
+
     public func updateChatLocation(chatLocation: ChatLocation) {
         if self.chatLocation == chatLocation {
             return
