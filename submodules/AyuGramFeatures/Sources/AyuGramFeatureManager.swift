@@ -184,6 +184,13 @@ public final class AyuGramFeatureManager {
         }
 
         // MARK: - General
+        AyuGramHooks.translationProvider = { [weak self] accountPeerId in
+            guard let rawValue = self?.settings(accountPeerId: accountPeerId)?.translationProvider,
+                  let provider = GRVMTranslationProvider(rawValue: rawValue) else {
+                return .telegram
+            }
+            return provider
+        }
         AyuGramHooks.shouldHideStories = { [weak self] accountPeerId in
             return self?.settings(accountPeerId: accountPeerId)?.hideStories ?? false
         }

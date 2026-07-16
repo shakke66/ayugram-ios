@@ -155,10 +155,74 @@ func _internal_translateTexts(network: Network, texts: [(String, [MessageTextEnt
     }
 }
 
-func _internal_translateMessages(account: Account, messageIds: [EngineMessage.Id], fromLang: String?, toLang: String, enableLocalIfPossible: Bool, tone: TranslationTone = .neutral) -> Signal<Never, TranslationError> {
+private func _internal_translateTexts(
+    network: Network,
+    texts: [(String, [MessageTextEntity])],
+    toLang: String,
+    provider: GRVMTranslationProvider,
+    tone: TranslationTone = .neutral
+) -> Signal<[(String, [MessageTextEntity])], TranslationError> {
+    switch provider {
+    case .telegram:
+        return _internal_translateTexts(
+            network: network,
+            texts: texts,
+            toLang: toLang,
+            tone: tone
+        )
+    case .google, .yandex:
+        return grvmExternalTranslate(
+            texts: texts.map(\.0),
+            toLang: toLang,
+            provider: provider
+        )
+        |> mapToSignal { responseTexts in
+            guard responseTexts.count == texts.count else {
+                return .fail(.generic)
+            }
+            let translatedTexts: [(String, [MessageTextEntity])] = responseTexts.map {
+                ($0, [])
+            }
+            return .single(translatedTexts)
+        }
+    }
+}
+
+private func _internal_translateText(
+    network: Network,
+    text: String,
+    toLang: String,
+    provider: GRVMTranslationProvider,
+    tone: TranslationTone = .neutral
+) -> Signal<(String, [MessageTextEntity])?, TranslationError> {
+    switch provider {
+    case .telegram:
+        return _internal_translate(
+            network: network,
+            text: text,
+            toLang: toLang,
+            tone: tone
+        )
+    case .google, .yandex:
+        return grvmExternalTranslate(
+            texts: [text],
+            toLang: toLang,
+            provider: provider
+        )
+        |> mapToSignal { responseTexts in
+            guard responseTexts.count == 1, let text = responseTexts.first else {
+                return .fail(.generic)
+            }
+            let translatedText: (String, [MessageTextEntity])? = (text, [])
+            return .single(translatedText)
+        }
+    }
+}
+
+func _internal_translateMessages(account: Account, messageIds: [EngineMessage.Id], fromLang: String?, toLang: String, enableLocalIfPossible: Bool, provider: GRVMTranslationProvider, tone: TranslationTone = .neutral) -> Signal<Never, TranslationError> {
     var signals: [Signal<Void, TranslationError>] = []
     for (peerId, messageIds) in messagesIdsGroupedByPeerId(messageIds) {
-        signals.append(_internal_translateMessagesByPeerId(account: account, peerId: peerId, messageIds: messageIds, fromLang: fromLang, toLang: toLang, enableLocalIfPossible: enableLocalIfPossible, tone: tone))
+        signals.append(_internal_translateMessagesByPeerId(account: account, peerId: peerId, messageIds: messageIds, fromLang: fromLang, toLang: toLang, enableLocalIfPossible: enableLocalIfPossible, provider: provider, tone: tone))
     }
     return combineLatest(signals)
     |> ignoreValues
@@ -170,7 +234,7 @@ public protocol ExperimentalInternalTranslationService: AnyObject {
 
 public var engineExperimentalInternalTranslationService: ExperimentalInternalTranslationService?
 
-private func _internal_translateMessagesByPeerId(account: Account, peerId: EnginePeer.Id, messageIds: [EngineMessage.Id], fromLang: String?, toLang: String, enableLocalIfPossible: Bool, tone: TranslationTone = .neutral) -> Signal<Void, TranslationError> {
+private func _internal_translateMessagesByPeerId(account: Account, peerId: EnginePeer.Id, messageIds: [EngineMessage.Id], fromLang: String?, toLang: String, enableLocalIfPossible: Bool, provider: GRVMTranslationProvider, tone: TranslationTone = .neutral) -> Signal<Void, TranslationError> {
     return account.postbox.transaction { transaction -> (Api.InputPeer?, [Message]) in
         return (transaction.getPeer(peerId).flatMap(apiInputPeer), messageIds.compactMap({ transaction.getMessage($0) }))
     }
@@ -196,7 +260,13 @@ private func _internal_translateMessagesByPeerId(account: Account, peerId: Engin
             if let solution = poll.results.solution {
                 texts.append((solution.text, solution.entities))
             }
-            return _internal_translateTexts(network: account.network, texts: texts, toLang: toLang)
+            return _internal_translateTexts(
+                network: account.network,
+                texts: texts,
+                toLang: toLang,
+                provider: provider,
+                tone: tone
+            )
         }
         
         let audioTranscriptions = messages.compactMap { message in
@@ -207,7 +277,13 @@ private func _internal_translateMessagesByPeerId(account: Account, peerId: Engin
             }
         }
         let audioTranscriptionsSignals = audioTranscriptions.map { (text, id) in
-            return _internal_translate(network: account.network, text: text, toLang: toLang)
+            return _internal_translateText(
+                network: account.network,
+                text: text,
+                toLang: toLang,
+                provider: provider,
+                tone: tone
+            )
         }
         
         var flags: Int32 = 0
@@ -217,62 +293,98 @@ private func _internal_translateMessagesByPeerId(account: Account, peerId: Engin
         }
 
         let id: [Int32] = messageIds.map { $0.id }
+        let externalMessages = messages.filter { !$0.text.isEmpty }
+        let translatedMessageIds: [MessageId]
+        switch provider {
+        case .telegram:
+            translatedMessageIds = messageIds
+        case .google, .yandex:
+            translatedMessageIds = externalMessages.map(\.id)
+        }
 
         let msgs: Signal<Api.messages.TranslatedText?, TranslationError>
         if id.isEmpty {
             msgs = .single(nil)
         } else {
-            if enableLocalIfPossible, let engineExperimentalInternalTranslationService, let fromLang {
-                msgs = account.postbox.transaction { transaction -> [MessageId: String] in
-                    var texts: [MessageId: String] = [:]
-                    for messageId in messageIds {
-                        if let message = transaction.getMessage(messageId) {
-                            texts[message.id] = message.text
-                        }
-                    }
-                    return texts
-                }
-                |> castError(TranslationError.self)
-                |> mapToSignal { messageTexts -> Signal<Api.messages.TranslatedText?, TranslationError> in
-                    var mappedTexts: [AnyHashable: String] = [:]
-                    for (id, text) in messageTexts {
-                        mappedTexts[AnyHashable(id)] = text
-                    }
-                    return engineExperimentalInternalTranslationService.translate(texts: mappedTexts, fromLang: fromLang, toLang: toLang)
-                    |> castError(TranslationError.self)
-                    |> mapToSignal { resultTexts -> Signal<Api.messages.TranslatedText?, TranslationError> in
-                        guard let resultTexts else {
-                            return .fail(.generic)
-                        }
-                        var result: [Api.TextWithEntities] = []
+            switch provider {
+            case .telegram:
+                if enableLocalIfPossible, let engineExperimentalInternalTranslationService, let fromLang {
+                    msgs = account.postbox.transaction { transaction -> [MessageId: String] in
+                        var texts: [MessageId: String] = [:]
                         for messageId in messageIds {
-                            if let text = resultTexts[AnyHashable(messageId)] {
-                                result.append(.textWithEntities(.init(text: text, entities: [])))
-                            } else if let text = messageTexts[messageId] {
-                                result.append(.textWithEntities(.init(text: text, entities: [])))
-                            } else {
-                                result.append(.textWithEntities(.init(text: "", entities: [])))
+                            if let message = transaction.getMessage(messageId) {
+                                texts[message.id] = message.text
                             }
                         }
-                        return .single(.translateResult(.init(result: result)))
+                        return texts
+                    }
+                    |> castError(TranslationError.self)
+                    |> mapToSignal { messageTexts -> Signal<Api.messages.TranslatedText?, TranslationError> in
+                        var mappedTexts: [AnyHashable: String] = [:]
+                        for (id, text) in messageTexts {
+                            mappedTexts[AnyHashable(id)] = text
+                        }
+                        return engineExperimentalInternalTranslationService.translate(texts: mappedTexts, fromLang: fromLang, toLang: toLang)
+                        |> castError(TranslationError.self)
+                        |> mapToSignal { resultTexts -> Signal<Api.messages.TranslatedText?, TranslationError> in
+                            guard let resultTexts else {
+                                return .fail(.generic)
+                            }
+                            var result: [Api.TextWithEntities] = []
+                            for messageId in messageIds {
+                                if let text = resultTexts[AnyHashable(messageId)] {
+                                    result.append(.textWithEntities(.init(text: text, entities: [])))
+                                } else if let text = messageTexts[messageId] {
+                                    result.append(.textWithEntities(.init(text: text, entities: [])))
+                                } else {
+                                    result.append(.textWithEntities(.init(text: "", entities: [])))
+                                }
+                            }
+                            return .single(.translateResult(.init(result: result)))
+                        }
+                    }
+                } else {
+                    msgs = account.network.request(Api.functions.messages.translateText(flags: flags, peer: inputPeer, id: id, text: nil, toLang: toLang, tone: tone != .neutral ? tone.rawValue : nil))
+                    |> map(Optional.init)
+                    |> mapError { error -> TranslationError in
+                        if error.errorDescription.hasPrefix("FLOOD_WAIT") {
+                            return .limitExceeded
+                        } else if error.errorDescription == "MSG_ID_INVALID" {
+                            return .invalidMessageId
+                        } else if error.errorDescription == "INPUT_TEXT_EMPTY" {
+                            return .textIsEmpty
+                        } else if error.errorDescription == "INPUT_TEXT_TOO_LONG" {
+                            return .textTooLong
+                        } else if error.errorDescription == "TO_LANG_INVALID" {
+                            return .invalidLanguage
+                        } else {
+                            return .generic
+                        }
                     }
                 }
-            } else {
-                msgs = account.network.request(Api.functions.messages.translateText(flags: flags, peer: inputPeer, id: id, text: nil, toLang: toLang, tone: tone != .neutral ? tone.rawValue : nil))
-                |> map(Optional.init)
-                |> mapError { error -> TranslationError in
-                    if error.errorDescription.hasPrefix("FLOOD_WAIT") {
-                        return .limitExceeded
-                    } else if error.errorDescription == "MSG_ID_INVALID" {
-                        return .invalidMessageId
-                    } else if error.errorDescription == "INPUT_TEXT_EMPTY" {
-                        return .textIsEmpty
-                    } else if error.errorDescription == "INPUT_TEXT_TOO_LONG" {
-                        return .textTooLong
-                    } else if error.errorDescription == "TO_LANG_INVALID" {
-                        return .invalidLanguage
-                    } else {
-                        return .generic
+            case .google, .yandex:
+                guard messages.count == messageIds.count else {
+                    return .fail(.invalidMessageId)
+                }
+                if externalMessages.isEmpty {
+                    msgs = .single(nil)
+                } else {
+                    msgs = grvmExternalTranslate(
+                        texts: externalMessages.map(\.text),
+                        toLang: toLang,
+                        provider: provider
+                    )
+                    |> mapToSignal { responseTexts -> Signal<Api.messages.TranslatedText?, TranslationError> in
+                        guard responseTexts.count == externalMessages.count else {
+                            return .fail(.generic)
+                        }
+                        let result: [Api.TextWithEntities] = responseTexts.map {
+                            .textWithEntities(.init(text: $0, entities: []))
+                        }
+                        let translatedResult: Api.messages.TranslatedText? = .translateResult(
+                            .init(result: result)
+                        )
+                        return .single(translatedResult)
                     }
                 }
             }
@@ -285,7 +397,7 @@ private func _internal_translateMessagesByPeerId(account: Account, peerId: Engin
                     let results = translateResultData.result
                     var index = 0
                     for result in results {
-                        let messageId = messageIds[index]
+                        let messageId = translatedMessageIds[index]
                         if case let .textWithEntities(textWithEntitiesData) = result {
                             let (text, entities) = (textWithEntitiesData.text, textWithEntitiesData.entities)
                             let updatedAttribute: TranslationMessageAttribute = TranslationMessageAttribute(text: text, entities: messageTextEntitiesFromApiEntities(entities), toLang: toLang)

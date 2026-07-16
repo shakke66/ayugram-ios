@@ -112,7 +112,7 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "Message Translation", sectionId: self.section)
         case let .translationProvider(_, label, value):
             return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Translation Provider", label: label, sectionId: self.section, style: .blocks, action: {
-                arguments.updateInt32(\.translationProvider, (value + 1) % 4)
+                arguments.updateInt32(\.translationProvider, (value + 1) % 3)
             })
         case .generalHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "General", sectionId: self.section)
@@ -151,7 +151,7 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
 }
 
 private func ayuGramGeneralEntries(settings: AyuGramSettings, presentationData: PresentationData) -> [AyuGramGeneralEntry] {
-    let providerNames = ["Telegram", "Google", "Yandex", "Native"]
+    let providerNames = ["Telegram", "Google", "Yandex"]
     let providerLabel = settings.translationProvider < Int32(providerNames.count) ? providerNames[Int(settings.translationProvider)] : "Telegram"
     let dialogIdLabels = ["Off", "Telegram API", "Bot API"]
     let dialogIdLabel = settings.showDialogId < Int32(dialogIdLabels.count) ? dialogIdLabels[Int(settings.showDialogId)] : "Off"
