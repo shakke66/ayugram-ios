@@ -10,6 +10,7 @@ HOOKS = CORE / "AyuGramHooks.swift"
 COORDINATOR = ROOT / "submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"
 MANAGER = ROOT / "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
 POSTBOX = ROOT / "submodules/Postbox/Sources/Postbox.swift"
+MESSAGE_HISTORY_TABLE = ROOT / "submodules/Postbox/Sources/MessageHistoryTable.swift"
 
 
 def source(path: str) -> str:
@@ -60,23 +61,70 @@ class DeleteRouteContractTests(unittest.TestCase):
         self.assertIn("self.index.insertDeleted(", coordinator)
         self.assertIn("shouldPreserveOneTimeMedia: ((PeerId) -> Bool)?", hooks)
         self.assertIn("shouldPreserveOneTimeMedia?(accountPeerId)", autoremove)
-        self.assertIn("registry.service(accountPeerId: accountPeerId)", manager)
+        hook_assignment = occurrence_window(
+            manager,
+            "AyuGramHooks.shouldPreserveOneTimeMedia = { [weak self] accountPeerId in",
+            1,
+            500,
+        )
+        self.assertIn(
+            "registry.service(accountPeerId: accountPeerId)?.settingsSnapshot().saveDeletedMessages ?? false",
+            hook_assignment,
+        )
+        self.assertNotIn("primaryService", hook_assignment)
         self.assertGreaterEqual(manager.count("registry.service(accountPeerId: accountPeerId)"), 2)
 
     def test_clear_call_history_collects_exact_ids_and_uses_preservation_route(self) -> None:
         delete_messages = source("TelegramEngine/Messages/DeleteMessages.swift")
         call_section = occurrence_window(delete_messages, "func _internal_clearCallHistory(", 1, 7000)
-        self.assertIn("messageIdsWithGlobalTag(GlobalMessageTags.Calls)", delete_messages)
-        self.assertIn("_internal_applyMessageDeletion(", call_section)
-        self.assertNotIn("removeAllMessagesWithGlobalTag", call_section)
+        success_anchor = "|> `catch` { success -> Signal<Void, NoError> in"
+        success_section = occurrence_window(call_section, success_anchor, 1, 1800)
+        self.assertIn("if success {", success_section)
+        self.assertIn(
+            "let ids = transaction.messageIdsWithGlobalTag(GlobalMessageTags.Calls)",
+            success_section,
+        )
+        self.assertIn("_internal_applyMessageDeletion(", success_section)
+        self.assertIn("accountPeerId: account.peerId", success_section)
+        self.assertIn("mediaBox: account.postbox.mediaBox", success_section)
+        self.assertIn("mode: .server(.localAction)", success_section)
+        self.assertNotIn("removeAllMessagesWithGlobalTag", success_section)
+        self.assertLess(call_section.index("account.network.request("), call_section.index(success_anchor))
+        self.assertLess(success_section.index("if success {"), success_section.index("messageIdsWithGlobalTag"))
+        self.assertLess(success_section.index("messageIdsWithGlobalTag"), success_section.index("} else {"))
 
     def test_global_tag_ids_forward_and_ignore_holes(self) -> None:
         postbox = POSTBOX.read_text(encoding="utf-8")
-        self.assertIn("public func messageIdsWithGlobalTag(_ tag: GlobalMessageTags) -> [MessageId]", postbox)
-        self.assertIn("messageIdsWithGlobalTag(tag: tag)", postbox)
-        self.assertIn("messageHistoryTable.allIndicesWithGlobalTag(tag: tag)", postbox)
-        self.assertIn("case let .message(index):", postbox)
-        self.assertIn("case .hole:", postbox)
+        transaction_helper = occurrence_window(
+            postbox,
+            "public func messageIdsWithGlobalTag(_ tag: GlobalMessageTags) -> [MessageId]",
+            1,
+            500,
+        )
+        self.assertIn("messageIdsWithGlobalTag(tag: tag)", transaction_helper)
+
+        postbox_helper = occurrence_window(
+            postbox,
+            "fileprivate func messageIdsWithGlobalTag(tag: GlobalMessageTags) -> [MessageId]",
+            1,
+            1000,
+        )
+        self.assertIn("messageHistoryTable.allIndicesWithGlobalTag(tag: tag)", postbox_helper)
+        self.assertIn("case let .message(index):", postbox_helper)
+        self.assertIn("return index.id", postbox_helper)
+        self.assertIn("case .hole:", postbox_helper)
+        self.assertIn("return nil", postbox_helper)
+
+        message_history = MESSAGE_HISTORY_TABLE.read_text(encoding="utf-8")
+        table_helper = occurrence_window(
+            message_history,
+            "func allIndicesWithGlobalTag(tag: GlobalMessageTags)",
+            1,
+            500,
+        )
+        self.assertIn("globalTagsTable.laterEntries(tag, index: nil, count: 0)", table_helper)
+        self.assertIn("assert(tag.isSingleTag)", table_helper)
+        self.assertNotIn("globalTagsTable.getAll()", table_helper)
 
     def test_every_user_visible_id_route_uses_the_helper(self) -> None:
         routes = (

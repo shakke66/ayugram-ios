@@ -3173,7 +3173,8 @@ final class MessageHistoryTable: Table {
     }
     
     func allIndicesWithGlobalTag(tag: GlobalMessageTags) -> [GlobalMessageHistoryTagsTableEntry] {
-        return self.globalTagsTable.getAll()
+        assert(tag.isSingleTag)
+        return self.globalTagsTable.laterEntries(tag, index: nil, count: 0)
     }
     
     func allIndicesWithForwardAuthor(peerId: PeerId, forwardAuthorId: PeerId, namespace: MessageId.Namespace) -> [MessageIndex] {
