@@ -76,6 +76,8 @@ public final class GRVMMessageArchiveCoordinator {
     private let queue = Queue(name: "GRVMMessageArchiveCoordinator", qos: .utility)
     private let disposables = DisposableSet()
     private let settingsState: Atomic<GRVMCoordinatorSettingsState>
+    private var isResumingCleanupJobs = false
+    private var didStartArchivedMediaReconciliation = false
 
     public init(
         accountPeerId: PeerId,
@@ -104,7 +106,123 @@ public final class GRVMMessageArchiveCoordinator {
         let revised = try store.revisedKeys(accountId: accountRecordId.int64)
         self.index.replace(GRVMMessageArchiveSnapshot(deleted: deleted, revised: revised))
 
-        let records = try self.store.archivedMedia(accountId: self.accountRecordId.int64)
+        self.disposables.add(self.mediaBox.didRemoveResourceIds.start(next: { [weak self] ids in
+            guard let self, !ids.isEmpty else {
+                return
+            }
+            self.queue.async {
+                let resourceIds = ids.map(\.stringRepresentation)
+                guard let records = try? self.store.archivedMedia(
+                    accountId: self.accountRecordId.int64,
+                    resourceIds: resourceIds
+                ) else {
+                    return
+                }
+                self.restore(records.filter { $0.copyState == .complete })
+            }
+        }))
+    }
+
+    public func resumePendingCleanupJobs() {
+        self.queue.async { [weak self] in
+            guard let self, !self.isResumingCleanupJobs else {
+                return
+            }
+            let jobs: [GRVMCleanupJob]
+            do {
+                jobs = try self.store.pendingCleanupJobs(accountId: self.accountRecordId.int64)
+            } catch {
+                return
+            }
+            guard !jobs.isEmpty else {
+                self.reconcileArchivedMedia()
+                return
+            }
+            self.isResumingCleanupJobs = true
+            self.resumeCleanupJobs(jobs, index: 0)
+        }
+    }
+
+    private func resumeCleanupJobs(_ jobs: [GRVMCleanupJob], index: Int) {
+        guard index < jobs.count else {
+            self.isResumingCleanupJobs = false
+            self.reconcileArchivedMedia()
+            return
+        }
+        self.disposables.add(self.runCleanupJob(jobs[index]).start(next: { [weak self] _ in
+            guard let self else {
+                return
+            }
+            self.queue.justDispatch {
+                self.resumeCleanupJobs(jobs, index: index + 1)
+            }
+        }, error: { [weak self] _ in
+            guard let self else {
+                return
+            }
+            self.queue.justDispatch {
+                self.isResumingCleanupJobs = false
+            }
+        }))
+    }
+
+    private func runCleanupJob(_ initialJob: GRVMCleanupJob) -> Signal<[MessageId], GRVMClearDeletedError> {
+        return Signal { subscriber in
+            let disposable = MetaDisposable()
+            var job = initialJob
+            if job.phase == .planned {
+                let removal = self.mediaStore.removeArchivedFiles(job.mediaRecords)
+                guard removal.failed.isEmpty else {
+                    subscriber.putError(.mediaRemovalFailed(removal.failed.count))
+                    return disposable
+                }
+                do {
+                    job = try self.store.markCleanupFilesRemoved(id: job.id)
+                } catch {
+                    subscriber.putError(.databaseFinalizationFailed)
+                    return disposable
+                }
+            }
+
+            let ids = job.messageKeys.map {
+                MessageId(peerId: PeerId($0.peerId), namespace: $0.namespace, id: $0.messageId)
+            }
+            disposable.set(self.postbox.transaction { transaction -> [MessageId] in
+                _internal_applyMessageDeletion(
+                    accountPeerId: self.accountPeerId,
+                    transaction: transaction,
+                    mediaBox: self.mediaBox,
+                    ids: ids,
+                    mode: .forceCleanup
+                )
+                return ids
+            }.start(next: { ids in
+                self.queue.async {
+                    do {
+                        let keys = try self.store.finalizeDeletedCleanup(id: job.id)
+                        self.index.removeDeleted(Set(keys))
+                        subscriber.putNext(ids)
+                        subscriber.putCompletion()
+                    } catch {
+                        subscriber.putError(.databaseFinalizationFailed)
+                    }
+                }
+            }))
+            return disposable
+        }
+    }
+
+    private func reconcileArchivedMedia() {
+        guard !self.didStartArchivedMediaReconciliation else {
+            return
+        }
+        let records: [GRVMArchivedMedia]
+        do {
+            records = try self.store.archivedMedia(accountId: self.accountRecordId.int64)
+        } catch {
+            return
+        }
+        self.didStartArchivedMediaReconciliation = true
         self.disposables.add(self.mediaStore.reconcile(
             accountId: self.accountRecordId.int64,
             records: records,
@@ -127,22 +245,6 @@ public final class GRVMMessageArchiveCoordinator {
                         $0.copyState == .complete && !updatedIds.contains($0.resourceId)
                     } + updatedRecords.filter { $0.copyState == .complete }
                 )
-            }
-        }))
-
-        self.disposables.add(self.mediaBox.didRemoveResourceIds.start(next: { [weak self] ids in
-            guard let self, !ids.isEmpty else {
-                return
-            }
-            self.queue.async {
-                let resourceIds = ids.map(\.stringRepresentation)
-                guard let records = try? self.store.archivedMedia(
-                    accountId: self.accountRecordId.int64,
-                    resourceIds: resourceIds
-                ) else {
-                    return
-                }
-                self.restore(records.filter { $0.copyState == .complete })
             }
         }))
     }
@@ -241,6 +343,17 @@ public final class GRVMMessageArchiveCoordinator {
     }
 
     public func preserveDeletedMessages(_ messages: [Message], source: GRVMDeletionSource) -> [MessageId: [String]] {
+        var result: [MessageId: [String]] = [:]
+        self.queue.sync {
+            result = self.preserveDeletedMessagesOnQueue(messages, source: source)
+        }
+        return result
+    }
+
+    private func preserveDeletedMessagesOnQueue(
+        _ messages: [Message],
+        source: GRVMDeletionSource
+    ) -> [MessageId: [String]] {
         let settings = self.settingsSnapshot()
         guard settings.saveDeletedMessages else {
             return [:]
@@ -316,6 +429,14 @@ public final class GRVMMessageArchiveCoordinator {
     }
 
     public func preserveEditRevision(_ message: Message) -> Bool {
+        var result = false
+        self.queue.sync {
+            result = self.preserveEditRevisionOnQueue(message)
+        }
+        return result
+    }
+
+    private func preserveEditRevisionOnQueue(_ message: Message) -> Bool {
         let settings = self.settingsSnapshot()
         guard settings.saveEditHistory else {
             return false
@@ -369,62 +490,35 @@ public final class GRVMMessageArchiveCoordinator {
         return true
     }
 
-    public func clearDeleted(peerId: PeerId?, threadId: Int64?) -> Signal<[MessageId], NoError> {
+    public func clearDeleted(peerId: PeerId?, threadId: Int64?) -> Signal<[MessageId], GRVMClearDeletedError> {
         return Signal { subscriber in
             let disposable = MetaDisposable()
             self.queue.async { [weak self] in
                 guard let self else {
-                    subscriber.putCompletion()
+                    subscriber.putError(.archiveUnavailable)
                     return
                 }
-                guard let keys = try? self.store.deletedMessageKeys(
-                    accountId: self.accountRecordId.int64,
-                    peerId: peerId?.toInt64(),
-                    threadId: threadId
-                ) else {
+                let job: GRVMCleanupJob?
+                do {
+                    job = try self.store.beginDeletedCleanup(
+                        accountId: self.accountRecordId.int64,
+                        peerId: peerId?.toInt64(),
+                        threadId: threadId
+                    )
+                } catch {
+                    subscriber.putError(.databaseFinalizationFailed)
+                    return
+                }
+                guard let job else {
                     subscriber.putNext([])
                     subscriber.putCompletion()
                     return
                 }
-                guard !keys.isEmpty else {
-                    subscriber.putNext([])
+                disposable.set(self.runCleanupJob(job).start(next: { ids in
+                    subscriber.putNext(ids)
                     subscriber.putCompletion()
-                    return
-                }
-
-                let ids = keys.map { key in
-                    MessageId(
-                        peerId: PeerId(key.peerId),
-                        namespace: key.namespace,
-                        id: key.messageId
-                    )
-                }
-                disposable.set(self.postbox.transaction { transaction -> [MessageId] in
-                    _internal_applyMessageDeletion(
-                        accountPeerId: self.accountPeerId,
-                        transaction: transaction,
-                        mediaBox: self.mediaBox,
-                        ids: ids,
-                        mode: .forceCleanup
-                    )
-                    return ids
-                }.start(next: { [weak self] ids in
-                    guard let self else {
-                        subscriber.putCompletion()
-                        return
-                    }
-                    self.queue.async {
-                        guard let removedMedia = try? self.store.removeDeleted(keys) else {
-                            subscriber.putNext([])
-                            subscriber.putCompletion()
-                            return
-                        }
-                        self.index.removeDeleted(Set(keys))
-                        self.mediaStore.remove(removedMedia, completion: {
-                            subscriber.putNext(ids)
-                            subscriber.putCompletion()
-                        })
-                    }
+                }, error: { error in
+                    subscriber.putError(error)
                 }))
             }
             return disposable

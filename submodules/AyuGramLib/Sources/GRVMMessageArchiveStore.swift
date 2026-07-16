@@ -729,66 +729,6 @@ public final class GRVMMessageArchiveStore {
         }
     }
 
-    public func removeDeleted(_ keys: [GRVMMessageKey]) throws -> [GRVMArchivedMedia] {
-        guard !keys.isEmpty else {
-            return []
-        }
-        return try self.perform { database in
-            try self.transaction(database) {
-                var candidates: [Int64: Set<String>] = [:]
-                for key in keys {
-                    candidates[key.accountId, default: []].formUnion(
-                        try self.mappedResourceIds(database, key: key, revisionId: 0)
-                    )
-                    try self.executePrepared(
-                        database,
-                        sql: """
-                        DELETE FROM archived_message_media
-                        WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
-                          AND message_id = ? AND thread_id = ? AND revision_id = 0
-                        """,
-                        values: self.keyValues(key)
-                    )
-                    try self.executePrepared(
-                        database,
-                        sql: """
-                        DELETE FROM archived_messages
-                        WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
-                          AND message_id = ? AND thread_id = ?
-                        """,
-                        values: self.keyValues(key)
-                    )
-                }
-
-                var removed: [GRVMArchivedMedia] = []
-                for (accountId, resourceIds) in candidates {
-                    for resourceId in resourceIds {
-                        let references = try self.scalarInt64(
-                            database,
-                            sql: """
-                            SELECT COUNT(*) FROM archived_message_media
-                            WHERE account_id = ? AND resource_id = ?
-                            """,
-                            values: [.int64(accountId), .text(resourceId)]
-                        )
-                        guard references == 0 else {
-                            continue
-                        }
-                        if let record = try self.media(database, accountId: accountId, resourceId: resourceId) {
-                            removed.append(record)
-                        }
-                        try self.executePrepared(
-                            database,
-                            sql: "DELETE FROM archived_media_blobs WHERE account_id = ? AND resource_id = ?",
-                            values: [.int64(accountId), .text(resourceId)]
-                        )
-                    }
-                }
-                return removed
-            }
-        }
-    }
-
     private func perform<T>(_ f: (OpaquePointer) throws -> T) throws -> T {
         return try self.queue.sync {
             if let openError = self.openError {

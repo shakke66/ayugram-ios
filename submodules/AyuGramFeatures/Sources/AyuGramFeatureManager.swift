@@ -39,7 +39,7 @@ public final class AyuGramFeatureManager {
             return self?.registry.service(accountPeerId: accountPeerId)?.clearDeleted(
                 peerId: peerId,
                 threadId: threadId
-            ) ?? .single([])
+            ) ?? .fail(.archiveUnavailable)
         }
         AyuGramFeatures.editHistory = { [weak self] accountPeerId, messageId in
             return self?.registry.service(accountPeerId: accountPeerId)?.editHistory(messageId) ?? .single([])

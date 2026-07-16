@@ -95,13 +95,6 @@ public final class GRVMArchivedMediaStore {
         return GRVMMediaRemovalResult(removed: removed, failed: failed)
     }
 
-    public func remove(_ records: [GRVMArchivedMedia], completion: @escaping () -> Void = {}) {
-        self.queue.async {
-            _ = self.removeArchivedFiles(records)
-            completion()
-        }
-    }
-
     public func reconcile(
         accountId: Int64,
         records: [GRVMArchivedMedia],

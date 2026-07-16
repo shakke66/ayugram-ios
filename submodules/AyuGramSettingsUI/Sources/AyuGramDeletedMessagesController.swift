@@ -148,6 +148,33 @@ private func grvmDeletedEntries(
     return entries
 }
 
+func grvmClearDeletedErrorController(
+    _ error: GRVMClearDeletedError,
+    presentationData: PresentationData
+) -> AlertController {
+    let text: String
+    switch error {
+    case .archiveUnavailable:
+        text = "The deleted-message archive is unavailable. Please try again."
+    case let .mediaRemovalFailed(count):
+        text = "Failed to remove \(count) archived media file(s). The cleanup can be retried."
+    case .databaseFinalizationFailed:
+        text = "The deleted-message archive could not be finalized. Please try again."
+    }
+    return standardTextAlertController(
+        theme: AlertControllerTheme(presentationData: presentationData),
+        title: "Clear Failed",
+        text: text,
+        actions: [
+            TextAlertAction(
+                type: .defaultAction,
+                title: presentationData.strings.Common_OK,
+                action: {}
+            )
+        ]
+    )
+}
+
 /// Displays the active account's deleted-message archive for one chat or topic scope.
 public func grvmDeletedMessagesController(
     context: AccountContext,
@@ -213,9 +240,15 @@ public func grvmDeletedMessagesController(
                         TextAlertAction(type: .destructiveAction, title: "Clear", action: {
                             let cleanup = AyuGramFeatures.clearDeleted?(
                                 context.account.peerId, peerId, threadId
-                            ) ?? .single([])
-                            let _ = cleanup.start(next: { _ in
+                            ) ?? .fail(.archiveUnavailable)
+                            let _ = (cleanup
+                            |> deliverOnMainQueue).start(next: { _ in
                                 refreshToken.set(refreshCounter.modify { $0 + 1 })
+                            }, error: { error in
+                                controller?.present(
+                                    grvmClearDeletedErrorController(error, presentationData: presentationData),
+                                    in: .window(.root)
+                                )
                             })
                         })
                     ]

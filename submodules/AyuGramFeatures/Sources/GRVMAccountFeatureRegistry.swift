@@ -100,10 +100,10 @@ public final class GRVMAccountFeatureRegistry {
             )
             do {
                 try coordinator.prepare()
-                coordinator.reconcilePersistentMessageState()
             } catch {
                 return
             }
+            var registered = false
             _ = self.state.modify { state in
                 var state = state
                 guard state.prepared,
@@ -112,8 +112,14 @@ public final class GRVMAccountFeatureRegistry {
                     return state
                 }
                 state.services[accountPeerId] = coordinator
+                registered = true
                 return state
             }
+            guard registered else {
+                return
+            }
+            coordinator.resumePendingCleanupJobs()
+            coordinator.reconcilePersistentMessageState()
         }))
     }
 

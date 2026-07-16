@@ -202,6 +202,9 @@ class HistoryUIContractTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn("public static var " + token, features)
         self.assertGreaterEqual(manager.count("registry.service(accountPeerId: accountPeerId)"), 6)
+        self.assertIn("Signal<[MessageId], GRVMClearDeletedError>", features)
+        clear_bridge = window(manager, "AyuGramFeatures.clearDeleted =", 700)
+        self.assertIn(".fail(.archiveUnavailable)", clear_bridge)
 
     def test_deleted_archive_uses_exact_scope_search_and_message_actions(self) -> None:
         value = DELETED_CONTROLLER.read_text(encoding="utf-8")
@@ -236,10 +239,56 @@ class HistoryUIContractTests(unittest.TestCase):
             "context.account.peerId",
             "peerId, threadId",
             ".start(next:",
+            "error: { error in",
+            "grvmClearDeletedErrorController(error, presentationData: presentationData)",
             "refreshToken.set",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, value)
+
+        cleanup = window(value, "let cleanup = AyuGramFeatures.clearDeleted?(", 1800)
+        self.assertLess(cleanup.index("refreshToken.set"), cleanup.index("error: { error in"))
+        error_handler = cleanup[cleanup.index("error: { error in") :]
+        self.assertNotIn("refreshToken.set", error_handler)
+        self.assertNotIn("completed:", cleanup)
+
+    def test_clear_deleted_failure_copy_is_centralized_and_visible_in_both_actions(self) -> None:
+        deleted = DELETED_CONTROLLER.read_text(encoding="utf-8")
+        menu = ARCHIVE_MENU_ITEMS.read_text(encoding="utf-8")
+
+        helper = window(deleted, "func grvmClearDeletedErrorController(", 2200)
+        for token in (
+            "case .archiveUnavailable:",
+            "case let .mediaRemovalFailed(count):",
+            "case .databaseFinalizationFailed:",
+            "standardTextAlertController(",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, helper)
+
+        for value in (deleted, menu):
+            cleanup = window(value, "let cleanup = AyuGramFeatures.clearDeleted?(", 1800)
+            self.assertIn(".fail(.archiveUnavailable)", cleanup)
+            self.assertIn(".start(next:", cleanup)
+            self.assertIn("error: { error in", cleanup)
+            self.assertIn(
+                "grvmClearDeletedErrorController(error, presentationData: presentationData)",
+                cleanup,
+            )
+            self.assertIn("in: .window(.root)", cleanup)
+            self.assertNotIn("completed:", cleanup)
+
+        menu_cleanup = window(menu, "let cleanup = AyuGramFeatures.clearDeleted?(", 1800)
+        self.assertNotIn("refreshToken.set", menu_cleanup)
+
+    def test_clear_deleted_ui_callbacks_are_delivered_on_main_queue(self) -> None:
+        for value in (
+            DELETED_CONTROLLER.read_text(encoding="utf-8"),
+            ARCHIVE_MENU_ITEMS.read_text(encoding="utf-8"),
+        ):
+            cleanup = window(value, "let cleanup = AyuGramFeatures.clearDeleted?(", 1800)
+            self.assertIn("|> deliverOnMainQueue", cleanup)
+            self.assertLess(cleanup.index("|> deliverOnMainQueue"), cleanup.index(".start(next:"))
 
     def test_regular_and_reply_archive_menu_paths_keep_exact_scopes(self) -> None:
         value = CHAT_CONTROLLER.read_text(encoding="utf-8")

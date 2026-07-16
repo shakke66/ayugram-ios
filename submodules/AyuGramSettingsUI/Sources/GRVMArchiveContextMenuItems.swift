@@ -59,8 +59,14 @@ public func grvmArchiveContextMenuItems(
                                 TextAlertAction(type: .destructiveAction, title: "Clear", action: {
                                     let cleanup = AyuGramFeatures.clearDeleted?(
                                         context.account.peerId, peerId, threadId
-                                    ) ?? .single([])
-                                    let _ = cleanup.start(next: { _ in })
+                                    ) ?? .fail(.archiveUnavailable)
+                                    let _ = (cleanup
+                                    |> deliverOnMainQueue).start(next: { _ in }, error: { error in
+                                        sourceController?.present(
+                                            grvmClearDeletedErrorController(error, presentationData: presentationData),
+                                            in: .window(.root)
+                                        )
+                                    })
                                 })
                             ]
                         )

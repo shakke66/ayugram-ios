@@ -9,7 +9,6 @@ APPLY = CORE / "TelegramEngine/Messages/ApplyGRVMMessageDeletion.swift"
 HOOKS = CORE / "AyuGramHooks.swift"
 COORDINATOR = ROOT / "submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"
 MANAGER = ROOT / "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
-MEDIA_STORE = ROOT / "submodules/AyuGramLib/Sources/GRVMArchivedMediaStore.swift"
 
 
 def source(path: str) -> str:
@@ -86,11 +85,15 @@ class DeleteRouteContractTests(unittest.TestCase):
     def test_force_cleanup_has_a_real_archive_call_site(self) -> None:
         coordinator = COORDINATOR.read_text(encoding="utf-8")
         self.assertIn("public func clearDeleted(", coordinator)
+        self.assertIn("self.store.beginDeletedCleanup(", coordinator)
+        self.assertIn("self.runCleanupJob(job)", coordinator)
+        self.assertIn("self.mediaStore.removeArchivedFiles(", coordinator)
+        self.assertIn("self.store.markCleanupFilesRemoved(", coordinator)
         self.assertIn("mode: .forceCleanup", coordinator)
-        self.assertIn("self.store.removeDeleted(", coordinator)
+        self.assertIn("self.store.finalizeDeletedCleanup(", coordinator)
         self.assertIn("self.index.removeDeleted(", coordinator)
-        self.assertIn("self.mediaStore.remove(removedMedia, completion:", coordinator)
-        self.assertIn("completion()", MEDIA_STORE.read_text(encoding="utf-8"))
+        self.assertNotIn("self.store.removeDeleted(", coordinator)
+        self.assertNotIn("self.mediaStore.remove(", coordinator)
 
     def test_save_for_bots_never_gates_edit_history(self) -> None:
         value = source("State/AccountStateManagementUtils.swift")
