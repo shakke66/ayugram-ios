@@ -1079,7 +1079,7 @@ private final class StoryContainerScreenComponent: Component {
                     }
                 })
 
-                if AyuGramHooks.shouldSuggestGhostForStories?() != false, AyuGramHooks.shouldSuppressStoryRead?() != true {
+                if AyuGramHooks.shouldSuggestGhostForStories?(component.context.account.peerId) != false, AyuGramHooks.shouldSuppressStoryRead?(component.context.account.peerId) != true {
                     let presentationData = component.context.sharedContext.currentPresentationData.with({ $0 })
                     self.environment?.controller()?.present(UndoOverlayController(
                         presentationData: presentationData,

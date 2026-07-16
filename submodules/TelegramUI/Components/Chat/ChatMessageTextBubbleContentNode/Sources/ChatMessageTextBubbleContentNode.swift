@@ -526,7 +526,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                     }
                 }
 
-                if AyuGramHooks.shouldFilterZalgo?() == true {
+                if AyuGramHooks.shouldFilterZalgo?(item.context.account.peerId) == true {
                     rawText = rawText.filteringZalgo()
                 }
 

@@ -87,7 +87,7 @@ func managedSynchronizeViewStoriesOperations(postbox: Postbox, network: Network,
                 let signal = withTakenOperation(postbox: postbox, peerId: entry.peerId, tagLocalIndex: entry.tagLocalIndex, { transaction, entry -> Signal<Void, NoError> in
                     if let entry = entry {
                         if let operation = entry.contents as? SynchronizeViewStoriesOperation {
-                            if AyuGramHooks.shouldSuppressStoryRead?() == true {
+                            if AyuGramHooks.shouldSuppressStoryRead?(stateManager.accountPeerId) == true {
                                 return .complete()
                             }
                             if let peer = transaction.getPeer(entry.peerId) {

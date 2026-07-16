@@ -158,11 +158,13 @@ final class WebAppWebView: WKWebView {
         
         super.init(frame: CGRect(), configuration: configuration)
 
-        if AyuGramHooks.shouldSpoofWebviewAsAndroid?() == true {
+        if AyuGramHooks.shouldSpoofWebviewAsAndroid?(account.peerId) == true {
             self.customUserAgent = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
         }
 
-        if AyuGramHooks.shouldIncreaseWebviewSize?() == true {
+        let shouldIncreaseWebviewHeight = AyuGramHooks.shouldIncreaseWebviewHeight?(account.peerId) == true
+        let shouldIncreaseWebviewWidth = AyuGramHooks.shouldIncreaseWebviewWidth?(account.peerId) == true
+        if shouldIncreaseWebviewHeight || shouldIncreaseWebviewWidth {
             let zoomScript = WKUserScript(source: "var meta = document.createElement('meta'); meta.name = 'viewport'; meta.content = 'width=device-width, initial-scale=0.85, maximum-scale=3.0, user-scalable=yes'; var existing = document.querySelector('meta[name=viewport]'); if (existing) { existing.content = meta.content; } else { document.head.appendChild(meta); }", injectionTime: .atDocumentEnd, forMainFrameOnly: true)
             self.configuration.userContentController.addUserScript(zoomScript)
         }

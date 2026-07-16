@@ -892,7 +892,7 @@ public final class ChatListHeaderComponent: Component {
             }
             
             var storyListTransition = transition
-            if let storySubscriptions = component.storySubscriptions, AyuGramHooks.shouldHideStories?() != true {
+            if let storySubscriptions = component.storySubscriptions, AyuGramHooks.shouldHideStories?(component.context.account.peerId) != true {
                 let storyPeerList: ComponentView<Empty>
                 if let current = self.storyPeerList {
                     storyPeerList = current

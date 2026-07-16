@@ -687,7 +687,7 @@ extension ChatControllerImpl {
         messageEffect: ChatSendMessageEffect? = nil,
         postpone: Bool = false
     ) {
-        if AyuGramHooks.shouldConfirmVoice?() == true {
+        if AyuGramHooks.shouldConfirmVoice?(self.context.account.peerId) == true {
             let alertController = textAlertController(context: self.context, title: nil, text: "Send voice message?", actions: [
                 TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_Cancel, action: {}),
                 TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_OK, action: { [weak self] in

@@ -2247,7 +2247,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 return false
             }
 
-            if AyuGramHooks.shouldConfirmStickers?() == true {
+            if AyuGramHooks.shouldConfirmStickers?(strongSelf.context.account.peerId) == true {
                 let alertController = textAlertController(context: strongSelf.context, title: nil, text: "Send sticker?", actions: [
                     TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
                     TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: { [weak self] in
@@ -2417,7 +2417,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
         }, sendGif: { [weak self] fileReference, sourceView, sourceRect, silentPosting, schedule in
             if let strongSelf = self {
-                if AyuGramHooks.shouldConfirmGIF?() == true {
+                if AyuGramHooks.shouldConfirmGIF?(strongSelf.context.account.peerId) == true {
                     let alertController = textAlertController(context: strongSelf.context, title: nil, text: "Send GIF?", actions: [
                         TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
                         TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: { [weak self] in
@@ -8340,7 +8340,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     }
             
     func transformEnqueueMessages(_ messages: [EnqueueMessage], postpone: Bool = false) -> [EnqueueMessage] {
-        let silentPosting = self.presentationInterfaceState.interfaceState.silentPosting || (AyuGramHooks.shouldSendWithoutSound?() == true)
+        let sendWithoutSoundMode = AyuGramHooks.sendWithoutSoundMode?(self.context.account.peerId) ?? 0
+        let silentPosting = self.presentationInterfaceState.interfaceState.silentPosting || sendWithoutSoundMode == 2
         return transformEnqueueMessages(messages, silentPosting: silentPosting, postpone: postpone)
     }
     
@@ -8607,7 +8608,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 isScheduledMessages = true
             }
 
-            if !commit && !isScheduledMessages && AyuGramHooks.shouldUseScheduledMessages?() == true {
+            if !commit && !isScheduledMessages && AyuGramHooks.shouldUseScheduledMessages?(self.context.account.peerId) == true {
                 // AyuGram Ghost "Send in Ghost": auto-delay the send via a scheduled
                 // timestamp so we never blink online. Matches desktop behaviour:
                 //  - plain text: fixed 12s delay
@@ -8642,7 +8643,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     if let strongSelf = self, strongSelf.presentationInterfaceState.subject != .scheduledMessages {
                         strongSelf.chatDisplayNode.historyNode.scrollToEndOfHistory()
 
-                        if AyuGramHooks.shouldMarkReadAfterAction?() == true {
+                        if AyuGramHooks.shouldMarkReadAfterAction?(strongSelf.context.account.peerId) == true {
                             if let latestMessage = strongSelf.chatDisplayNode.historyNode.latestMessageInCurrentHistoryView() {
                                 strongSelf.context.applyMaxReadIndex(for: strongSelf.chatLocation, contextHolder: strongSelf.chatLocationContextHolder, messageIndex: latestMessage.index)
                             }

@@ -10,6 +10,10 @@ public final class AyuGramFeatureManager {
         return self.registry.primaryService()?.settingsSnapshot() ?? .defaultSettings
     }
 
+    private func settings(accountPeerId: PeerId) -> AyuGramSettings? {
+        return self.registry.service(accountPeerId: accountPeerId)?.settingsSnapshot()
+    }
+
     public init(registry: GRVMAccountFeatureRegistry) {
         self.registry = registry
     }
@@ -61,25 +65,28 @@ public final class AyuGramFeatureManager {
         }
 
         // MARK: - Ghost Mode
-        AyuGramHooks.shouldSuppressReadReceipts = { [weak self] in
-            guard let s = self?.currentSettings else { return false }
-            return s.ghostModeEnabled && s.suppressReadReceipts
+        AyuGramHooks.shouldSuppressReadReceipts = { [weak self] accountPeerId in
+            guard let settings = self?.settings(accountPeerId: accountPeerId) else { return false }
+            return settings.ghostModeEnabled && settings.suppressReadReceipts
         }
-        AyuGramHooks.shouldSuppressPresence = { [weak self] in
-            guard let s = self?.currentSettings else { return false }
-            return s.ghostModeEnabled && s.suppressOnlineStatus
+        AyuGramHooks.shouldSuppressPresence = { [weak self] accountPeerId in
+            guard let settings = self?.settings(accountPeerId: accountPeerId) else { return false }
+            return settings.ghostModeEnabled && settings.suppressOnlineStatus
         }
-        AyuGramHooks.shouldSuppressTyping = { [weak self] in
-            guard let s = self?.currentSettings else { return false }
-            return s.ghostModeEnabled && s.suppressTypingStatus
+        let shouldSuppressTypingAndUploads: (PeerId) -> Bool = { [weak self] accountPeerId in
+            guard let settings = self?.settings(accountPeerId: accountPeerId) else { return false }
+            return settings.ghostModeEnabled
+                && (settings.suppressTypingStatus || settings.suppressUploadProgress)
         }
-        AyuGramHooks.shouldSuppressStoryRead = { [weak self] in
-            guard let s = self?.currentSettings else { return false }
-            return s.ghostModeEnabled && s.suppressStoryReads
+        AyuGramHooks.shouldSuppressTyping = shouldSuppressTypingAndUploads
+        AyuGramHooks.shouldSuppressUploadProgress = shouldSuppressTypingAndUploads
+        AyuGramHooks.shouldSuppressStoryRead = { [weak self] accountPeerId in
+            guard let settings = self?.settings(accountPeerId: accountPeerId) else { return false }
+            return settings.ghostModeEnabled && settings.suppressStoryReads
         }
-        AyuGramHooks.shouldSuppressContentRead = { [weak self] in
-            guard let s = self?.currentSettings else { return false }
-            return s.ghostModeEnabled && s.suppressReadReceipts
+        AyuGramHooks.shouldSuppressContentRead = { [weak self] accountPeerId in
+            guard let settings = self?.settings(accountPeerId: accountPeerId) else { return false }
+            return settings.ghostModeEnabled && settings.suppressReadReceipts
         }
 
         // MARK: - Premium & Ads
@@ -89,40 +96,43 @@ public final class AyuGramFeatureManager {
             }
             return service.settingsSnapshot().localTelegramPremium
         }
-        AyuGramHooks.shouldDisableAds = { [weak self] in
-            return self?.currentSettings.disableAds ?? true
+        AyuGramHooks.shouldDisableAds = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.disableAds ?? false
         }
 
         // MARK: - General
-        AyuGramHooks.shouldHideStories = { [weak self] in
-            return self?.currentSettings.hideStories ?? false
+        AyuGramHooks.shouldHideStories = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.hideStories ?? false
         }
-        AyuGramHooks.shouldDisableSimilarChannels = { [weak self] in
-            return self?.currentSettings.disableSimilarChannels ?? false
+        AyuGramHooks.shouldDisableSimilarChannels = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.disableSimilarChannels ?? false
         }
-        AyuGramHooks.shouldDisableNotificationDelay = { [weak self] in
-            return self?.currentSettings.disableNotificationDelay ?? false
+        AyuGramHooks.shouldDisableNotificationDelay = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.disableNotificationDelay ?? false
         }
-        AyuGramHooks.shouldShowSeconds = { [weak self] in
-            return self?.currentSettings.showSecondsInMessages ?? false
+        AyuGramHooks.shouldShowSeconds = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.showSecondsInMessages ?? false
         }
-        AyuGramHooks.shouldShowDialogID = { [weak self] in
-            return (self?.currentSettings.showDialogId ?? 0) != 0
+        AyuGramHooks.shouldShowDialogID = { [weak self] accountPeerId in
+            return (self?.settings(accountPeerId: accountPeerId)?.showDialogId ?? 0) != 0
         }
-        AyuGramHooks.shouldSpoofWebviewAsAndroid = { [weak self] in
-            return self?.currentSettings.spoofWebviewAsAndroid ?? false
+        AyuGramHooks.shouldSpoofWebviewAsAndroid = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.spoofWebviewAsAndroid ?? false
         }
-        AyuGramHooks.shouldIncreaseWebviewSize = { [weak self] in
-            return self?.currentSettings.increaseWebviewSize ?? false
+        AyuGramHooks.shouldIncreaseWebviewHeight = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.increaseWebviewHeight ?? false
         }
-        AyuGramHooks.shouldConfirmStickers = { [weak self] in
-            return self?.currentSettings.confirmSendSticker ?? false
+        AyuGramHooks.shouldIncreaseWebviewWidth = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.increaseWebviewWidth ?? false
         }
-        AyuGramHooks.shouldConfirmGIF = { [weak self] in
-            return self?.currentSettings.confirmSendGIF ?? false
+        AyuGramHooks.shouldConfirmStickers = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.confirmSendSticker ?? false
         }
-        AyuGramHooks.shouldConfirmVoice = { [weak self] in
-            return self?.currentSettings.confirmSendVoice ?? false
+        AyuGramHooks.shouldConfirmGIF = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.confirmSendGIF ?? false
+        }
+        AyuGramHooks.shouldConfirmVoice = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.confirmSendVoice ?? false
         }
 
         // MARK: - Appearance
@@ -188,31 +198,20 @@ public final class AyuGramFeatureManager {
         }
 
         // MARK: - Sending
-        AyuGramHooks.shouldUseScheduledMessages = { [weak self] in
-            guard let s = self?.currentSettings else { return false }
-            // Send-in-Ghost only applies while a full Ghost Mode is active (desktop parity).
-            return s.useScheduledMessages && s.ghostModeEnabled && s.suppressOnlineStatus
-        }
-        AyuGramHooks.shouldSendWithoutSound = { [weak self] in
-            guard let s = self?.currentSettings else { return false }
-            // sendWithoutSoundOption: 0 Never / 1 InGhost / 2 Always (6.7.8 mode).
-            switch s.sendWithoutSoundOption {
-            case 2:
-                return true
-            case 1:
-                return s.ghostModeEnabled
-            default:
-                // Never (0) — fall back to the legacy standalone toggle.
-                return s.sendWithoutSound
-            }
+        AyuGramHooks.shouldUseScheduledMessages = { [weak self] accountPeerId in
+            guard let settings = self?.settings(accountPeerId: accountPeerId) else { return false }
+            return settings.ghostModeEnabled
+                && settings.useScheduledMessages
+                && !settings.readOnAction
         }
 
         // MARK: - W0 Reanimation & 6.7.8
-        AyuGramHooks.shouldSuppressUploadProgress = { [weak self] in
-            guard let s = self?.currentSettings else { return false }
-            return s.ghostModeEnabled && s.suppressUploadProgress
+        AyuGramHooks.shouldMarkReadAfterAction = { [weak self] accountPeerId in
+            guard let settings = self?.settings(accountPeerId: accountPeerId) else { return false }
+            return settings.ghostModeEnabled
+                && settings.readOnAction
+                && !settings.useScheduledMessages
         }
-        AyuGramHooks.shouldMarkReadAfterAction = { [weak self] in self?.currentSettings.readOnAction ?? false }
         AyuGramHooks.shouldSaveForBots = { [weak self] in self?.currentSettings.saveForBots ?? false }
         AyuGramHooks.shouldUseMD3Switches = { [weak self] in self?.currentSettings.md3StyleSwitches ?? false }
         AyuGramHooks.shouldDisableCustomBackgrounds = { [weak self] in self?.currentSettings.disableCustomBackgrounds ?? false }
@@ -234,23 +233,39 @@ public final class AyuGramFeatureManager {
 
         AyuGramHooks.shouldShowGiftButton = { [weak self] in self?.currentSettings.showGiftButton ?? true }
         AyuGramHooks.shouldShowAiEditorButton = { [weak self] in self?.currentSettings.showAiEditorButton ?? true }
-        AyuGramHooks.shouldSuggestGhostForStories = { [weak self] in self?.currentSettings.suggestGhostForStories ?? true }
-        AyuGramHooks.shouldFilterZalgo = { [weak self] in self?.currentSettings.filterZalgo ?? false }
-        AyuGramHooks.shouldImproveLinkPreviews = { [weak self] in self?.currentSettings.improveLinkPreviews ?? false }
+        AyuGramHooks.shouldSuggestGhostForStories = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.suggestGhostForStories ?? false
+        }
+        AyuGramHooks.shouldFilterZalgo = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.filterZalgo ?? false
+        }
+        AyuGramHooks.shouldImproveLinkPreviews = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.improveLinkPreviews ?? false
+        }
         AyuGramHooks.shouldUseSemiTransparentDeleted = { [weak self] in self?.currentSettings.semiTransparentDeletedMessages ?? false }
         AyuGramHooks.shouldHidePremiumStatuses = { [weak self] in self?.currentSettings.hidePremiumStatuses ?? false }
         AyuGramHooks.avatarCornerRadius = { [weak self] in self?.currentSettings.avatarCorners ?? 50 }
         AyuGramHooks.messageBubbleRadius = { [weak self] in self?.currentSettings.messageBubbleRadius ?? 16 }
         AyuGramHooks.shouldUseSingleCornerRadius = { [weak self] in self?.currentSettings.singleCornerRadius ?? false }
-        AyuGramHooks.peerIdDisplayMode = { [weak self] in self?.currentSettings.showDialogId ?? 0 }
-        AyuGramHooks.sendWithoutSoundMode = { [weak self] in self?.currentSettings.sendWithoutSoundOption ?? 0 }
+        AyuGramHooks.peerIdDisplayMode = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.showDialogId ?? 0
+        }
+        AyuGramHooks.sendWithoutSoundMode = { [weak self] accountPeerId in
+            guard let settings = self?.settings(accountPeerId: accountPeerId) else { return 0 }
+            return settings.sendWithoutSoundOption
+        }
 
         // MARK: - Filters (W4)
-        AyuGramHooks.isShadowBanned = { [weak self] peerId in
-            return self?.registry.primaryService()?.isShadowBanned(peerId) ?? false
+        AyuGramHooks.isShadowBanned = { [weak self] accountPeerId, peerId in
+            return self?.registry.service(accountPeerId: accountPeerId)?.isShadowBanned(
+                peerId.toInt64()
+            ) ?? false
         }
-        AyuGramHooks.isMessageHiddenByFilter = { [weak self] peerId, text in
-            return self?.registry.primaryService()?.isMessageHiddenByFilter(peerId: peerId, text: text) ?? false
+        AyuGramHooks.isMessageHiddenByFilter = { [weak self] accountPeerId, message in
+            return self?.registry.service(accountPeerId: accountPeerId)?.isMessageHiddenByFilter(
+                peerId: message.id.peerId.toInt64(),
+                text: message.text
+            ) ?? false
         }
     }
 }

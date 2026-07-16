@@ -194,9 +194,9 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
             )
         }
 
-        if AyuGramHooks.shouldShowDialogID?() == true {
+        if AyuGramHooks.shouldShowDialogID?(context.account.peerId) == true {
             let peerId = user.id
-            let idString = ayuFormatPeerId(peerId, mode: AyuGramHooks.peerIdDisplayMode?() ?? 1)
+            let idString = ayuFormatPeerId(peerId, mode: AyuGramHooks.peerIdDisplayMode?(context.account.peerId) ?? 1)
             items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemDialogId, label: "ID", text: idString, textColor: .primary, action: { _, _ in
                 UIPasteboard.general.string = idString
             }, requestLayout: { animated in
@@ -666,9 +666,9 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
                 )
             }
             if let cachedData = data.cachedData as? CachedChannelData {
-                if AyuGramHooks.shouldShowDialogID?() == true {
+                if AyuGramHooks.shouldShowDialogID?(context.account.peerId) == true {
                     let peerId = channel.id
-                    let idString = ayuFormatPeerId(peerId, mode: AyuGramHooks.peerIdDisplayMode?() ?? 1)
+                    let idString = ayuFormatPeerId(peerId, mode: AyuGramHooks.peerIdDisplayMode?(context.account.peerId) ?? 1)
                     items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemDialogId, label: "ID", text: idString, textColor: .primary, action: { _, _ in
                         UIPasteboard.general.string = idString
                     }, requestLayout: { animated in

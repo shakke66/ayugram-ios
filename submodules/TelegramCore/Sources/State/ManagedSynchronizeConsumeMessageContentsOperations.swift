@@ -110,7 +110,7 @@ func managedSynchronizeConsumeMessageContentOperations(postbox: Postbox, network
 }
 
 private func synchronizeConsumeMessageContents(transaction: Transaction, network: Network, stateManager: AccountStateManager, peerId: PeerId, operation: SynchronizeConsumeMessageContentsOperation) -> Signal<Void, NoError> {
-    if AyuGramHooks.shouldSuppressContentRead?() == true {
+    if AyuGramHooks.shouldSuppressContentRead?(stateManager.accountPeerId) == true {
         return .complete()
     }
 

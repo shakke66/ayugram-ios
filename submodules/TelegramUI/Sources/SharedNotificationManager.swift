@@ -131,7 +131,7 @@ public final class SharedNotificationManager {
         context.disposable = (account.stateManager.pollStateUpdateCompletion()
         |> mapToSignal { messageIds -> Signal<[MessageId], NoError> in
             return .single(messageIds)
-            |> delay(AyuGramHooks.shouldDisableNotificationDelay?() == true ? 0.0 : 1.0, queue: Queue.mainQueue())
+            |> delay(AyuGramHooks.shouldDisableNotificationDelay?(account.peerId) == true ? 0.0 : 1.0, queue: Queue.mainQueue())
         }
         |> deliverOnMainQueue).startStrict(next: { [weak self, weak context] _ in
             guard let strongSelf = self else {

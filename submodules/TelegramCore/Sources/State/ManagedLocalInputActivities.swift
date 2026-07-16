@@ -142,11 +142,11 @@ private func actionFromActivity(_ activity: PeerInputActivity?) -> Api.SendMessa
 }
 
 private func requestActivity(postbox: Postbox, network: Network, accountPeerId: PeerId, peerId: PeerId, threadId: Int64?, activity: PeerInputActivity?) -> Signal<Void, NoError> {
-    if AyuGramHooks.shouldSuppressTyping?() == true {
+    if AyuGramHooks.shouldSuppressTyping?(accountPeerId) == true {
         return .complete()
     }
 
-    if AyuGramHooks.shouldSuppressUploadProgress?() == true, let activity = activity {
+    if AyuGramHooks.shouldSuppressUploadProgress?(accountPeerId) == true, let activity = activity {
         switch activity {
         case .uploadingFile, .uploadingPhoto, .uploadingVideo, .uploadingInstantVideo:
             return .complete()

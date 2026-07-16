@@ -90,7 +90,7 @@ private final class SynchronizePeerReadStatesContextImpl {
                         signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: self.stateManager, peerId: peerId, push: false, validate: true)
                         |> ignoreValues
                     case let .Push(_, thenSync):
-                        if AyuGramHooks.shouldSuppressReadReceipts?() == true {
+                        if AyuGramHooks.shouldSuppressReadReceipts?(self.stateManager.accountPeerId) == true {
                             // Ghost mode: don't push the read state to the server, but confirm the
                             // operation locally. A bare `.complete()` finishes synchronously and,
                             // since the operation stays pending in the postbox view, the completed

@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 
 def _suppressed_branch(source: str) -> str:
-    marker = "if AyuGramHooks.shouldSuppressReadReceipts?() == true {"
-    start = source.find(marker)
-    if start < 0:
+    match = re.search(
+        r"if AyuGramHooks\.shouldSuppressReadReceipts\?\(([^)]*)\) == true \{",
+        source,
+    )
+    if match is None or not match.group(1).strip():
         return ""
+    start = match.start()
     end = source.find("} else {", start)
     return source[start:end] if end >= 0 else source[start:]
 

@@ -278,7 +278,7 @@ private func ayuGramCoreEntries(settings: AyuGramSettings, presentationData: Pre
 
     entries.append(.useScheduledMessages(presentationData.theme, settings.useScheduledMessages))
     entries.append(.useScheduledMessagesInfo(presentationData.theme))
-    entries.append(.sendWithoutSound(presentationData.theme, settings.sendWithoutSound))
+    entries.append(.sendWithoutSound(presentationData.theme, settings.sendWithoutSoundOption != 0))
     entries.append(.sendWithoutSoundInfo(presentationData.theme))
 
     entries.append(.spyModeHeader(presentationData.theme))
@@ -355,7 +355,7 @@ public func ayuGramCoreController(context: AccountContext) -> ViewController {
         toggleSendWithoutSound: { value in
             let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
-                settings.sendWithoutSound = value
+                settings.sendWithoutSoundOption = value ? 2 : 0
                 return settings
             }).startStandalone()
         },

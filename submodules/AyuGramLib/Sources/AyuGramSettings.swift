@@ -44,7 +44,14 @@ public struct AyuGramSettings: Codable, Equatable {
     public var hideFromBlockedUsers: Bool
 
     // MARK: - General
-    public var translationProvider: Int32
+    public var translationProvider: Int32 {
+        didSet {
+            let normalized = Self.normalizedTranslationProvider(translationProvider)
+            if normalized != translationProvider {
+                translationProvider = normalized
+            }
+        }
+    }
     public var hideStories: Bool
     public var disableSimilarChannels: Bool
     public var disableNotificationDelay: Bool
@@ -150,6 +157,11 @@ public struct AyuGramSettings: Codable, Equatable {
     public var reversedFilters: [String]
 
     // MARK: - Computed
+    private static func normalizedTranslationProvider(_ value: Int32) -> Int32 {
+        return GRVMTranslationProvider(rawValue: value)?.rawValue
+            ?? GRVMTranslationProvider.telegram.rawValue
+    }
+
     public var ghostModeActiveCount: Int {
         var count = 0
         if suppressReadReceipts { count += 1 }
@@ -382,7 +394,7 @@ public struct AyuGramSettings: Codable, Equatable {
         self.enableFilters = enableFilters
         self.enableFiltersInChats = enableFiltersInChats
         self.hideFromBlockedUsers = hideFromBlockedUsers
-        self.translationProvider = translationProvider
+        self.translationProvider = Self.normalizedTranslationProvider(translationProvider)
         self.hideStories = hideStories
         self.disableSimilarChannels = disableSimilarChannels
         self.disableNotificationDelay = disableNotificationDelay
@@ -490,7 +502,7 @@ public struct AyuGramSettings: Codable, Equatable {
         self.hideFromBlockedUsers = try container.decodeIfPresent(Bool.self, forKey: "hideFromBlockedUsers") ?? false
 
         let translationProvider = try container.decodeIfPresent(Int32.self, forKey: "translationProvider") ?? 0
-        self.translationProvider = GRVMTranslationProvider(rawValue: translationProvider)?.rawValue ?? GRVMTranslationProvider.telegram.rawValue
+        self.translationProvider = Self.normalizedTranslationProvider(translationProvider)
         self.hideStories = try container.decodeIfPresent(Bool.self, forKey: "hideStories") ?? false
         self.disableSimilarChannels = try container.decodeIfPresent(Bool.self, forKey: "disableSimilarChannels") ?? true
         self.disableNotificationDelay = try container.decodeIfPresent(Bool.self, forKey: "disableNotificationDelay") ?? true

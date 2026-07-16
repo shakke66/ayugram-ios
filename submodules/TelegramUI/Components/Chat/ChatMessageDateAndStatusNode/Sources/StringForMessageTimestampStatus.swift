@@ -91,7 +91,7 @@ public func stringForMessageTimestampStatus(accountPeerId: PeerId, message: Mess
         timestamp = orignalDate
     }
     
-    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: AyuGramHooks.shouldShowSeconds?() == true)
+    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: AyuGramHooks.shouldShowSeconds?(accountPeerId) == true)
     if timestamp == scheduleWhenOnlineTimestamp {
         dateText = "         "
     }

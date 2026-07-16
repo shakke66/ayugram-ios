@@ -15,11 +15,13 @@ private final class AyuGramGeneralArguments {
     let context: AccountContext
     let updateBool: (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void
     let updateInt32: (WritableKeyPath<AyuGramSettings, Int32>, Int32) -> Void
+    let updateWebviewSize: (Bool) -> Void
 
-    init(context: AccountContext, updateBool: @escaping (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void, updateInt32: @escaping (WritableKeyPath<AyuGramSettings, Int32>, Int32) -> Void) {
+    init(context: AccountContext, updateBool: @escaping (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void, updateInt32: @escaping (WritableKeyPath<AyuGramSettings, Int32>, Int32) -> Void, updateWebviewSize: @escaping (Bool) -> Void) {
         self.context = context
         self.updateBool = updateBool
         self.updateInt32 = updateInt32
+        self.updateWebviewSize = updateWebviewSize
     }
 }
 
@@ -135,7 +137,7 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
         case let .spoofAndroid(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Spoof Platform as Android", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.spoofWebviewAsAndroid, v) })
         case let .increaseWebview(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Increase Window Size", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.increaseWebviewSize, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: "Increase Window Size", value: value, sectionId: self.section, style: .blocks, updated: { value in arguments.updateWebviewSize(value) })
         case .confirmHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "Confirmations", sectionId: self.section)
         case let .confirmSticker(_, value):
@@ -167,7 +169,7 @@ private func ayuGramGeneralEntries(settings: AyuGramSettings, presentationData: 
     entries.append(.improveLinkPreviews(presentationData.theme, settings.improveLinkPreviews))
     entries.append(.webviewHeader(presentationData.theme))
     entries.append(.spoofAndroid(presentationData.theme, settings.spoofWebviewAsAndroid))
-    entries.append(.increaseWebview(presentationData.theme, settings.increaseWebviewSize))
+    entries.append(.increaseWebview(presentationData.theme, settings.increaseWebviewHeight || settings.increaseWebviewWidth))
     entries.append(.confirmHeader(presentationData.theme))
     entries.append(.confirmSticker(presentationData.theme, settings.confirmSendSticker))
     entries.append(.confirmGIF(presentationData.theme, settings.confirmSendGIF))
@@ -183,6 +185,14 @@ public func ayuGramGeneralController(context: AccountContext) -> ViewController 
         },
         updateInt32: { keyPath, value in
             let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in var s = s; s[keyPath: keyPath] = value; return s }.startStandalone()
+        },
+        updateWebviewSize: { value in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { settings in
+                var settings = settings
+                settings.increaseWebviewHeight = value
+                settings.increaseWebviewWidth = value
+                return settings
+            }.startStandalone()
         }
     )
 

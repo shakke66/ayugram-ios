@@ -9,6 +9,7 @@ private typealias SignalKitTimer = SwiftSignalKit.Timer
 
 private final class AccountPresenceManagerImpl {
     private let queue: Queue
+    private let accountPeerId: PeerId
     private let network: Network
     let isPerformingUpdate = ValuePromise<Bool>(false, ignoreRepeated: true)
     
@@ -18,8 +19,9 @@ private final class AccountPresenceManagerImpl {
     
     private var wasOnline: Bool = false
     
-    init(queue: Queue, shouldKeepOnlinePresence: Signal<Bool, NoError>, network: Network) {
+    init(queue: Queue, accountPeerId: PeerId, shouldKeepOnlinePresence: Signal<Bool, NoError>, network: Network) {
         self.queue = queue
+        self.accountPeerId = accountPeerId
         self.network = network
         
         self.shouldKeepOnlinePresenceDisposable = (shouldKeepOnlinePresence
@@ -43,7 +45,7 @@ private final class AccountPresenceManagerImpl {
     }
     
     private func updatePresence(_ isOnline: Bool) {
-        if AyuGramHooks.shouldSuppressPresence?() == true {
+        if isOnline && AyuGramHooks.shouldSuppressPresence?(self.accountPeerId) == true {
             return
         }
 
@@ -81,10 +83,10 @@ final class AccountPresenceManager {
     private let queue = Queue()
     private let impl: QueueLocalObject<AccountPresenceManagerImpl>
     
-    init(shouldKeepOnlinePresence: Signal<Bool, NoError>, network: Network) {
+    init(accountPeerId: PeerId, shouldKeepOnlinePresence: Signal<Bool, NoError>, network: Network) {
         let queue = self.queue
         self.impl = QueueLocalObject(queue: self.queue, generate: {
-            return AccountPresenceManagerImpl(queue: queue, shouldKeepOnlinePresence: shouldKeepOnlinePresence, network: network)
+            return AccountPresenceManagerImpl(queue: queue, accountPeerId: accountPeerId, shouldKeepOnlinePresence: shouldKeepOnlinePresence, network: network)
         })
     }
     

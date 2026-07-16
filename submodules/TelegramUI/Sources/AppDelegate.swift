@@ -1919,7 +1919,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         let task = session.downloadTask(with: request)
         Logger.shared.log("App \(self.episodeId)", "adding download task \(String(describing: request.url))")
-        task.earliestBeginDate = Date(timeIntervalSinceNow: AyuGramHooks.shouldDisableNotificationDelay?() == true ? 0.0 : 30.0)
+        let shouldDisableNotificationDelay = self.grvmAccountFeatureRegistry?.primaryService()?.settingsSnapshot().disableNotificationDelay == true
+        task.earliestBeginDate = Date(timeIntervalSinceNow: shouldDisableNotificationDelay ? 0.0 : 30.0)
         task.resume()
     }
     
