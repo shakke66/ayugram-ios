@@ -89,6 +89,51 @@ class MediaArchiveContractTests(unittest.TestCase):
         self.assertIn("record.copyState == .copying", references_section)
         self.assertIn("self.resourceLocation(", references_section)
 
+    def test_copying_recovery_rejects_zero_byte_files(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        copying_section = source[
+            source.index("case .copying:") :
+            source.index("case .complete:")
+        ]
+        archive_section = source[
+            source.index("private func archiveRecord(") :
+            source.index("private func copyAtomically(")
+        ]
+        self.assertIn("byteCount > 0", copying_section)
+        self.assertIn("byteCount > 0", archive_section)
+
+    def test_failed_terminal_tmp_cleanup_keeps_copying_retryable(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        copying_section = source[
+            source.index("case .copying:") :
+            source.index("case .complete:")
+        ]
+        terminal_section = copying_section[
+            copying_section.index("let recovered") :
+        ]
+        cleanup_gate = "guard self.removeIfPresent(temporaryURL) else"
+        self.assertIn(cleanup_gate, terminal_section)
+        self.assertIn("subscriber.putNext([])", terminal_section)
+        self.assertLess(
+            terminal_section.index(cleanup_gate),
+            terminal_section.index("copyState: .unavailable"),
+        )
+
+    def test_failed_orphan_cleanup_aborts_before_reconciliation_updates(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        reconcile_section = source[
+            source.index("public func reconcile(") :
+            source.index("private func resourceLocation(")
+        ]
+        cleanup_section = reconcile_section[
+            reconcile_section.index("let blobsURL") :
+            reconcile_section.index("var updates")
+        ]
+        self.assertIn("var cleanupFailed = false", cleanup_section)
+        self.assertGreaterEqual(cleanup_section.count("cleanupFailed = true"), 2)
+        self.assertIn("guard !cleanupFailed else", cleanup_section)
+        self.assertIn("subscriber.putNext([])", cleanup_section)
+
     def test_archive_signal_schedules_shared_copy_helper(self) -> None:
         source = STORE.read_text(encoding="utf-8")
         archive_section = source[

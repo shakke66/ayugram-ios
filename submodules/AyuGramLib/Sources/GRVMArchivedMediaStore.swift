@@ -128,6 +128,7 @@ public final class GRVMArchivedMediaStore {
                 let blobsURL = self.rootURL
                     .appendingPathComponent(String(accountId), isDirectory: true)
                     .appendingPathComponent("blobs", isDirectory: true)
+                var cleanupFailed = false
                 if let enumerator = self.fileManager.enumerator(
                     at: blobsURL,
                     includingPropertiesForKeys: [.isRegularFileKey],
@@ -138,7 +139,10 @@ public final class GRVMArchivedMediaStore {
                             continue
                         }
                         if fileURL.pathExtension == "tmp" {
-                            _ = self.removeIfPresent(fileURL)
+                            if !self.removeIfPresent(fileURL) {
+                                cleanupFailed = true
+                                break
+                            }
                             continue
                         }
                         let prefix = self.rootURL.path + "/"
@@ -147,9 +151,17 @@ public final class GRVMArchivedMediaStore {
                         }
                         let relativePath = String(fileURL.path.dropFirst(prefix.count))
                         if !referencedRelativePaths.contains(relativePath) {
-                            _ = self.removeIfPresent(fileURL)
+                            if !self.removeIfPresent(fileURL) {
+                                cleanupFailed = true
+                                break
+                            }
                         }
                     }
+                }
+                guard !cleanupFailed else {
+                    subscriber.putNext([])
+                    subscriber.putCompletion()
+                    return
                 }
 
                 var updates: [GRVMArchivedMedia] = []
@@ -161,7 +173,7 @@ public final class GRVMArchivedMediaStore {
                             kind: record.kind
                         )
                         let location = self.resourceLocation(accountId: record.accountId, id: resource.id)
-                        if let byteCount = self.fileSize(at: location.url) {
+                        if let byteCount = self.fileSize(at: location.url), byteCount > 0 {
                             updates.append(self.terminalRecord(
                                 record,
                                 resource: resource,
@@ -174,13 +186,21 @@ public final class GRVMArchivedMediaStore {
 
                         let temporaryURL = location.url.appendingPathExtension("tmp")
                         if mediaBox.completedResourcePath(id: resource.id) == nil {
-                            _ = self.removeIfPresent(temporaryURL)
+                            guard self.removeIfPresent(temporaryURL) else {
+                                subscriber.putNext([])
+                                subscriber.putCompletion()
+                                return
+                            }
                         }
                         let recovered = self.archiveRecord(record, resource: resource, mediaBox: mediaBox)
                         if recovered.copyState == .complete {
                             updates.append(recovered)
                         } else {
-                            _ = self.removeIfPresent(temporaryURL)
+                            guard self.removeIfPresent(temporaryURL) else {
+                                subscriber.putNext([])
+                                subscriber.putCompletion()
+                                return
+                            }
                             updates.append(self.terminalRecord(
                                 record,
                                 resource: resource,
@@ -232,7 +252,8 @@ public final class GRVMArchivedMediaStore {
     ) -> GRVMArchivedMedia {
         let location = self.resourceLocation(accountId: record.accountId, id: resource.id)
         guard let sourcePath = mediaBox.completedResourcePath(id: resource.id),
-              let byteCount = self.fileSize(atPath: sourcePath) else {
+              let byteCount = self.fileSize(atPath: sourcePath),
+              byteCount > 0 else {
             return self.terminalRecord(
                 record,
                 resource: resource,
