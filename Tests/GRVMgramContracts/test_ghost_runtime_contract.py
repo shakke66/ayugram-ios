@@ -283,6 +283,21 @@ class GhostRuntimeContractTests(unittest.TestCase):
             send.index("grvmGhostScheduleDelay("),
         )
 
+    def test_ghost_schedule_retains_send_until_proxy_snapshot_commit(self) -> None:
+        chat = source("submodules/TelegramUI/Sources/ChatController.swift")
+        send = swift_block(chat, "func sendMessages(_ messages:")
+        gate = swift_block(
+            send,
+            "if !commit && !isScheduledMessages "
+            "&& AyuGramHooks.shouldUseScheduledMessages?(self.context.account.peerId) == true",
+        )
+        callback = swift_block(gate, ".startStandalone(next:")
+
+        self.assertNotIn("[weak self]", callback)
+        self.assertNotIn("guard let self else", callback)
+        self.assertIn("self.sendMessages(", callback)
+        self.assertIn("commit: true", callback)
+
     def test_read_after_action_uses_one_helper_after_success(self) -> None:
         chat = source("submodules/TelegramUI/Sources/ChatController.swift")
         helper = swift_block(

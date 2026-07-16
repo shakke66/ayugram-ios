@@ -8638,10 +8638,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             if !commit && !isScheduledMessages && AyuGramHooks.shouldUseScheduledMessages?(self.context.account.peerId) == true {
                 let _ = (self.context.sharedContext.accountManager.sharedData(keys: [SharedDataKeys.proxySettings])
                 |> take(1)
-                |> deliverOnMainQueue).startStandalone(next: { [weak self] sharedData in
-                    guard let self else {
-                        return
-                    }
+                |> deliverOnMainQueue).startStandalone(next: { sharedData in
                     let proxySettings = sharedData.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self) ?? .defaultSettings
                     let proxyEnabled = proxySettings.effectiveActiveServer != nil
                     let delay = grvmGhostScheduleDelay(messages: messages, proxyEnabled: proxyEnabled)
