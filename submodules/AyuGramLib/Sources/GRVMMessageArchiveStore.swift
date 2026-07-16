@@ -528,6 +528,47 @@ public final class GRVMMessageArchiveStore {
         }
     }
 
+    private func cleanupMediaRecords(
+        _ database: OpaquePointer,
+        accountId: Int64,
+        messageKeys: [GRVMMessageKey]
+    ) throws -> [GRVMArchivedMedia] {
+        guard messageKeys.allSatisfy({ $0.accountId == accountId }) else {
+            throw GRVMArchiveError.sqlite("invalid cleanup job account")
+        }
+        var targetedReferencesByResourceId: [String: Int] = [:]
+        for key in messageKeys {
+            for resourceId in try self.mappedResourceIds(database, key: key, revisionId: 0) {
+                targetedReferencesByResourceId[resourceId, default: 0] += 1
+            }
+        }
+
+        var mediaRecords: [GRVMArchivedMedia] = []
+        for resourceId in targetedReferencesByResourceId.keys.sorted() {
+            guard let targetedReferences = targetedReferencesByResourceId[resourceId] else {
+                continue
+            }
+            let references = try self.scalarInt64(
+                database,
+                sql: "SELECT COUNT(*) FROM archived_message_media WHERE account_id = ? AND resource_id = ?",
+                values: [.int64(accountId), .text(resourceId)]
+            )
+            guard references == Int64(targetedReferences) else {
+                continue
+            }
+            guard let record = try self.media(database, accountId: accountId, resourceId: resourceId) else {
+                throw GRVMArchiveError.sqlite("targeted archived media is missing")
+            }
+            mediaRecords.append(record)
+        }
+        mediaRecords.sort {
+            $0.accountId == $1.accountId
+                ? $0.resourceId < $1.resourceId
+                : $0.accountId < $1.accountId
+        }
+        return mediaRecords
+    }
+
     public func beginDeletedCleanup(
         accountId: Int64,
         peerId: Int64?,
@@ -572,37 +613,11 @@ public final class GRVMMessageArchiveStore {
                 guard !messageKeys.isEmpty else {
                     return nil
                 }
-
-                var targetedReferencesByResourceId: [String: Int] = [:]
-                for key in messageKeys {
-                    for resourceId in try self.mappedResourceIds(database, key: key, revisionId: 0) {
-                        targetedReferencesByResourceId[resourceId, default: 0] += 1
-                    }
-                }
-
-                var mediaRecords: [GRVMArchivedMedia] = []
-                for resourceId in targetedReferencesByResourceId.keys.sorted() {
-                    guard let targetedReferences = targetedReferencesByResourceId[resourceId] else {
-                        continue
-                    }
-                    let references = try self.scalarInt64(
-                        database,
-                        sql: "SELECT COUNT(*) FROM archived_message_media WHERE account_id = ? AND resource_id = ?",
-                        values: [.int64(accountId), .text(resourceId)]
-                    )
-                    guard references == Int64(targetedReferences) else {
-                        continue
-                    }
-                    guard let record = try self.media(database, accountId: accountId, resourceId: resourceId) else {
-                        throw GRVMArchiveError.sqlite("targeted archived media is missing")
-                    }
-                    mediaRecords.append(record)
-                }
-                mediaRecords.sort {
-                    $0.accountId == $1.accountId
-                        ? $0.resourceId < $1.resourceId
-                        : $0.accountId < $1.accountId
-                }
+                let mediaRecords = try self.cleanupMediaRecords(
+                    database,
+                    accountId: accountId,
+                    messageKeys: messageKeys
+                )
 
                 let job = GRVMCleanupJob(
                     id: UUID(),
@@ -634,6 +649,37 @@ public final class GRVMMessageArchiveStore {
                     ]
                 )
                 return job
+            }
+        }
+    }
+
+    public func revalidateDeletedCleanup(id: UUID) throws -> GRVMCleanupJob {
+        return try self.perform { database in
+            try self.transaction(database) {
+                guard let job = try self.cleanupJob(database, id: id) else {
+                    throw GRVMArchiveError.sqlite("cleanup job not found")
+                }
+                guard job.phase == .planned else {
+                    return job
+                }
+                let mediaRecords = try self.cleanupMediaRecords(
+                    database,
+                    accountId: job.accountId,
+                    messageKeys: job.messageKeys
+                )
+                try self.executePrepared(
+                    database,
+                    sql: "UPDATE cleanup_jobs SET media_records = ? WHERE job_id = ? AND phase = ?",
+                    values: [
+                        .data(try self.jsonEncoder.encode(mediaRecords)),
+                        .text(id.uuidString),
+                        .int32(GRVMCleanupPhase.planned.rawValue)
+                    ]
+                )
+                guard let refreshed = try self.cleanupJob(database, id: id) else {
+                    throw GRVMArchiveError.sqlite("cleanup job not found")
+                }
+                return refreshed
             }
         }
     }

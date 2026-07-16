@@ -76,7 +76,9 @@ public final class GRVMMessageArchiveCoordinator {
     private let queue = Queue(name: "GRVMMessageArchiveCoordinator", qos: .utility)
     private let disposables = DisposableSet()
     private let settingsState: Atomic<GRVMCoordinatorSettingsState>
-    private var isResumingCleanupJobs = false
+    private var isCleanupExecutorRunning = false
+    private var cleanupWaiters: [UUID: [UUID: Subscriber<[MessageId], GRVMClearDeletedError>]] = [:]
+    private var cleanupWaiterJobs: [UUID: UUID] = [:]
     private var didStartArchivedMediaReconciliation = false
 
     public init(
@@ -125,45 +127,104 @@ public final class GRVMMessageArchiveCoordinator {
 
     public func resumePendingCleanupJobs() {
         self.queue.async { [weak self] in
-            guard let self, !self.isResumingCleanupJobs else {
+            guard let self else {
                 return
             }
-            let jobs: [GRVMCleanupJob]
-            do {
-                jobs = try self.store.pendingCleanupJobs(accountId: self.accountRecordId.int64)
-            } catch {
-                return
-            }
-            guard !jobs.isEmpty else {
-                self.reconcileArchivedMedia()
-                return
-            }
-            self.isResumingCleanupJobs = true
-            self.resumeCleanupJobs(jobs, index: 0)
+            self.startCleanupExecutorIfNeeded()
         }
     }
 
-    private func resumeCleanupJobs(_ jobs: [GRVMCleanupJob], index: Int) {
-        guard index < jobs.count else {
-            self.isResumingCleanupJobs = false
+    private func addCleanupWaiter(
+        jobId: UUID,
+        waiterId: UUID,
+        subscriber: Subscriber<[MessageId], GRVMClearDeletedError>
+    ) {
+        self.cleanupWaiters[jobId, default: [:]][waiterId] = subscriber
+        self.cleanupWaiterJobs[waiterId] = jobId
+    }
+
+    private func removeCleanupWaiter(_ waiterId: UUID) {
+        guard let jobId = self.cleanupWaiterJobs.removeValue(forKey: waiterId) else {
+            return
+        }
+        self.cleanupWaiters[jobId]?.removeValue(forKey: waiterId)
+        if self.cleanupWaiters[jobId]?.isEmpty == true {
+            self.cleanupWaiters.removeValue(forKey: jobId)
+        }
+    }
+
+    private func takeCleanupWaiters(jobId: UUID) -> [Subscriber<[MessageId], GRVMClearDeletedError>] {
+        guard let waiters = self.cleanupWaiters.removeValue(forKey: jobId) else {
+            return []
+        }
+        for waiterId in waiters.keys {
+            self.cleanupWaiterJobs.removeValue(forKey: waiterId)
+        }
+        return Array(waiters.values)
+    }
+
+    private func takeAllCleanupWaiters() -> [Subscriber<[MessageId], GRVMClearDeletedError>] {
+        let waiters = self.cleanupWaiters.values.flatMap { $0.values }
+        self.cleanupWaiters.removeAll()
+        self.cleanupWaiterJobs.removeAll()
+        return waiters
+    }
+
+    private func startCleanupExecutorIfNeeded() {
+        guard !self.isCleanupExecutorRunning else {
+            return
+        }
+        self.isCleanupExecutorRunning = true
+        self.drainNextCleanupJob()
+    }
+
+    private func drainNextCleanupJob() {
+        let job: GRVMCleanupJob?
+        do {
+            job = try self.store.pendingCleanupJobs(accountId: self.accountRecordId.int64).first
+        } catch {
+            self.failCleanupExecutor(.databaseFinalizationFailed)
+            return
+        }
+        guard let job else {
+            self.isCleanupExecutorRunning = false
             self.reconcileArchivedMedia()
             return
         }
-        self.disposables.add(self.runCleanupJob(jobs[index]).start(next: { [weak self] _ in
+
+        let disposable = self.runCleanupJob(job).start(next: { [weak self] ids in
             guard let self else {
                 return
             }
             self.queue.justDispatch {
-                self.resumeCleanupJobs(jobs, index: index + 1)
+                self.finishCleanupWaiters(jobId: job.id, ids: ids)
+                self.drainNextCleanupJob()
             }
-        }, error: { [weak self] _ in
+        }, error: { [weak self] error in
             guard let self else {
                 return
             }
             self.queue.justDispatch {
-                self.isResumingCleanupJobs = false
+                self.failCleanupExecutor(error)
             }
-        }))
+        })
+        self.disposables.add(disposable)
+    }
+
+    private func finishCleanupWaiters(jobId: UUID, ids: [MessageId]) {
+        let waiters = self.takeCleanupWaiters(jobId: jobId)
+        for subscriber in waiters {
+            subscriber.putNext(ids)
+            subscriber.putCompletion()
+        }
+    }
+
+    private func failCleanupExecutor(_ error: GRVMClearDeletedError) {
+        self.isCleanupExecutorRunning = false
+        let waiters = self.takeAllCleanupWaiters()
+        for subscriber in waiters {
+            subscriber.putError(error)
+        }
     }
 
     private func runCleanupJob(_ initialJob: GRVMCleanupJob) -> Signal<[MessageId], GRVMClearDeletedError> {
@@ -171,6 +232,12 @@ public final class GRVMMessageArchiveCoordinator {
             let disposable = MetaDisposable()
             var job = initialJob
             if job.phase == .planned {
+                do {
+                    job = try self.store.revalidateDeletedCleanup(id: job.id)
+                } catch {
+                    subscriber.putError(.databaseFinalizationFailed)
+                    return disposable
+                }
                 let removal = self.mediaStore.removeArchivedFiles(job.mediaRecords)
                 guard removal.failed.isEmpty else {
                     subscriber.putError(.mediaRemovalFailed(removal.failed.count))
@@ -492,7 +559,7 @@ public final class GRVMMessageArchiveCoordinator {
 
     public func clearDeleted(peerId: PeerId?, threadId: Int64?) -> Signal<[MessageId], GRVMClearDeletedError> {
         return Signal { subscriber in
-            let disposable = MetaDisposable()
+            let waiterId = UUID()
             self.queue.async { [weak self] in
                 guard let self else {
                     subscriber.putError(.archiveUnavailable)
@@ -514,14 +581,17 @@ public final class GRVMMessageArchiveCoordinator {
                     subscriber.putCompletion()
                     return
                 }
-                disposable.set(self.runCleanupJob(job).start(next: { ids in
-                    subscriber.putNext(ids)
-                    subscriber.putCompletion()
-                }, error: { error in
-                    subscriber.putError(error)
-                }))
+                self.addCleanupWaiter(jobId: job.id, waiterId: waiterId, subscriber: subscriber)
+                self.startCleanupExecutorIfNeeded()
             }
-            return disposable
+            return ActionDisposable { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.queue.async {
+                    self.removeCleanupWaiter(waiterId)
+                }
+            }
         }
     }
 
