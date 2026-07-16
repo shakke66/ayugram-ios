@@ -63,27 +63,33 @@ public func _internal_applyMessageDeletion(
         }
     }
 
-    let persisted = AyuGramHooks.preserveDeletedMessages?(accountPeerId, candidates, source) ?? [:]
-    let deletedAt = Int32(Date().timeIntervalSince1970)
-    for message in candidates {
-        guard let resourceIds = persisted[message.id] else {
-            physicalIds.append(message.id)
-            continue
-        }
-        let marked = transaction.markMessageAsLocallyDeleted(
-            id: message.id,
-            attribute: GRVMDeletedMessageAttribute(
-                deletedAt: deletedAt,
-                source: source,
-                topicId: message.threadId,
-                resourceIds: resourceIds
+    switch AyuGramHooks.preserveDeletedMessages?(accountPeerId, candidates, source) ?? .unavailable {
+    case .disabled:
+        physicalIds.append(contentsOf: candidates.map(\.id))
+    case let .preserved(persisted):
+        let deletedAt = Int32(Date().timeIntervalSince1970)
+        for message in candidates {
+            guard let resourceIds = persisted[message.id] else {
+                physicalIds.append(message.id)
+                continue
+            }
+            let marked = transaction.markMessageAsLocallyDeleted(
+                id: message.id,
+                attribute: GRVMDeletedMessageAttribute(
+                    deletedAt: deletedAt,
+                    source: source,
+                    topicId: message.threadId,
+                    resourceIds: resourceIds
+                )
             )
-        )
-        if marked {
-            preservedIds.append(message.id)
-        } else {
-            physicalIds.append(message.id)
+            if marked {
+                preservedIds.append(message.id)
+            } else {
+                physicalIds.append(message.id)
+            }
         }
+    case .unavailable:
+        break
     }
 
     if !physicalIds.isEmpty {

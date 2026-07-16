@@ -47,15 +47,22 @@ class DeleteRouteContractTests(unittest.TestCase):
         coordinator = COORDINATOR.read_text(encoding="utf-8")
         manager = MANAGER.read_text(encoding="utf-8")
         autoremove = source("State/ManagedAutoremoveMessageOperations.swift")
+        self.assertIn("public enum GRVMDeletedMessagesPreservationResult", hooks)
+        for outcome in ("case disabled", "case preserved([MessageId: [String]])", "case unavailable"):
+            self.assertIn(outcome, hooks)
         self.assertIn(
-            "preserveDeletedMessages: ((PeerId, [Message], GRVMDeletionSource) -> [MessageId: [String]])?",
+            "preserveDeletedMessages: ((PeerId, [Message], GRVMDeletionSource) -> GRVMDeletedMessagesPreservationResult)?",
             hooks,
         )
         self.assertIn(
-            "public func preserveDeletedMessages(_ messages: [Message], source: GRVMDeletionSource) -> [MessageId: [String]]",
+            "public func preserveDeletedMessages(_ messages: [Message], source: GRVMDeletionSource) -> GRVMDeletedMessagesPreservationResult",
             coordinator,
         )
         self.assertIn("guard settings.saveDeletedMessages", coordinator)
+        self.assertIn("return .disabled", coordinator)
+        self.assertIn("return .preserved([:])", coordinator)
+        self.assertIn("return .unavailable", coordinator)
+        self.assertIn("return .preserved(result)", coordinator)
         self.assertIn("directBot", coordinator)
         self.assertIn("try self.store.saveDeleted(", coordinator)
         self.assertIn("self.index.insertDeleted(", coordinator)
@@ -67,12 +74,59 @@ class DeleteRouteContractTests(unittest.TestCase):
             1,
             500,
         )
-        self.assertIn(
-            "registry.service(accountPeerId: accountPeerId)?.settingsSnapshot().saveDeletedMessages ?? false",
-            hook_assignment,
-        )
+        self.assertIn("guard let service = self?.registry.service(accountPeerId: accountPeerId) else", hook_assignment)
+        self.assertIn("return true", hook_assignment)
+        self.assertIn("return service.settingsSnapshot().saveDeletedMessages", hook_assignment)
         self.assertNotIn("primaryService", hook_assignment)
         self.assertGreaterEqual(manager.count("registry.service(accountPeerId: accountPeerId)"), 2)
+
+    def test_unavailable_preservation_never_authorizes_physical_deletion(self) -> None:
+        apply = APPLY.read_text(encoding="utf-8")
+        self.assertNotIn("?? [:]", apply)
+        self.assertIn(
+            "AyuGramHooks.preserveDeletedMessages?(accountPeerId, candidates, source) ?? .unavailable",
+            apply,
+        )
+        self.assertIn("case .disabled:", apply)
+        self.assertIn("physicalIds.append(contentsOf: candidates.map(\\.id))", apply)
+        self.assertIn("case let .preserved(persisted):", apply)
+        unavailable_start = apply.index("case .unavailable:")
+        unavailable_end = apply.index("\n    }\n\n    if !physicalIds.isEmpty", unavailable_start)
+        unavailable = apply[unavailable_start:unavailable_end]
+        self.assertIn("break", unavailable)
+        self.assertNotIn("physicalIds.append", unavailable)
+        self.assertNotIn("_internal_deleteMessages", unavailable)
+
+    def test_missing_service_admission_is_fail_closed_for_bulk_and_one_time_routes(self) -> None:
+        manager = MANAGER.read_text(encoding="utf-8")
+        should_save = occurrence_window(
+            manager,
+            "AyuGramHooks.shouldSaveDeletedMessages = { [weak self] accountPeerId in",
+            1,
+            500,
+        )
+        self.assertIn("guard let service = self?.registry.service(accountPeerId: accountPeerId) else", should_save)
+        self.assertIn("return true", should_save)
+        self.assertIn("return service.settingsSnapshot().saveDeletedMessages", should_save)
+
+        preserve = occurrence_window(
+            manager,
+            "AyuGramHooks.preserveDeletedMessages = { [weak self] accountPeerId, messages, source in",
+            1,
+            500,
+        )
+        self.assertIn("guard let service = self?.registry.service(accountPeerId: accountPeerId) else", preserve)
+        self.assertIn("return .unavailable", preserve)
+        self.assertNotIn("?? [:]", preserve)
+
+        delete_messages = source("TelegramEngine/Messages/DeleteMessages.swift")
+        account_state = source("State/AccountStateManagementUtils.swift")
+        cached_peer = source("TelegramEngine/Peers/UpdateCachedPeerData.swift")
+        remove_peer = source("TelegramEngine/Peers/RemovePeerChat.swift")
+        self.assertGreaterEqual(delete_messages.count("AyuGramHooks.shouldSaveDeletedMessages?(accountPeerId) == true"), 4)
+        self.assertIn("AyuGramHooks.shouldSaveDeletedMessages?(accountPeerId) == true", account_state)
+        self.assertIn("AyuGramHooks.shouldSaveDeletedMessages?(accountPeerId) == true", cached_peer)
+        self.assertIn("AyuGramHooks.shouldSaveDeletedMessages?(account.peerId) == true", remove_peer)
 
     def test_clear_call_history_collects_exact_ids_and_uses_preservation_route(self) -> None:
         delete_messages = source("TelegramEngine/Messages/DeleteMessages.swift")
@@ -166,7 +220,7 @@ class DeleteRouteContractTests(unittest.TestCase):
     def test_save_for_bots_never_gates_edit_history(self) -> None:
         value = source("State/AccountStateManagementUtils.swift")
         edit_section = occurrence_window(value, "case let .EditMessage(id, message):", 1)
-        self.assertIn("AyuGramHooks.preserveEditRevision?(accountPeerId, oldMessage)", edit_section)
+        self.assertIn("grvmPreserveEditRevisionIfNeeded(", edit_section)
         self.assertNotIn("shouldSaveForBots", edit_section)
 
     def test_global_range_author_and_forward_routes_collect_exact_ids(self) -> None:

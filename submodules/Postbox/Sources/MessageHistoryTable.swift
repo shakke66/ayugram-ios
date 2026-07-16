@@ -344,7 +344,7 @@ final class MessageHistoryTable: Table {
                             self.timeBasedAttributesTable.set(tag: tag, id: message.id, timestamp: timestamp, operations: &timestampBasedMessageAttributesOperations)
                         }
                     }
-                    if !message.flags.intersection(.IsIncomingMask).isEmpty {
+                    if !message.flags.intersection(.IsIncomingMask).isEmpty && !isLocallyDeletedMessage(message.attributes) {
                         accumulatedAddedIncomingMessageIndices.insert(message.index)
                     }
                 case let .InsertExistingMessage(storeMessage):
@@ -374,7 +374,7 @@ final class MessageHistoryTable: Table {
                             outputOperations.append(.UpdateGroupInfos(updatedGroupInfos))
                         }
                         
-                        if !message.flags.intersection(.IsIncomingMask).isEmpty {
+                        if !message.flags.intersection(.IsIncomingMask).isEmpty && !isLocallyDeletedMessage(message.attributes) {
                             if index != message.index {
                                 accumulatedRemoveIndices.append(index)
                                 accumulatedAddedIncomingMessageIndices.insert(message.index)
@@ -587,6 +587,9 @@ final class MessageHistoryTable: Table {
             return nil
         }
 
+        let removedGlobalTags = message.globalTags.intersection(self.seedConfiguration.locallyDeletedMessageGlobalTags)
+        let updatedGlobalTags = message.globalTags.subtracting(removedGlobalTags)
+
         let updatedMessage = StoreMessage(
             id: message.id,
             customStableId: message.customStableId,
@@ -596,7 +599,7 @@ final class MessageHistoryTable: Table {
             timestamp: message.timestamp,
             flags: message.flags,
             tags: message.tags.subtracting(self.seedConfiguration.locallyDeletedMessageTags),
-            globalTags: message.globalTags,
+            globalTags: updatedGlobalTags,
             localTags: message.localTags,
             forwardInfo: message.forwardInfo,
             authorId: message.authorId,
@@ -629,6 +632,10 @@ final class MessageHistoryTable: Table {
 
         let didMarkIndex = self.messageHistoryIndexTable.markMessageLocallyDeleted(id)
         assert(didMarkIndex)
+
+        if !removedGlobalTags.isEmpty {
+            globalTagsOperations.append(.remove([(removedGlobalTags, index)]))
+        }
 
         let operations: [MessageHistoryIndexOperation] = [
             .Update(index, self.internalStoreMessages([updatedMessage]).first!)

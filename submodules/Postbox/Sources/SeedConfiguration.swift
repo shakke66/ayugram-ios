@@ -62,6 +62,7 @@ public final class SeedConfiguration {
     public let upgradedMessageHoles: [PeerId.Namespace: [MessageId.Namespace: Set<MessageTags>]]
     public let messageThreadHoles: (PeerId.Namespace, Int64?) -> [MessageId.Namespace]?
     public let locallyDeletedMessageTags: MessageTags
+    public let locallyDeletedMessageGlobalTags: GlobalMessageTags
     public let messageTagsWithSummary: MessageTags
     public let messageTagsWithThreadSummary: MessageTags
     public let existingGlobalMessageTags: GlobalMessageTags
@@ -94,6 +95,7 @@ public final class SeedConfiguration {
         messageThreadHoles: @escaping (PeerId.Namespace, Int64?) -> [MessageId.Namespace]?,
         existingMessageTags: MessageTags,
         locallyDeletedMessageTags: MessageTags,
+        locallyDeletedMessageGlobalTags: GlobalMessageTags,
         messageTagsWithSummary: MessageTags,
         messageTagsWithThreadSummary: MessageTags,
         existingGlobalMessageTags: GlobalMessageTags,
@@ -121,6 +123,7 @@ public final class SeedConfiguration {
         self.upgradedMessageHoles = upgradedMessageHoles
         self.messageThreadHoles = messageThreadHoles
         self.locallyDeletedMessageTags = locallyDeletedMessageTags
+        self.locallyDeletedMessageGlobalTags = locallyDeletedMessageGlobalTags
         self.messageTagsWithSummary = messageTagsWithSummary
         self.messageTagsWithThreadSummary = messageTagsWithThreadSummary
         self.existingGlobalMessageTags = existingGlobalMessageTags

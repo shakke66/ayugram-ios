@@ -10,14 +10,15 @@ MEDIA_STORE = ROOT / "submodules/AyuGramLib/Sources/GRVMArchivedMediaStore.swift
 
 
 class CleanupJournalContractTests(unittest.TestCase):
-    def test_schema_v3_is_migration_safe(self) -> None:
+    def test_schema_v4_is_migration_safe(self) -> None:
         source = STORE.read_text(encoding="utf-8")
         self.assertIn("CREATE TABLE IF NOT EXISTS cleanup_jobs", source)
         self.assertIn("message_keys BLOB NOT NULL", source)
         self.assertIn("media_records BLOB NOT NULL", source)
-        self.assertIn("PRAGMA user_version = 3", source)
+        self.assertIn("PRAGMA user_version = 4", source)
         self.assertIn("case 2:", source)
         self.assertIn("case 3:", source)
+        self.assertIn("case 4:", source)
 
     def test_cleanup_models_are_codable(self) -> None:
         source = MODELS.read_text(encoding="utf-8")
@@ -38,10 +39,16 @@ class CleanupJournalContractTests(unittest.TestCase):
             self.assertIn(name, source)
         planning = source[
             source.index("private func cleanupMediaRecords(") :
-            source.index("public func beginDeletedCleanup(")
+            source.index("private func revalidatedCleanupMediaRecords(")
         ]
         self.assertIn("revisionId: 0", planning)
-        self.assertIn("references == Int64(targetedReferences)", planning)
+        self.assertNotIn("SELECT COUNT(*) FROM archived_message_media", planning)
+        self.assertNotIn("references == Int64(targetedReferences)", planning)
+        revalidation = source[
+            source.index("private func revalidatedCleanupMediaRecords(") :
+            source.index("public func beginDeletedCleanup(")
+        ]
+        self.assertIn("references == Int64(targetedReferences)", revalidation)
         finalize = source[source.index("public func finalizeDeletedCleanup(") :]
         self.assertIn("DELETE FROM archived_messages", finalize[:16000])
         self.assertIn("DELETE FROM cleanup_jobs", finalize[:16000])
@@ -130,19 +137,19 @@ class CleanupJournalContractTests(unittest.TestCase):
 
         helper = store[
             store.index("private func cleanupMediaRecords(") :
-            store.index("public func beginDeletedCleanup(")
+            store.index("private func revalidatedCleanupMediaRecords(")
         ]
         for token in (
             "revisionId: 0",
-            "targetedReferencesByResourceId",
-            "SELECT COUNT(*) FROM archived_message_media",
-            "references == Int64(targetedReferences)",
+            "mappedResourceIds(",
             "guard let record = try self.media(",
             'throw GRVMArchiveError.sqlite("targeted archived media is missing")',
             "mediaRecords.sort",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, helper)
+        self.assertNotIn("SELECT COUNT(*) FROM archived_message_media", helper)
+        self.assertNotIn("references == Int64(targetedReferences)", helper)
 
         begin = store[
             store.index("public func beginDeletedCleanup(") :
@@ -158,7 +165,7 @@ class CleanupJournalContractTests(unittest.TestCase):
             "try self.transaction(database)",
             "guard let job = try self.cleanupJob(database, id: id)",
             "guard job.phase == .planned",
-            "let mediaRecords = try self.cleanupMediaRecords(",
+            "let mediaRecords = try self.revalidatedCleanupMediaRecords(",
             "UPDATE cleanup_jobs SET media_records = ?",
             ".data(try self.jsonEncoder.encode(mediaRecords))",
             "guard let refreshed = try self.cleanupJob(database, id: id)",
@@ -180,6 +187,105 @@ class CleanupJournalContractTests(unittest.TestCase):
             planned.index("self.mediaStore.removeArchivedFiles(job.mediaRecords)"),
             planned.index("self.store.markCleanupFilesRemoved(id: job.id)"),
         )
+
+    def test_cleanup_revalidation_only_filters_captured_media_generations(self) -> None:
+        store = STORE.read_text(encoding="utf-8")
+        self.assertIn("private func revalidatedCleanupMediaRecords(", store)
+        helper = store[
+            store.index("private func revalidatedCleanupMediaRecords(") :
+            store.index("public func pendingCleanupJobs(")
+        ]
+        for token in (
+            "for record in job.mediaRecords",
+            "current.generation == record.generation",
+            "current.relativePath == record.relativePath",
+            "references == Int64(targetedReferences)",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, helper)
+        revalidate = store[
+            store.index("public func revalidateDeletedCleanup(") :
+            store.index("public func pendingCleanupJobs(")
+        ]
+        self.assertIn("self.revalidatedCleanupMediaRecords(", revalidate)
+        self.assertNotIn("self.cleanupMediaRecords(", revalidate)
+
+    def test_two_pending_scoped_jobs_revalidate_last_shared_blob_from_planned_snapshot(self) -> None:
+        store = STORE.read_text(encoding="utf-8")
+        planning = store[
+            store.index("private func cleanupMediaRecords(") :
+            store.index("private func revalidatedCleanupMediaRecords(")
+        ]
+        revalidation = store[
+            store.index("private func revalidatedCleanupMediaRecords(") :
+            store.index("public func beginDeletedCleanup(")
+        ]
+        exclusive_gate = "references == Int64(targetedReferences)"
+        planning_has_exclusive_gate = exclusive_gate in planning
+        revalidation_has_exclusive_gate = exclusive_gate in revalidation
+
+        mappings = {"first-scope": {"shared"}, "second-scope": {"shared"}}
+        blobs = {
+            "shared": {"generation": 7, "relativePath": "media/shared.bin"}
+        }
+
+        def targeted_counts(scopes: list[str]) -> dict[str, int]:
+            result: dict[str, int] = {}
+            for scope in scopes:
+                for resource_id in mappings.get(scope, set()):
+                    result[resource_id] = result.get(resource_id, 0) + 1
+            return result
+
+        def plan(scopes: list[str]) -> list[tuple[str, int, str]]:
+            result: list[tuple[str, int, str]] = []
+            for resource_id, targeted in targeted_counts(scopes).items():
+                references = sum(resource_id in resources for resources in mappings.values())
+                if planning_has_exclusive_gate and references != targeted:
+                    continue
+                blob = blobs[resource_id]
+                result.append((resource_id, blob["generation"], blob["relativePath"]))
+            return result
+
+        def revalidate(
+            snapshots: list[tuple[str, int, str]], scopes: list[str]
+        ) -> list[str]:
+            targets = targeted_counts(scopes)
+            result: list[str] = []
+            for resource_id, generation, relative_path in snapshots:
+                targeted = targets.get(resource_id)
+                if targeted is None:
+                    continue
+                references = sum(resource_id in resources for resources in mappings.values())
+                if revalidation_has_exclusive_gate and references != targeted:
+                    continue
+                blob = blobs[resource_id]
+                if (blob["generation"], blob["relativePath"]) != (
+                    generation,
+                    relative_path,
+                ):
+                    continue
+                result.append(resource_id)
+            return result
+
+        first_job = plan(["first-scope"])
+        second_job = plan(["second-scope"])
+
+        first_claims = revalidate(first_job, ["first-scope"])
+        self.assertEqual([], first_claims)
+        mappings.pop("first-scope")
+        self.assertIn("shared", blobs)
+
+        second_claims = revalidate(second_job, ["second-scope"])
+        self.assertEqual(["shared"], second_claims)
+        mappings.pop("second-scope")
+        for resource_id in second_claims:
+            if not any(resource_id in resources for resources in mappings.values()):
+                blobs.pop(resource_id)
+
+        self.assertEqual({}, mappings)
+        self.assertEqual({}, blobs)
+        self.assertFalse(planning_has_exclusive_gate)
+        self.assertTrue(revalidation_has_exclusive_gate)
 
     def test_preservation_and_cleanup_planning_share_the_coordinator_queue(self) -> None:
         source = COORDINATOR.read_text(encoding="utf-8")

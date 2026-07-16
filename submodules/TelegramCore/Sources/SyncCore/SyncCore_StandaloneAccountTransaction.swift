@@ -51,6 +51,10 @@ public let telegramPostboxSeedConfiguration: SeedConfiguration = {
             .unseenPollVote,
             .pinned
         ],
+        locallyDeletedMessageGlobalTags: [
+            .Calls,
+            .MissedCalls
+        ],
         messageTagsWithSummary: [.unseenPersonalMessage, .pinned, .video, .photo, .gif, .music, .voiceOrInstantVideo, .webPage, .file, .unseenReaction, .unseenPollVote],
         messageTagsWithThreadSummary: [.unseenPersonalMessage, .unseenReaction, .unseenPollVote],
         existingGlobalMessageTags: GlobalMessageTags.all,

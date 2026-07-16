@@ -14,7 +14,11 @@ import TelegramUIPreferences
 private struct GRVMDeletedArguments {
     let context: AccountContext
     let updateQuery: (String) -> Void
-    let openMessage: (MessageId) -> Void
+    let openMessage: (GRVMMessageKey) -> Void
+}
+
+private final class GRVMDeletedControllerHolder {
+    weak var controller: ItemListController?
 }
 
 private enum GRVMDeletedSection: Int32 {
@@ -94,11 +98,6 @@ private enum GRVMDeletedEntry: ItemListNodeEntry {
                 sectionId: self.section
             )
         case let .message(_, _, message):
-            let messageId = MessageId(
-                peerId: PeerId(message.key.peerId),
-                namespace: message.key.namespace,
-                id: message.key.messageId
-            )
             var body = message.text
             if body.isEmpty {
                 body = message.mediaSummary.isEmpty ? "[empty]" : "[\(message.mediaSummary)]"
@@ -125,7 +124,7 @@ private enum GRVMDeletedEntry: ItemListNodeEntry {
                 sectionId: self.section,
                 style: .blocks,
                 action: {
-                    arguments.openMessage(messageId)
+                    arguments.openMessage(message.key)
                 }
             )
         }
@@ -194,25 +193,65 @@ public func grvmDeletedMessagesController(
         return result |> map { (queryText, $0) }
     }
 
+    let controllerHolder = GRVMDeletedControllerHolder()
     var controller: ItemListController?
     let arguments = GRVMDeletedArguments(
         context: context,
         updateQuery: { value in
             queryPromise.set(value)
         },
-        openMessage: { [weak controller] messageId in
-            let _ = (context.engine.data.get(
-                TelegramEngine.EngineData.Item.Peer.Peer(id: messageId.peerId)
+        openMessage: { key in
+            let peerId = PeerId(key.peerId)
+            let messageId = MessageId(
+                peerId: peerId,
+                namespace: key.namespace,
+                id: key.messageId
             )
-            |> deliverOnMainQueue).startStandalone(next: { [weak controller] peer in
+            let _ = (context.engine.data.get(
+                TelegramEngine.EngineData.Item.Peer.Peer(id: peerId)
+            )
+            |> deliverOnMainQueue).startStandalone(next: { peer in
                 guard let peer,
-                      let navigationController = controller?.navigationController as? NavigationController else {
+                      let navigationController = controllerHolder.controller?.navigationController as? NavigationController else {
                     return
+                }
+                let peerIsForumOrMonoForum: Bool
+                let peerIsMonoforum: Bool
+                switch peer {
+                case let .channel(channel):
+                    peerIsForumOrMonoForum = channel.flags.contains(.isForum) || channel.flags.contains(.isMonoforum)
+                    peerIsMonoforum = channel.flags.contains(.isMonoforum)
+                case let .user(user):
+                    peerIsForumOrMonoForum = user.botInfo?.flags.contains(.hasForum) == true
+                    peerIsMonoforum = false
+                default:
+                    peerIsForumOrMonoForum = false
+                    peerIsMonoforum = false
+                }
+                let chatLocation: NavigateToChatControllerParams.Location
+                if key.threadId != 0 && peerIsForumOrMonoForum {
+                    chatLocation = .replyThread(ChatReplyThreadMessage(
+                        peerId: peerId,
+                        threadId: key.threadId,
+                        channelMessageId: nil,
+                        isChannelPost: false,
+                        isForumPost: true,
+                        isMonoforumPost: peerIsMonoforum,
+                        maxMessage: nil,
+                        maxReadIncomingMessageId: nil,
+                        maxReadOutgoingMessageId: nil,
+                        unreadCount: 0,
+                        initialFilledHoles: IndexSet(),
+                        initialAnchor: .automatic,
+                        isNotAvailable: false
+                    ))
+                } else {
+                    chatLocation = .peer(peer)
                 }
                 context.sharedContext.navigateToChatController(NavigateToChatControllerParams(
                     navigationController: navigationController,
                     context: context,
-                    chatLocation: .peer(peer),
+                    chatLocation: chatLocation,
                     subject: .message(id: .id(messageId), highlight: nil, timecode: nil, setupReply: false)
                 ))
             })
@@ -276,6 +315,7 @@ public func grvmDeletedMessagesController(
     }
 
     controller = ItemListController(context: context, state: signal)
+    controllerHolder.controller = controller
     return controller!
 }
 

@@ -27,59 +27,6 @@ public enum RequestEditMessageError {
     case invalidGrouping
 }
 
-private func grvmMergedEditedMessage(
-    previous: Message,
-    incoming: StoreMessage,
-    markHistory: Bool
-) -> StoreMessage {
-    var updatedFlags = incoming.flags
-    var updatedLocalTags = incoming.localTags
-    if previous.localTags.contains(.OutgoingLiveLocation) {
-        updatedLocalTags.insert(.OutgoingLiveLocation)
-    }
-    if previous.flags.contains(.Incoming) {
-        updatedFlags.insert(.Incoming)
-    } else {
-        updatedFlags.remove(.Incoming)
-    }
-
-    var updatedMedia = incoming.media
-    if let previousPaidContent = previous.media.first(where: { $0 is TelegramMediaPaidContent }) as? TelegramMediaPaidContent,
-       case .full = previousPaidContent.extendedMedia.first {
-        updatedMedia = previous.media
-    }
-
-    return incoming
-        .withUpdatedLocalTags(updatedLocalTags)
-        .withUpdatedFlags(updatedFlags)
-        .withUpdatedAttributes(grvmMergedEditStateAttributes(
-            previous: previous.attributes,
-            incoming: incoming.attributes,
-            markHistory: markHistory
-        ))
-        .withUpdatedMedia(updatedMedia)
-}
-
-private func grvmApplyEditedMessage(
-    accountPeerId: PeerId,
-    transaction: Transaction,
-    id: MessageId,
-    message: StoreMessage
-) {
-    var shouldMarkHistory = false
-    if let previous = transaction.getMessage(id),
-       !grvmMessageEditContentMatches(previous: previous, incoming: message) {
-        shouldMarkHistory = AyuGramHooks.preserveEditRevision?(accountPeerId, previous) == true
-    }
-    transaction.updateMessage(id, update: { previous in
-        return .update(grvmMergedEditedMessage(
-            previous: previous,
-            incoming: message,
-            markHistory: shouldMarkHistory
-        ))
-    })
-}
-
 func _internal_requestEditMessage(account: Account, messageId: MessageId, text: String, media: RequestEditMessageMedia, entities: TextEntitiesMessageAttribute?, inlineStickers: [MediaId: Media], webpagePreviewAttribute: WebpagePreviewMessageAttribute?, disableUrlPreview: Bool, scheduleInfoAttribute: OutgoingScheduleInfoMessageAttribute?, invertMediaAttribute: InvertMediaMessageAttribute?) -> Signal<RequestEditMessageResult, RequestEditMessageError> {
     return requestEditMessage(accountPeerId: account.peerId, postbox: account.postbox, network: account.network, stateManager: account.stateManager, transformOutgoingMessageMedia: account.transformOutgoingMessageMedia, messageMediaPreuploadManager: account.messageMediaPreuploadManager, mediaReferenceRevalidationContext: account.mediaReferenceRevalidationContext, messageId: messageId, text: text, media: media, entities: entities, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, disableUrlPreview: disableUrlPreview, scheduleInfoAttribute: scheduleInfoAttribute, invertMediaAttribute: invertMediaAttribute)
 }
@@ -286,49 +233,59 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                                 applyMediaResourceChanges(from: fromMedia.media, to: toMedia, postbox: postbox, force: true)
                             }
                             
-                            switch result {
-                            case let .updates(updatesData):
-                                let (updates, users, chats) = (updatesData.updates, updatesData.users, updatesData.chats)
-                                for update in updates {
+                            let users = result.users
+                            let chats = result.chats
+                            let peers = AccumulatedPeers(transaction: transaction, chats: chats, users: users)
+                            updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
+                            for update in result.allUpdates {
                                     switch update {
                                     case .updateEditMessage(let data):
                                         let message = data.message
-                                        let peers = AccumulatedPeers(transaction: transaction, chats: chats, users: users)
-                                        updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
 
                                         if let message = StoreMessage(apiMessage: message, accountPeerId: accountPeerId, peerIsForum: peer.isForumOrMonoForum), case let .Id(id) = message.id {
                                             grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
                                         }
                                     case .updateNewMessage(let data):
                                         let message = data.message
-                                        let peers = AccumulatedPeers(transaction: transaction, chats: chats, users: users)
-                                        updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
 
                                         if let message = StoreMessage(apiMessage: message, accountPeerId: accountPeerId, peerIsForum: peer.isForumOrMonoForum), case let .Id(id) = message.id {
                                             grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
                                         }
                                     case .updateEditChannelMessage(let data):
                                         let message = data.message
-                                        let peers = AccumulatedPeers(transaction: transaction, chats: chats, users: users)
-                                        updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
 
                                         if let message = StoreMessage(apiMessage: message, accountPeerId: accountPeerId, peerIsForum: peer.isForumOrMonoForum), case let .Id(id) = message.id {
                                             grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
                                         }
                                     case .updateNewChannelMessage(let data):
                                         let message = data.message
-                                        let peers = AccumulatedPeers(transaction: transaction, chats: chats, users: users)
-                                        updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
                                         
                                         if let message = StoreMessage(apiMessage: message, accountPeerId: accountPeerId, peerIsForum: peer.isForumOrMonoForum), case let .Id(id) = message.id {
+                                            grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
+                                        }
+                                    case .updateNewScheduledMessage(let data):
+                                        let message = data.message
+                                        if let message = StoreMessage(
+                                            apiMessage: message,
+                                            accountPeerId: accountPeerId,
+                                            peerIsForum: peer.isForumOrMonoForum,
+                                            namespace: Namespaces.Message.ScheduledCloud
+                                        ), case let .Id(id) = message.id {
+                                            grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
+                                        }
+                                    case .updateQuickReplyMessage(let data):
+                                        let message = data.message
+                                        if let message = StoreMessage(
+                                            apiMessage: message,
+                                            accountPeerId: accountPeerId,
+                                            peerIsForum: peer.isForumOrMonoForum,
+                                            namespace: Namespaces.Message.QuickReplyCloud
+                                        ), case let .Id(id) = message.id {
                                             grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
                                         }
                                     default:
                                         break
                                     }
-                                }
-                            default:
-                                break
                             }
                             
                             stateManager.addUpdates(result)

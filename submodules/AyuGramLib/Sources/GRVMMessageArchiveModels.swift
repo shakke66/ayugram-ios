@@ -1,4 +1,5 @@
 import Foundation
+import TelegramCore
 
 public struct GRVMMessageKey: Hashable, Codable {
     public let accountId: Int64
@@ -21,6 +22,7 @@ public struct GRVMArchivedMessage: Equatable {
     public let senderId: Int64
     public let timestamp: Int32
     public let deletedAt: Int32
+    public let deletionSource: Int32
     public let text: String
     public let entitiesData: Data
     public let mediaSummary: String
@@ -33,6 +35,7 @@ public struct GRVMArchivedMessage: Equatable {
         senderId: Int64,
         timestamp: Int32,
         deletedAt: Int32,
+        deletionSource: Int32,
         text: String,
         entitiesData: Data,
         mediaSummary: String,
@@ -44,6 +47,7 @@ public struct GRVMArchivedMessage: Equatable {
         self.senderId = senderId
         self.timestamp = timestamp
         self.deletedAt = deletedAt
+        self.deletionSource = deletionSource
         self.text = text
         self.entitiesData = entitiesData
         self.mediaSummary = mediaSummary
@@ -59,6 +63,7 @@ public struct GRVMEditRevision: Equatable {
     public let version: Int32
     public let fingerprint: String
     public let savedAt: Int32
+    public let editableContent: GRVMEditableMessageContent
     public let text: String
     public let entitiesData: Data
     public let mediaSummary: String
@@ -70,6 +75,7 @@ public struct GRVMEditRevision: Equatable {
         version: Int32,
         fingerprint: String,
         savedAt: Int32,
+        editableContent: GRVMEditableMessageContent,
         text: String,
         entitiesData: Data,
         mediaSummary: String,
@@ -80,6 +86,7 @@ public struct GRVMEditRevision: Equatable {
         self.version = version
         self.fingerprint = fingerprint
         self.savedAt = savedAt
+        self.editableContent = editableContent
         self.text = text
         self.entitiesData = entitiesData
         self.mediaSummary = mediaSummary
@@ -91,6 +98,7 @@ public struct GRVMEditRevisionDraft: Equatable {
     public let key: GRVMMessageKey
     public let fingerprint: String
     public let savedAt: Int32
+    public let editableContent: GRVMEditableMessageContent
     public let text: String
     public let entitiesData: Data
     public let mediaSummary: String
@@ -100,6 +108,7 @@ public struct GRVMEditRevisionDraft: Equatable {
         key: GRVMMessageKey,
         fingerprint: String,
         savedAt: Int32,
+        editableContent: GRVMEditableMessageContent,
         text: String,
         entitiesData: Data,
         mediaSummary: String,
@@ -108,6 +117,7 @@ public struct GRVMEditRevisionDraft: Equatable {
         self.key = key
         self.fingerprint = fingerprint
         self.savedAt = savedAt
+        self.editableContent = editableContent
         self.text = text
         self.entitiesData = entitiesData
         self.mediaSummary = mediaSummary
@@ -129,6 +139,17 @@ public struct GRVMArchivedMedia: Codable, Equatable {
     public let byteCount: Int64
     public let kind: String
     public let copyState: CopyState
+    public let generation: Int64
+
+    private enum CodingKeys: String, CodingKey {
+        case accountId
+        case resourceId
+        case relativePath
+        case byteCount
+        case kind
+        case copyState
+        case generation
+    }
 
     public init(
         accountId: Int64,
@@ -136,7 +157,8 @@ public struct GRVMArchivedMedia: Codable, Equatable {
         relativePath: String,
         byteCount: Int64,
         kind: String,
-        copyState: CopyState
+        copyState: CopyState,
+        generation: Int64 = 0
     ) {
         self.accountId = accountId
         self.resourceId = resourceId
@@ -144,6 +166,29 @@ public struct GRVMArchivedMedia: Codable, Equatable {
         self.byteCount = byteCount
         self.kind = kind
         self.copyState = copyState
+        self.generation = generation
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.accountId = try container.decode(Int64.self, forKey: .accountId)
+        self.resourceId = try container.decode(String.self, forKey: .resourceId)
+        self.relativePath = try container.decode(String.self, forKey: .relativePath)
+        self.byteCount = try container.decode(Int64.self, forKey: .byteCount)
+        self.kind = try container.decode(String.self, forKey: .kind)
+        self.copyState = try container.decode(CopyState.self, forKey: .copyState)
+        self.generation = try container.decodeIfPresent(Int64.self, forKey: .generation) ?? 0
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.accountId, forKey: .accountId)
+        try container.encode(self.resourceId, forKey: .resourceId)
+        try container.encode(self.relativePath, forKey: .relativePath)
+        try container.encode(self.byteCount, forKey: .byteCount)
+        try container.encode(self.kind, forKey: .kind)
+        try container.encode(self.copyState, forKey: .copyState)
+        try container.encode(self.generation, forKey: .generation)
     }
 }
 
@@ -203,18 +248,6 @@ public struct GRVMArchiveQuery: Equatable {
     }
 }
 
-public func grvmContentFingerprint(
-    text: String,
-    entitiesData: Data,
-    mediaSummary: String,
-    resourceIds: [String]
-) -> String {
-    let content: [String: Any] = [
-        "text": text,
-        "entitiesData": entitiesData.base64EncodedString(),
-        "mediaSummary": mediaSummary,
-        "resourceIds": Set(resourceIds).sorted()
-    ]
-    let data = try! JSONSerialization.data(withJSONObject: content, options: [.sortedKeys])
-    return data.base64EncodedString()
+public func grvmContentFingerprint(_ content: GRVMEditableMessageContent) throws -> String {
+    return try content.encodedData().base64EncodedString()
 }

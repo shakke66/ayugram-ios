@@ -1,7 +1,13 @@
 import Foundation
+import TelegramCore
 import sqlcipher
 
 private let grvmSQLiteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+private struct GRVMStoredMediaKey: Hashable {
+    let accountId: Int64
+    let resourceId: String
+}
 
 public enum GRVMArchiveError: Error {
     case openDatabase(String)
@@ -23,6 +29,7 @@ public final class GRVMMessageArchiveStore {
         sender_id INTEGER NOT NULL DEFAULT 0,
         message_timestamp INTEGER NOT NULL,
         deleted_at INTEGER NOT NULL,
+        deletion_source INTEGER NOT NULL DEFAULT 0,
         text TEXT NOT NULL DEFAULT '',
         entities BLOB NOT NULL DEFAULT X'',
         media_summary TEXT NOT NULL DEFAULT '',
@@ -47,6 +54,7 @@ public final class GRVMMessageArchiveStore {
         entities BLOB NOT NULL DEFAULT X'',
         media_summary TEXT NOT NULL DEFAULT '',
         resource_ids BLOB NOT NULL DEFAULT X'',
+        editable_content BLOB NOT NULL DEFAULT X'',
         UNIQUE(account_id, peer_id, message_namespace, message_id, thread_id, version),
         UNIQUE(account_id, peer_id, message_namespace, message_id, thread_id, fingerprint)
     );
@@ -60,6 +68,7 @@ public final class GRVMMessageArchiveStore {
         byte_count INTEGER NOT NULL DEFAULT 0,
         kind TEXT NOT NULL DEFAULT '',
         copy_state INTEGER NOT NULL DEFAULT 0,
+        generation INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (account_id, resource_id)
     );
 
@@ -91,6 +100,39 @@ public final class GRVMMessageArchiveStore {
     );
     CREATE INDEX IF NOT EXISTS cleanup_jobs_account
     ON cleanup_jobs(account_id, created_at);
+    """
+
+    static let lifecycleSchemaV4Migration = """
+    ALTER TABLE archived_messages
+    ADD COLUMN deletion_source INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE edit_revisions
+    ADD COLUMN editable_content BLOB NOT NULL DEFAULT X'';
+    ALTER TABLE archived_media_blobs
+    ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;
+    """
+
+    static let mediaAdmissionSQL = """
+    INSERT INTO archived_media_blobs (
+        account_id, resource_id, relative_path, byte_count, kind, copy_state, generation
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_id, resource_id) DO UPDATE SET
+        relative_path = excluded.relative_path,
+        byte_count = excluded.byte_count,
+        kind = excluded.kind,
+        copy_state = excluded.copy_state,
+        generation = excluded.generation
+    """
+
+    static let mediaTerminalUpdateSQL = """
+    UPDATE archived_media_blobs
+    SET relative_path = ?, byte_count = ?, kind = ?, copy_state = ?
+    WHERE account_id = ? AND resource_id = ? AND generation = ?
+    """
+
+    static let mediaCleanupClaimSQL = """
+    UPDATE archived_media_blobs
+    SET byte_count = 0, copy_state = ?, generation = generation + 1
+    WHERE account_id = ? AND resource_id = ? AND relative_path = ? AND generation = ?
     """
 
     static let migrateDeletedV1 = """
@@ -259,12 +301,18 @@ public final class GRVMMessageArchiveStore {
                             try self.executePrepared(database, sql: Self.migrateEditedMediaMappingsV1, values: [.int64(accountId)])
                         }
                     }
-                    try self.execute(database, sql: "PRAGMA user_version = 3")
+                    try self.execute(database, sql: "PRAGMA user_version = 4")
                 case 2:
                     try self.execute(database, sql: Self.schemaV2)
                     try self.execute(database, sql: Self.cleanupSchemaV3)
-                    try self.execute(database, sql: "PRAGMA user_version = 3")
+                    try self.execute(database, sql: Self.lifecycleSchemaV4Migration)
+                    try self.execute(database, sql: "PRAGMA user_version = 4")
                 case 3:
+                    try self.execute(database, sql: Self.schemaV2)
+                    try self.execute(database, sql: Self.cleanupSchemaV3)
+                    try self.execute(database, sql: Self.lifecycleSchemaV4Migration)
+                    try self.execute(database, sql: "PRAGMA user_version = 4")
+                case 4:
                     try self.execute(database, sql: Self.schemaV2)
                     try self.execute(database, sql: Self.cleanupSchemaV3)
                 default:
@@ -277,22 +325,25 @@ public final class GRVMMessageArchiveStore {
     public func saveDeleted(
         _ messages: [GRVMArchivedMessage],
         media: [GRVMMessageKey: [GRVMArchivedMedia]]
-    ) throws {
-        try self.perform { database in
-            try self.transaction(database) {
+    ) throws -> [GRVMMessageKey: [GRVMArchivedMedia]] {
+        return try self.perform { database in
+            try self.transaction(database) { () -> [GRVMMessageKey: [GRVMArchivedMedia]] in
+                var admittedByResource: [GRVMStoredMediaKey: GRVMArchivedMedia] = [:]
+                var admittedByMessage: [GRVMMessageKey: [GRVMArchivedMedia]] = [:]
                 for message in messages {
                     try self.executePrepared(
                         database,
                         sql: """
                         INSERT INTO archived_messages (
                             account_id, peer_id, message_namespace, message_id, thread_id,
-                            sender_id, message_timestamp, deleted_at, text, entities,
+                            sender_id, message_timestamp, deleted_at, deletion_source, text, entities,
                             media_summary, peer_title, sender_name
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(account_id, peer_id, message_namespace, message_id, thread_id)
                         DO UPDATE SET sender_id = excluded.sender_id,
                                       message_timestamp = excluded.message_timestamp,
                                       deleted_at = excluded.deleted_at,
+                                      deletion_source = excluded.deletion_source,
                                       text = excluded.text,
                                       entities = excluded.entities,
                                       media_summary = excluded.media_summary,
@@ -302,10 +353,19 @@ public final class GRVMMessageArchiveStore {
                         values: self.messageValues(message)
                     )
                     for record in media[message.key] ?? [] {
-                        try self.upsertMedia(database, record: record)
-                        try self.insertMapping(database, key: message.key, revisionId: 0, resourceId: record.resourceId)
+                        let mediaKey = GRVMStoredMediaKey(accountId: record.accountId, resourceId: record.resourceId)
+                        let admitted: GRVMArchivedMedia
+                        if let current = admittedByResource[mediaKey] {
+                            admitted = current
+                        } else {
+                            admitted = try self.admitMedia(database, record: record)
+                            admittedByResource[mediaKey] = admitted
+                        }
+                        admittedByMessage[message.key, default: []].append(admitted)
+                        try self.insertMapping(database, key: message.key, revisionId: 0, resourceId: admitted.resourceId)
                     }
                 }
+                return admittedByMessage
             }
         }
     }
@@ -313,15 +373,27 @@ public final class GRVMMessageArchiveStore {
     public func saveRevision(
         _ draft: GRVMEditRevisionDraft,
         media: [GRVMArchivedMedia]
-    ) throws -> GRVMEditRevision {
+    ) throws -> (revision: GRVMEditRevision, media: [GRVMArchivedMedia]) {
         return try self.perform { database in
             try self.transaction(database) {
+                var admittedByResource: [GRVMStoredMediaKey: GRVMArchivedMedia] = [:]
+                var admittedMedia: [GRVMArchivedMedia] = []
+                for record in media {
+                    let mediaKey = GRVMStoredMediaKey(accountId: record.accountId, resourceId: record.resourceId)
+                    let admitted: GRVMArchivedMedia
+                    if let current = admittedByResource[mediaKey] {
+                        admitted = current
+                    } else {
+                        admitted = try self.admitMedia(database, record: record)
+                        admittedByResource[mediaKey] = admitted
+                    }
+                    admittedMedia.append(admitted)
+                }
                 if let existing = try self.revision(database, key: draft.key, fingerprint: draft.fingerprint) {
-                    for record in media {
-                        try self.upsertMedia(database, record: record)
+                    for record in admittedMedia {
                         try self.insertMapping(database, key: draft.key, revisionId: existing.rowId, resourceId: record.resourceId)
                     }
-                    return existing
+                    return (existing, admittedMedia)
                 }
 
                 let version = try self.nextRevisionVersion(database, key: draft.key)
@@ -330,8 +402,9 @@ public final class GRVMMessageArchiveStore {
                     sql: """
                     INSERT INTO edit_revisions (
                         account_id, peer_id, message_namespace, message_id, thread_id,
-                        version, fingerprint, saved_at, text, entities, media_summary, resource_ids
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        version, fingerprint, saved_at, text, entities, media_summary, resource_ids,
+                        editable_content
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     values: self.keyValues(draft.key) + [
                         .int32(version),
@@ -340,32 +413,45 @@ public final class GRVMMessageArchiveStore {
                         .text(draft.text),
                         .data(draft.entitiesData),
                         .text(draft.mediaSummary),
-                        .data(self.encodeResourceIds(draft.resourceIds))
+                        .data(self.encodeResourceIds(draft.resourceIds)),
+                        .data(try self.encodeEditableContent(draft.editableContent))
                     ]
                 )
                 let rowId = sqlite3_last_insert_rowid(database)
-                for record in media {
-                    try self.upsertMedia(database, record: record)
+                for record in admittedMedia {
                     try self.insertMapping(database, key: draft.key, revisionId: rowId, resourceId: record.resourceId)
                 }
-                return GRVMEditRevision(
+                return (GRVMEditRevision(
                     rowId: rowId,
                     key: draft.key,
                     version: version,
                     fingerprint: draft.fingerprint,
                     savedAt: draft.savedAt,
+                    editableContent: draft.editableContent,
                     text: draft.text,
                     entitiesData: draft.entitiesData,
                     mediaSummary: draft.mediaSummary,
                     resourceIds: draft.resourceIds
-                )
+                ), admittedMedia)
             }
         }
     }
 
     public func updateMedia(_ record: GRVMArchivedMedia) throws {
         try self.perform { database in
-            try self.upsertMedia(database, record: record)
+            try self.executePrepared(
+                database,
+                sql: Self.mediaTerminalUpdateSQL,
+                values: [
+                    .text(record.relativePath),
+                    .int64(record.byteCount),
+                    .text(record.kind),
+                    .int32(record.copyState.rawValue),
+                    .int64(record.accountId),
+                    .text(record.resourceId),
+                    .int64(record.generation)
+                ]
+            )
         }
     }
 
@@ -386,7 +472,7 @@ public final class GRVMMessageArchiveStore {
                 database,
                 sql: """
                 SELECT account_id, peer_id, message_namespace, message_id, thread_id,
-                       sender_id, message_timestamp, deleted_at, text, entities,
+                       sender_id, message_timestamp, deleted_at, deletion_source, text, entities,
                        media_summary, peer_title, sender_name
                 FROM archived_messages
                 WHERE \(clauses.joined(separator: " AND "))
@@ -410,7 +496,7 @@ public final class GRVMMessageArchiveStore {
                 database,
                 sql: """
                 SELECT account_id, peer_id, message_namespace, message_id, thread_id,
-                       sender_id, message_timestamp, deleted_at, text, entities,
+                       sender_id, message_timestamp, deleted_at, deletion_source, text, entities,
                        media_summary, peer_title, sender_name
                 FROM archived_messages WHERE \(clause)
                 """,
@@ -425,7 +511,8 @@ public final class GRVMMessageArchiveStore {
                 database,
                 sql: """
                 SELECT row_id, account_id, peer_id, message_namespace, message_id, thread_id,
-                       version, fingerprint, saved_at, text, entities, media_summary, resource_ids
+                       version, fingerprint, saved_at, text, entities, media_summary, resource_ids,
+                       editable_content
                 FROM edit_revisions
                 WHERE account_id = ? AND peer_id = ? AND message_namespace = ? AND message_id = ? AND thread_id = ?
                 ORDER BY version ASC
@@ -476,7 +563,7 @@ public final class GRVMMessageArchiveStore {
                 result.append(contentsOf: try self.queryMedia(
                     database,
                     sql: """
-                    SELECT account_id, resource_id, relative_path, byte_count, kind, copy_state
+                    SELECT account_id, resource_id, relative_path, byte_count, kind, copy_state, generation
                     FROM archived_media_blobs
                     WHERE account_id = ? AND resource_id IN (\(placeholders))
                     """,
@@ -492,7 +579,7 @@ public final class GRVMMessageArchiveStore {
             try self.queryMedia(
                 database,
                 sql: """
-                SELECT account_id, resource_id, relative_path, byte_count, kind, copy_state
+                SELECT account_id, resource_id, relative_path, byte_count, kind, copy_state, generation
                 FROM archived_media_blobs WHERE account_id = ?
                 """,
                 values: [.int64(accountId)]
@@ -536,26 +623,15 @@ public final class GRVMMessageArchiveStore {
         guard messageKeys.allSatisfy({ $0.accountId == accountId }) else {
             throw GRVMArchiveError.sqlite("invalid cleanup job account")
         }
-        var targetedReferencesByResourceId: [String: Int] = [:]
+        var resourceIds = Set<String>()
         for key in messageKeys {
             for resourceId in try self.mappedResourceIds(database, key: key, revisionId: 0) {
-                targetedReferencesByResourceId[resourceId, default: 0] += 1
+                resourceIds.insert(resourceId)
             }
         }
 
         var mediaRecords: [GRVMArchivedMedia] = []
-        for resourceId in targetedReferencesByResourceId.keys.sorted() {
-            guard let targetedReferences = targetedReferencesByResourceId[resourceId] else {
-                continue
-            }
-            let references = try self.scalarInt64(
-                database,
-                sql: "SELECT COUNT(*) FROM archived_message_media WHERE account_id = ? AND resource_id = ?",
-                values: [.int64(accountId), .text(resourceId)]
-            )
-            guard references == Int64(targetedReferences) else {
-                continue
-            }
+        for resourceId in resourceIds.sorted() {
             guard let record = try self.media(database, accountId: accountId, resourceId: resourceId) else {
                 throw GRVMArchiveError.sqlite("targeted archived media is missing")
             }
@@ -567,6 +643,79 @@ public final class GRVMMessageArchiveStore {
                 : $0.accountId < $1.accountId
         }
         return mediaRecords
+    }
+
+    private func revalidatedCleanupMediaRecords(
+        _ database: OpaquePointer,
+        job: GRVMCleanupJob
+    ) throws -> [GRVMArchivedMedia] {
+        guard job.messageKeys.allSatisfy({ $0.accountId == job.accountId }) else {
+            throw GRVMArchiveError.sqlite("invalid cleanup job account")
+        }
+        var targetedReferencesByResourceId: [String: Int] = [:]
+        for key in job.messageKeys {
+            for resourceId in try self.mappedResourceIds(database, key: key, revisionId: 0) {
+                targetedReferencesByResourceId[resourceId, default: 0] += 1
+            }
+        }
+
+        var result: [GRVMArchivedMedia] = []
+        for record in job.mediaRecords {
+            guard let targetedReferences = targetedReferencesByResourceId[record.resourceId] else {
+                continue
+            }
+            let references = try self.scalarInt64(
+                database,
+                sql: "SELECT COUNT(*) FROM archived_message_media WHERE account_id = ? AND resource_id = ?",
+                values: [.int64(job.accountId), .text(record.resourceId)]
+            )
+            guard references == Int64(targetedReferences) else {
+                continue
+            }
+            guard let current = try self.media(
+                database,
+                accountId: job.accountId,
+                resourceId: record.resourceId
+            ) else {
+                throw GRVMArchiveError.sqlite("targeted archived media is missing")
+            }
+            guard current.generation == record.generation,
+                  current.relativePath == record.relativePath else {
+                continue
+            }
+            guard current.generation < Int64.max else {
+                throw GRVMArchiveError.sqlite("archived media generation overflow")
+            }
+            try self.executePrepared(
+                database,
+                sql: Self.mediaCleanupClaimSQL,
+                values: [
+                    .int32(GRVMArchivedMedia.CopyState.unavailable.rawValue),
+                    .int64(current.accountId),
+                    .text(current.resourceId),
+                    .text(current.relativePath),
+                    .int64(current.generation)
+                ]
+            )
+            guard sqlite3_changes(database) == 1 else {
+                throw GRVMArchiveError.sqlite("archived media cleanup claim failed")
+            }
+            result.append(GRVMArchivedMedia(
+                accountId: current.accountId,
+                resourceId: current.resourceId,
+                relativePath: current.relativePath,
+                byteCount: 0,
+                kind: current.kind,
+                copyState: .unavailable,
+                generation: current.generation + 1
+            ))
+        }
+        result.sort {
+            $0.accountId == $1.accountId
+                ? $0.resourceId < $1.resourceId
+                : $0.accountId < $1.accountId
+        }
+        return result
     }
 
     public func beginDeletedCleanup(
@@ -662,11 +811,7 @@ public final class GRVMMessageArchiveStore {
                 guard job.phase == .planned else {
                     return job
                 }
-                let mediaRecords = try self.cleanupMediaRecords(
-                    database,
-                    accountId: job.accountId,
-                    messageKeys: job.messageKeys
-                )
+                let mediaRecords = try self.revalidatedCleanupMediaRecords(database, job: job)
                 try self.executePrepared(
                     database,
                     sql: "UPDATE cleanup_jobs SET media_records = ? WHERE job_id = ? AND phase = ?",
@@ -920,32 +1065,38 @@ public final class GRVMMessageArchiveStore {
         }
     }
 
-    private func upsertMedia(_ database: OpaquePointer, record: GRVMArchivedMedia) throws {
+    private func admitMedia(_ database: OpaquePointer, record: GRVMArchivedMedia) throws -> GRVMArchivedMedia {
+        let previousGeneration = try self.media(
+            database,
+            accountId: record.accountId,
+            resourceId: record.resourceId
+        )?.generation ?? 0
+        guard previousGeneration < Int64.max else {
+            throw GRVMArchiveError.sqlite("archived media generation overflow")
+        }
+        let admitted = GRVMArchivedMedia(
+            accountId: record.accountId,
+            resourceId: record.resourceId,
+            relativePath: record.relativePath,
+            byteCount: 0,
+            kind: record.kind,
+            copyState: .copying,
+            generation: previousGeneration + 1
+        )
         try self.executePrepared(
             database,
-            sql: """
-            INSERT INTO archived_media_blobs (
-                account_id, resource_id, relative_path, byte_count, kind, copy_state
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(account_id, resource_id) DO UPDATE SET
-                relative_path = excluded.relative_path,
-                byte_count = CASE
-                    WHEN archived_media_blobs.copy_state = 2 AND excluded.copy_state = 1
-                    THEN archived_media_blobs.byte_count ELSE excluded.byte_count END,
-                kind = excluded.kind,
-                copy_state = CASE
-                    WHEN archived_media_blobs.copy_state = 2 AND excluded.copy_state = 1
-                    THEN archived_media_blobs.copy_state ELSE excluded.copy_state END
-            """,
+            sql: Self.mediaAdmissionSQL,
             values: [
-                .int64(record.accountId),
-                .text(record.resourceId),
-                .text(record.relativePath),
-                .int64(record.byteCount),
-                .text(record.kind),
-                .int32(record.copyState.rawValue)
+                .int64(admitted.accountId),
+                .text(admitted.resourceId),
+                .text(admitted.relativePath),
+                .int64(admitted.byteCount),
+                .text(admitted.kind),
+                .int32(admitted.copyState.rawValue),
+                .int64(admitted.generation)
             ]
         )
+        return admitted
     }
 
     private func insertMapping(
@@ -970,6 +1121,7 @@ public final class GRVMMessageArchiveStore {
             .int64(message.senderId),
             .int32(message.timestamp),
             .int32(message.deletedAt),
+            .int32(message.deletionSource),
             .text(message.text),
             .data(message.entitiesData),
             .text(message.mediaSummary),
@@ -1018,12 +1170,13 @@ public final class GRVMMessageArchiveStore {
                     senderId: sqlite3_column_int64(statement, 5),
                     timestamp: sqlite3_column_int(statement, 6),
                     deletedAt: sqlite3_column_int(statement, 7),
-                    text: self.columnText(statement, 8),
-                    entitiesData: self.columnData(statement, 9),
-                    mediaSummary: self.columnText(statement, 10),
+                    deletionSource: sqlite3_column_int(statement, 8),
+                    text: self.columnText(statement, 9),
+                    entitiesData: self.columnData(statement, 10),
+                    mediaSummary: self.columnText(statement, 11),
                     resourceIds: try self.mappedResourceIds(database, key: key, revisionId: 0).sorted(),
-                    peerTitle: self.columnText(statement, 11),
-                    senderName: self.columnText(statement, 12)
+                    peerTitle: self.columnText(statement, 12),
+                    senderName: self.columnText(statement, 13)
                 ))
             }
             return result
@@ -1053,7 +1206,8 @@ public final class GRVMMessageArchiveStore {
             database,
             sql: """
             SELECT row_id, account_id, peer_id, message_namespace, message_id, thread_id,
-                   version, fingerprint, saved_at, text, entities, media_summary, resource_ids
+                   version, fingerprint, saved_at, text, entities, media_summary, resource_ids,
+                   editable_content
             FROM edit_revisions
             WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
               AND message_id = ? AND thread_id = ? AND fingerprint = ?
@@ -1073,14 +1227,21 @@ public final class GRVMMessageArchiveStore {
     }
 
     private func readRevision(_ statement: OpaquePointer) -> GRVMEditRevision {
+        let text = self.columnText(statement, 9)
+        let entitiesData = self.columnData(statement, 10)
         return GRVMEditRevision(
             rowId: sqlite3_column_int64(statement, 0),
             key: self.readKey(statement, offset: 1),
             version: sqlite3_column_int(statement, 6),
             fingerprint: self.columnText(statement, 7),
             savedAt: sqlite3_column_int(statement, 8),
-            text: self.columnText(statement, 9),
-            entitiesData: self.columnData(statement, 10),
+            editableContent: self.decodeEditableContent(
+                self.columnData(statement, 13),
+                text: text,
+                entitiesData: entitiesData
+            ),
+            text: text,
+            entitiesData: entitiesData,
             mediaSummary: self.columnText(statement, 11),
             resourceIds: self.decodeResourceIds(self.columnData(statement, 12))
         )
@@ -1187,7 +1348,7 @@ public final class GRVMMessageArchiveStore {
         return try self.withStatement(
             database,
             sql: """
-            SELECT account_id, resource_id, relative_path, byte_count, kind, copy_state
+            SELECT account_id, resource_id, relative_path, byte_count, kind, copy_state, generation
             FROM archived_media_blobs WHERE account_id = ? AND resource_id = ?
             """,
             values: [.int64(accountId), .text(resourceId)]
@@ -1213,7 +1374,8 @@ public final class GRVMMessageArchiveStore {
             relativePath: self.columnText(statement, 2),
             byteCount: sqlite3_column_int64(statement, 3),
             kind: self.columnText(statement, 4),
-            copyState: copyState
+            copyState: copyState,
+            generation: sqlite3_column_int64(statement, 6)
         )
     }
 
@@ -1265,6 +1427,21 @@ public final class GRVMMessageArchiveStore {
 
     private func encodeResourceIds(_ ids: [String]) -> Data {
         return (try? self.jsonEncoder.encode(Array(Set(ids)).sorted())) ?? Data()
+    }
+
+    private func encodeEditableContent(_ content: GRVMEditableMessageContent) throws -> Data {
+        return try content.encodedData()
+    }
+
+    private func decodeEditableContent(
+        _ data: Data,
+        text: String,
+        entitiesData: Data
+    ) -> GRVMEditableMessageContent {
+        if !data.isEmpty, let content = try? GRVMEditableMessageContent.decode(data) {
+            return content
+        }
+        return GRVMEditableMessageContent.legacy(text: text, entitiesData: entitiesData)
     }
 
     private func decodeResourceIds(_ data: Data) -> [String] {

@@ -406,7 +406,7 @@ public final class GRVMMessageArchiveCoordinator {
                                 id: messageId,
                                 attribute: GRVMDeletedMessageAttribute(
                                     deletedAt: record.deletedAt,
-                                    source: .server,
+                                    source: GRVMDeletionSource(rawValue: record.deletionSource) ?? .server,
                                     topicId: key.threadId == 0 ? nil : key.threadId,
                                     resourceIds: record.resourceIds
                                 )
@@ -452,8 +452,8 @@ public final class GRVMMessageArchiveCoordinator {
         )
     }
 
-    public func preserveDeletedMessages(_ messages: [Message], source: GRVMDeletionSource) -> [MessageId: [String]] {
-        var result: [MessageId: [String]] = [:]
+    public func preserveDeletedMessages(_ messages: [Message], source: GRVMDeletionSource) -> GRVMDeletedMessagesPreservationResult {
+        var result: GRVMDeletedMessagesPreservationResult = .unavailable
         self.queue.sync {
             guard self.isAcceptingOperations else {
                 return
@@ -466,10 +466,10 @@ public final class GRVMMessageArchiveCoordinator {
     private func preserveDeletedMessagesOnQueue(
         _ messages: [Message],
         source: GRVMDeletionSource
-    ) -> [MessageId: [String]] {
+    ) -> GRVMDeletedMessagesPreservationResult {
         let settings = self.settingsSnapshot()
         guard settings.saveDeletedMessages else {
-            return [:]
+            return .disabled
         }
 
         var uniqueMessages: [GRVMMessageKey: Message] = [:]
@@ -482,13 +482,13 @@ public final class GRVMMessageArchiveCoordinator {
             uniqueMessages[self.messageKey(message)] = message
         }
         guard !uniqueMessages.isEmpty else {
-            return [:]
+            return .preserved([:])
         }
 
         let deletedAt = Int32(Date().timeIntervalSince1970)
         var archivedMessages: [GRVMArchivedMessage] = []
         var plannedMedia: [GRVMMessageKey: [GRVMArchivedMedia]] = [:]
-        var resources: [GRVMMessageKey: [(GRVMMediaResourceReference, GRVMArchivedMedia)]] = [:]
+        var resources: [GRVMMessageKey: [GRVMMediaResourceReference]] = [:]
         var result: [MessageId: [String]] = [:]
 
         for (key, message) in uniqueMessages {
@@ -502,6 +502,7 @@ public final class GRVMMessageArchiveCoordinator {
                 senderId: message.author?.id.toInt64() ?? 0,
                 timestamp: message.timestamp,
                 deletedAt: deletedAt,
+                deletionSource: source.rawValue,
                 text: message.text,
                 entitiesData: grvmEntitiesData(message),
                 mediaSummary: grvmMediaSummary(message.media),
@@ -510,19 +511,26 @@ public final class GRVMMessageArchiveCoordinator {
                 senderName: message.author?.debugDisplayTitle ?? ""
             ))
             plannedMedia[key] = records
-            resources[key] = Array(zip(messageResources, records))
+            resources[key] = messageResources
             result[message.id] = resourceIds
         }
 
+        let admittedMedia: [GRVMMessageKey: [GRVMArchivedMedia]]
         do {
-            try self.store.saveDeleted(archivedMessages, media: plannedMedia)
+            admittedMedia = try self.store.saveDeleted(archivedMessages, media: plannedMedia)
         } catch {
-            return [:]
+            return .unavailable
         }
         self.index.insertDeleted(Set(uniqueMessages.keys))
 
-        for pairs in resources.values {
-            for (resource, record) in pairs {
+        for (key, messageResources) in resources {
+            let recordsById = Dictionary(uniqueKeysWithValues: (admittedMedia[key] ?? []).map {
+                ($0.resourceId, $0)
+            })
+            for resource in messageResources {
+                guard let record = recordsById[resource.id.stringRepresentation] else {
+                    continue
+                }
                 self.disposables.add(self.mediaStore.archive(
                     record,
                     resource: resource,
@@ -540,22 +548,24 @@ public final class GRVMMessageArchiveCoordinator {
                 }))
             }
         }
-        _ = source
-        return result
+        return .preserved(result)
     }
 
-    public func preserveEditRevision(_ message: Message) -> Bool {
+    public func preserveEditRevision(_ message: Message, content: GRVMEditableMessageContent) -> Bool {
         var result = false
         self.queue.sync {
             guard self.isAcceptingOperations else {
                 return
             }
-            result = self.preserveEditRevisionOnQueue(message)
+            result = self.preserveEditRevisionOnQueue(message, content: content)
         }
         return result
     }
 
-    private func preserveEditRevisionOnQueue(_ message: Message) -> Bool {
+    private func preserveEditRevisionOnQueue(
+        _ message: Message,
+        content: GRVMEditableMessageContent
+    ) -> Bool {
         let settings = self.settingsSnapshot()
         guard settings.saveEditHistory else {
             return false
@@ -563,30 +573,27 @@ public final class GRVMMessageArchiveCoordinator {
 
         let key = self.messageKey(message)
         let messageResources = grvmMediaResources(message.media)
-        let records = messageResources.map {
+        var records = messageResources.map {
             self.mediaStore.plannedRecord(accountId: self.accountRecordId.int64, resource: $0)
         }
         let resourceIds = messageResources.map { $0.id.stringRepresentation }
         let entitiesData = grvmEntitiesData(message)
         let mediaSummary = grvmMediaSummary(message.media)
-        let fingerprint = grvmContentFingerprint(
-            text: message.text,
-            entitiesData: entitiesData,
-            mediaSummary: mediaSummary,
-            resourceIds: resourceIds
-        )
         let savedAt = Int32(Date().timeIntervalSince1970)
 
         do {
-            _ = try self.store.saveRevision(GRVMEditRevisionDraft(
+            let fingerprint = try grvmContentFingerprint(content)
+            let saved = try self.store.saveRevision(GRVMEditRevisionDraft(
                 key: key,
                 fingerprint: fingerprint,
                 savedAt: savedAt,
+                editableContent: content,
                 text: message.text,
                 entitiesData: entitiesData,
                 mediaSummary: mediaSummary,
                 resourceIds: resourceIds
             ), media: records)
+            records = saved.media
         } catch {
             return false
         }

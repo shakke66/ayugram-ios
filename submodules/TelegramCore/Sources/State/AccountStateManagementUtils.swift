@@ -4392,21 +4392,27 @@ func replayFinalState(
             case let .AddScheduledMessages(messages):
                 for message in messages {
                     if case let .Id(id) = message.id, let _ = transaction.getMessage(id) {
-                        transaction.updateMessage(id) { _ -> PostboxUpdateMessage in
-                            return .update(message)
-                        }
+                        grvmApplyEditedMessage(
+                            accountPeerId: accountPeerId,
+                            transaction: transaction,
+                            id: id,
+                            message: message
+                        )
                     } else {
-                        let _ = transaction.addMessages(messages, location: .Random)
+                        let _ = transaction.addMessages([message], location: .Random)
                     }
                 }
             case let .AddQuickReplyMessages(messages):
                 for message in messages {
                     if case let .Id(id) = message.id, let _ = transaction.getMessage(id) {
-                        transaction.updateMessage(id) { _ -> PostboxUpdateMessage in
-                            return .update(message)
-                        }
+                        grvmApplyEditedMessage(
+                            accountPeerId: accountPeerId,
+                            transaction: transaction,
+                            id: id,
+                            message: message
+                        )
                     } else {
-                        let _ = transaction.addMessages(messages, location: .Random)
+                        let _ = transaction.addMessages([message], location: .Random)
                     }
                 }
             case let .DeleteMessagesWithGlobalIds(ids):
@@ -4480,11 +4486,12 @@ func replayFinalState(
                     invalidateGroupStats.insert(Namespaces.PeerGroup.archive)
                 }
             case let .EditMessage(id, message):
-                var shouldMarkHistory = false
-                if let oldMessage = transaction.getMessage(id),
-                   !grvmMessageEditContentMatches(previous: oldMessage, incoming: message) {
-                    shouldMarkHistory = AyuGramHooks.preserveEditRevision?(accountPeerId, oldMessage) == true
-                }
+                let shouldMarkHistory = grvmPreserveEditRevisionIfNeeded(
+                    accountPeerId: accountPeerId,
+                    transaction: transaction,
+                    id: id,
+                    incoming: message
+                )
                 var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?
                 transaction.updateMessage(id, update: { previousMessage in
                     var updatedFlags = message.flags

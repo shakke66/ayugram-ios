@@ -29,17 +29,24 @@ public final class GRVMAccountFeatureRegistry {
     }
 
     deinit {
+        var services: [GRVMMessageArchiveCoordinator] = []
         var disposables: [Disposable] = []
         _ = self.state.modify { state in
             var state = state
+            services = Array(state.services.values)
             disposables = Array(state.settingsDisposables.values)
             state.settingsDisposables.removeAll()
             state.services.removeAll()
             return state
         }
+        var waiters: [Subscriber<[MessageId], GRVMClearDeletedError>] = []
+        for service in services {
+            waiters.append(contentsOf: service.shutdownForReplacement())
+        }
         for disposable in disposables {
             disposable.dispose()
         }
+        Self.deliverShutdownErrors(waiters)
     }
 
     public func prepare(activeAccountRecordIds: [Int64]) throws {
@@ -58,7 +65,8 @@ public final class GRVMAccountFeatureRegistry {
         accountPeerId: PeerId,
         accountRecordId: AccountRecordId,
         postbox: Postbox,
-        mediaBox: MediaBox
+        mediaBox: MediaBox,
+        initialSettings: AyuGramSettings
     ) {
         var shutdownWaiters: [Subscriber<[MessageId], GRVMClearDeletedError>] = []
         self.lifecycleQueue.sync {
@@ -66,29 +74,35 @@ public final class GRVMAccountFeatureRegistry {
                 accountPeerId: accountPeerId,
                 accountRecordId: accountRecordId,
                 postbox: postbox,
-                mediaBox: mediaBox
+                mediaBox: mediaBox,
+                initialSettings: initialSettings
             )
         }
-        self.deliverShutdownErrors(shutdownWaiters)
+        Self.deliverShutdownErrors(shutdownWaiters)
     }
 
     private func registerOnQueue(
         accountPeerId: PeerId,
         accountRecordId: AccountRecordId,
         postbox: Postbox,
-        mediaBox: MediaBox
+        mediaBox: MediaBox,
+        initialSettings: AyuGramSettings
     ) -> [Subscriber<[MessageId], GRVMClearDeletedError>] {
-        let canRegister = self.state.with { state -> Bool in
+        let existingService = self.state.with { state -> GRVMMessageArchiveCoordinator? in
             guard state.prepared else {
-                return false
+                return nil
             }
             if let service = state.services[accountPeerId],
                service.isBound(to: accountRecordId, postbox: postbox, mediaBox: mediaBox) {
-                return false
+                return service
             }
-            return true
+            return nil
         }
-        guard canRegister else {
+        if let service = existingService {
+            service.updateSettings(initialSettings)
+            return []
+        }
+        guard self.state.with({ $0.prepared }) else {
             return []
         }
 
@@ -96,12 +110,43 @@ public final class GRVMAccountFeatureRegistry {
         guard removal.removed else {
             return removal.waiters
         }
+
+        let coordinator = GRVMMessageArchiveCoordinator(
+            accountPeerId: accountPeerId,
+            accountRecordId: accountRecordId,
+            postbox: postbox,
+            mediaBox: mediaBox,
+            store: self.store,
+            mediaStore: self.mediaStore,
+            settings: initialSettings
+        )
+        do {
+            try coordinator.prepare()
+        } catch {
+            return removal.waiters
+        }
+
         let settingsDisposable = MetaDisposable()
         _ = self.state.modify { state in
             var state = state
+            guard state.prepared,
+                  state.services[accountPeerId] == nil,
+                  state.settingsDisposables[accountPeerId] == nil else {
+                return state
+            }
+            state.services[accountPeerId] = coordinator
             state.settingsDisposables[accountPeerId] = settingsDisposable
             return state
         }
+        guard self.state.with({ state in
+            state.settingsDisposables[accountPeerId] === settingsDisposable
+                && state.services[accountPeerId] === coordinator
+        }) else {
+            return removal.waiters
+        }
+        coordinator.resumePendingCleanupJobs()
+        coordinator.reconcilePersistentMessageState()
+
         settingsDisposable.set(grvmSettings(accountId: accountPeerId, accountManager: self.accountManager).start(next: { [weak self] settings in
             guard let self else {
                 return
@@ -112,45 +157,11 @@ public final class GRVMAccountFeatureRegistry {
                 }
                 guard self.state.with({ state in
                     state.settingsDisposables[accountPeerId] === settingsDisposable
+                        && state.services[accountPeerId] === coordinator
                 }) else {
                     return
                 }
-                if let service = self.service(accountPeerId: accountPeerId) {
-                    service.updateSettings(settings)
-                    return
-                }
-
-                let coordinator = GRVMMessageArchiveCoordinator(
-                    accountPeerId: accountPeerId,
-                    accountRecordId: accountRecordId,
-                    postbox: postbox,
-                    mediaBox: mediaBox,
-                    store: self.store,
-                    mediaStore: self.mediaStore,
-                    settings: settings
-                )
-                do {
-                    try coordinator.prepare()
-                } catch {
-                    return
-                }
-                var registered = false
-                _ = self.state.modify { state in
-                    var state = state
-                    guard state.prepared,
-                          state.settingsDisposables[accountPeerId] === settingsDisposable,
-                          state.services[accountPeerId] == nil else {
-                        return state
-                    }
-                    state.services[accountPeerId] = coordinator
-                    registered = true
-                    return state
-                }
-                guard registered else {
-                    return
-                }
-                coordinator.resumePendingCleanupJobs()
-                coordinator.reconcilePersistentMessageState()
+                coordinator.updateSettings(settings)
             }
         }))
         return removal.waiters
@@ -161,7 +172,7 @@ public final class GRVMAccountFeatureRegistry {
         self.lifecycleQueue.sync {
             shutdownWaiters = self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: true).waiters
         }
-        self.deliverShutdownErrors(shutdownWaiters)
+        Self.deliverShutdownErrors(shutdownWaiters)
     }
 
     private func removeRegistration(
@@ -207,7 +218,7 @@ public final class GRVMAccountFeatureRegistry {
         return (removed, waiters)
     }
 
-    private func deliverShutdownErrors(
+    private static func deliverShutdownErrors(
         _ waiters: [Subscriber<[MessageId], GRVMClearDeletedError>]
     ) {
         guard !waiters.isEmpty else {

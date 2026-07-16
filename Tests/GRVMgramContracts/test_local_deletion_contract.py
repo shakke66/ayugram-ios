@@ -54,6 +54,43 @@ class LocalDeletionContractTests(unittest.TestCase):
         source = HISTORY.read_text(encoding="utf-8")
         self.assertGreaterEqual(source.count("!isLocallyDeletedMessage"), 2)
 
+    def test_marked_incoming_reinsert_and_move_never_reenter_unread(self) -> None:
+        def admitted_to_read_state(*, incoming: bool, locally_deleted: bool) -> bool:
+            return incoming and not locally_deleted
+
+        scenarios = (
+            ("fresh incoming insert", True, False, True),
+            ("marked incoming reinsert", True, True, False),
+            ("outgoing reinsert", False, True, False),
+            ("fresh incoming moving update", True, False, True),
+            ("marked incoming moving update", True, True, False),
+        )
+        for name, incoming, locally_deleted, expected in scenarios:
+            with self.subTest(name=name):
+                self.assertEqual(
+                    expected,
+                    admitted_to_read_state(
+                        incoming=incoming,
+                        locally_deleted=locally_deleted,
+                    ),
+                )
+
+        source = HISTORY.read_text(encoding="utf-8")
+        insert = source[
+            source.index("case let .InsertMessage(storeMessage):") :
+            source.index("case let .InsertExistingMessage(storeMessage):")
+        ]
+        moving = source[
+            source.index("case let .Update(index, storeMessage):") :
+            source.index("case let .UpdateTimestamp(index, timestamp):")
+        ]
+        predicate = (
+            "!message.flags.intersection(.IsIncomingMask).isEmpty "
+            "&& !isLocallyDeletedMessage(message.attributes)"
+        )
+        self.assertIn(predicate, insert)
+        self.assertIn(predicate, moving)
+
     def test_index_has_local_deletion_bit_and_idempotent_transition(self) -> None:
         source = INDEX.read_text(encoding="utf-8")
         self.assertIn("HistoryEntryMessageFlagLocallyDeleted", source)
@@ -114,13 +151,62 @@ class LocalDeletionContractTests(unittest.TestCase):
             "groupingKey: message.groupingKey",
             "threadId: message.threadId",
             "flags: message.flags",
-            "globalTags: message.globalTags",
+            "globalTags: updatedGlobalTags",
             "localTags: message.localTags",
         ):
             self.assertIn(field, method)
         self.assertNotIn("tags: []", method)
         self.assertNotIn("flags: []", method)
         self.assertNotIn("subtracting(.Incoming)", method)
+
+    def test_local_deletion_removes_call_views_but_keeps_other_global_tags(self) -> None:
+        calls = 1 << 0
+        missed_calls = 1 << 1
+        unrelated = 1 << 7
+        configured_call_tags = calls | missed_calls
+        messages = {
+            10: calls | missed_calls | unrelated,
+            11: calls,
+            12: unrelated,
+        }
+
+        before_calls = {message_id for message_id, tags in messages.items() if tags & calls}
+        before_missed = {
+            message_id for message_id, tags in messages.items() if tags & missed_calls
+        }
+        messages[10] = messages[10] & ~configured_call_tags
+        after_calls = {message_id for message_id, tags in messages.items() if tags & calls}
+        after_missed = {
+            message_id for message_id, tags in messages.items() if tags & missed_calls
+        }
+
+        self.assertEqual({10, 11}, before_calls)
+        self.assertEqual({10}, before_missed)
+        self.assertEqual({11}, after_calls)
+        self.assertEqual(set(), after_missed)
+        self.assertEqual(unrelated, messages[10])
+
+        history = HISTORY.read_text(encoding="utf-8")
+        method = swift_block(history, "func markMessageAsLocallyDeleted(")
+        seed = SEED.read_text(encoding="utf-8")
+        telegram_seed = TELEGRAM_SEED.read_text(encoding="utf-8")
+        self.assertIn("locallyDeletedMessageGlobalTags: GlobalMessageTags", seed)
+        self.assertIn(
+            "message.globalTags.intersection(self.seedConfiguration.locallyDeletedMessageGlobalTags)",
+            method,
+        )
+        self.assertIn(
+            "message.globalTags.subtracting(removedGlobalTags)",
+            method,
+        )
+        self.assertIn(
+            "globalTagsOperations.append(.remove([(removedGlobalTags, index)]))",
+            method,
+        )
+        self.assertRegex(
+            telegram_seed,
+            r"locallyDeletedMessageGlobalTags:\s*\[\s*\.Calls,\s*\.MissedCalls\s*\]",
+        )
 
     def test_postbox_receives_exact_telegram_cleanup_tags(self) -> None:
         seed_source = SEED.read_text(encoding="utf-8")

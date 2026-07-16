@@ -165,15 +165,25 @@ class HistoryUIContractTests(unittest.TestCase):
             "transaction.getMessage(messageId)",
             "sorted",
             "versions.append",
-            "PostboxDecoder(buffer: MemoryBuffer(data: data))",
-            "TextEntitiesMessageAttribute",
+            "revision.editableContent",
+            "GRVMEditableMessageContent(message: currentMessage)",
+            "content.text",
+            "content.textEntities",
+            "content.media",
             "stringWithAppliedEntities(",
-            "mediaSummary",
-            "resourceIds",
+            'case .todo:',
+            '"Todo"',
+            "legacyMediaSummary",
+            "legacyResourceIds",
             "ChatList_Search_NoResults",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, value)
+        revision_mapping = window(value, ".map { revision in", 1600)
+        self.assertNotIn("text: revision.text", revision_mapping)
+        self.assertNotIn("entitiesData: revision.entitiesData", revision_mapping)
+        current_mapping = window(value, "if let currentMessage", 1200)
+        self.assertNotIn("text: currentMessage.text", current_mapping)
 
     def test_history_action_is_exact_and_visible_only_for_one_saved_message(self) -> None:
         value = CONTEXT_MENU.read_text(encoding="utf-8")
@@ -218,17 +228,44 @@ class HistoryUIContractTests(unittest.TestCase):
             "peerId, threadId, query",
             "ItemListSingleLineInputItem",
             "textUpdated:",
-            "MessageId(",
-            "peerId: PeerId(message.key.peerId)",
-            "namespace: message.key.namespace",
-            "id: message.key.messageId",
+            "arguments.openMessage(message.key)",
             "subject: .message(id: .id(messageId)",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, value)
         message_item = window(value, "case let .message(_, _, message):", 2500)
         self.assertNotIn("action: {}", message_item)
-        self.assertIn("arguments.openMessage(messageId)", message_item)
+        self.assertIn("arguments.openMessage(message.key)", message_item)
+
+    def test_deleted_archive_navigation_is_late_bound_and_thread_aware(self) -> None:
+        value = DELETED_CONTROLLER.read_text(encoding="utf-8")
+        self.assertIn("openMessage: (GRVMMessageKey) -> Void", value)
+        self.assertIn("arguments.openMessage(message.key)", value)
+        self.assertIn("let controllerHolder = GRVMDeletedControllerHolder()", value)
+        self.assertIn("controllerHolder.controller = controller", value)
+
+        navigation_start = value.index("openMessage: { key in")
+        navigation = value[
+            navigation_start : value.index("\n    )\n\n    let signal", navigation_start)
+        ]
+        self.assertNotIn("[weak controller]", navigation)
+        self.assertIn("key.threadId != 0", navigation)
+        self.assertIn("peerIsForumOrMonoForum", navigation)
+        self.assertIn("let chatLocation: NavigateToChatControllerParams.Location", navigation)
+        self.assertIn("chatLocation = .replyThread(ChatReplyThreadMessage(", navigation)
+        self.assertIn("peerId: peerId", navigation)
+        self.assertIn("threadId: key.threadId", navigation)
+        self.assertIn("isForumPost: true", navigation)
+        self.assertIn("isMonoforumPost: peerIsMonoforum", navigation)
+        self.assertIn("chatLocation = .peer(peer)", navigation)
+        self.assertIn("controllerHolder.controller?.navigationController", navigation)
+
+        def location(*, thread_id: int, is_forum: bool) -> str:
+            return "replyThread" if thread_id != 0 and is_forum else "peer"
+
+        self.assertEqual("replyThread", location(thread_id=42, is_forum=True))
+        self.assertEqual("peer", location(thread_id=0, is_forum=True))
+        self.assertEqual("peer", location(thread_id=42, is_forum=False))
 
     def test_clear_deleted_confirms_waits_for_cleanup_and_refreshes_after_emission(self) -> None:
         value = DELETED_CONTROLLER.read_text(encoding="utf-8")

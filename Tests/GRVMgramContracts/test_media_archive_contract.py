@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 COLLECTOR = ROOT / "submodules/AyuGramLib/Sources/GRVMMediaResourceCollector.swift"
 STORE = ROOT / "submodules/AyuGramLib/Sources/GRVMArchivedMediaStore.swift"
+MODELS = ROOT / "submodules/AyuGramLib/Sources/GRVMMessageArchiveModels.swift"
 MEDIA_BOX = ROOT / "submodules/Postbox/Sources/MediaBox.swift"
 BUILD = ROOT / "submodules/AyuGramLib/BUILD"
 
@@ -77,7 +78,10 @@ class MediaArchiveContractTests(unittest.TestCase):
         ]
         self.assertIn("mediaBox: MediaBox", reconcile_section)
         self.assertIn("case .copying", reconcile_section)
-        self.assertIn("mediaBox.completedResourcePath", reconcile_section)
+        self.assertIn(
+            "self.archiveRecord(record, resource: resource, mediaBox: mediaBox)",
+            reconcile_section,
+        )
         self.assertIn("copyState: .complete", reconcile_section)
         self.assertIn("copyState: .unavailable", reconcile_section)
         self.assertNotIn("try? self.fileManager.removeItem", source)
@@ -109,9 +113,9 @@ class MediaArchiveContractTests(unittest.TestCase):
             source.index("case .complete:")
         ]
         cleanup_gate = "guard self.removeIfPresent(temporaryURL) else"
-        self.assertEqual(copying_section.count(cleanup_gate), 2)
-        self.assertEqual(copying_section.count("subscriber.putCompletion()"), 2)
-        self.assertGreaterEqual(copying_section.count("return"), 2)
+        self.assertEqual(copying_section.count(cleanup_gate), 1)
+        self.assertEqual(copying_section.count("subscriber.putCompletion()"), 1)
+        self.assertGreaterEqual(copying_section.count("return"), 1)
         self.assertNotIn("subscriber.putNext", copying_section)
 
     def test_failed_orphan_cleanup_completes_without_next(self) -> None:
@@ -143,6 +147,46 @@ class MediaArchiveContractTests(unittest.TestCase):
         self.assertIn("private func archiveRecord(", source)
         self.assertIn("self.archiveRecord(", archive_section)
         self.assertIn("subscriber.putNext", archive_section)
+
+    def test_existing_positive_final_blob_wins_before_media_box_lookup(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        archive_section = source[
+            source.index("private func archiveRecord(") :
+            source.index("private func copyAtomically(")
+        ]
+        self.assertIn("let archivedByteCount = self.fileSize(at: location.url)", archive_section)
+        self.assertIn("archivedByteCount > 0", archive_section)
+        self.assertLess(
+            archive_section.index("let archivedByteCount = self.fileSize(at: location.url)"),
+            archive_section.index("mediaBox.completedResourcePath"),
+        )
+
+    def test_missing_complete_and_missing_rows_retry_from_media_box(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        reconcile = source[
+            source.index("public func reconcile(") :
+            source.index("private func resourceLocation(")
+        ]
+        self.assertIn("case .missing:", reconcile)
+        complete = reconcile[
+            reconcile.index("case .complete:") : reconcile.index("case .unavailable")
+        ]
+        self.assertIn("self.archiveRecord(record, resource: resource, mediaBox: mediaBox)", complete)
+        self.assertIn("copyState: .missing", complete)
+        missing = reconcile[reconcile.index("case .missing:") :]
+        self.assertIn("self.archiveRecord(record, resource: resource, mediaBox: mediaBox)", missing)
+
+    def test_media_records_carry_migration_safe_generation(self) -> None:
+        models = MODELS.read_text(encoding="utf-8")
+        self.assertIn("public let generation: Int64", models)
+        self.assertIn("case generation", models)
+        self.assertIn(
+            "try container.decodeIfPresent(Int64.self, forKey: .generation) ?? 0",
+            models,
+        )
+        store = STORE.read_text(encoding="utf-8")
+        terminal = store[store.index("private func terminalRecord(") :]
+        self.assertIn("generation: record.generation", terminal)
 
     def test_media_box_reports_only_successfully_unlinked_ids(self) -> None:
         source = MEDIA_BOX.read_text(encoding="utf-8")

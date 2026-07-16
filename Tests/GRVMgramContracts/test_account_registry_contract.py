@@ -40,19 +40,60 @@ class AccountRegistryContractTests(unittest.TestCase):
         self.assertNotIn("services.values.first", source)
         self.assertNotIn("currentAccount", source)
 
-    def test_registry_waits_for_exact_settings_before_publishing_service(self) -> None:
+    def test_registry_publishes_exact_initial_settings_synchronously_before_subscription(self) -> None:
         self.assertTrue(REGISTRY.exists())
         source = REGISTRY.read_text(encoding="utf-8")
-        settings = source.index("grvmSettings(accountId: accountPeerId")
-        coordinator = source.index("GRVMMessageArchiveCoordinator(", settings)
-        publish = source.index("state.services[accountPeerId] = coordinator", coordinator)
-        self.assertLess(settings, coordinator)
+        register = swift_block(source, "public func register(")
+        self.assertIn("initialSettings: AyuGramSettings", register)
+        self.assertIn("self.lifecycleQueue.sync", register)
+
+        register_on_queue = source[
+            source.index("private func registerOnQueue(") :
+            source.index("public func unregister(")
+        ]
+        coordinator = register_on_queue.index("GRVMMessageArchiveCoordinator(")
+        prepare = register_on_queue.index("try coordinator.prepare()", coordinator)
+        publish = register_on_queue.index("state.services[accountPeerId] = coordinator", prepare)
+        settings = register_on_queue.index("grvmSettings(accountId: accountPeerId", publish)
+        self.assertIn("settings: initialSettings", register_on_queue)
+        self.assertLess(coordinator, prepare)
+        self.assertLess(prepare, publish)
+        self.assertLess(publish, settings)
+        self.assertNotIn("GRVMMessageArchiveCoordinator(", register_on_queue[settings:])
+        self.assertIn("coordinator.updateSettings(settings)", register_on_queue[settings:])
+
+        app_delegate = APP_DELEGATE.read_text(encoding="utf-8")
+        active_accounts = app_delegate[
+            app_delegate.index("let grvmActiveAccounts =") :
+            app_delegate.index("if #available(iOS 10.3", app_delegate.index("let grvmActiveAccounts ="))
+        ]
+        self.assertIn("combineLatest(accounts.map", active_accounts)
+        self.assertIn("grvmSettings(accountId: context.account.peerId", active_accounts)
+        self.assertIn("|> take(1)", active_accounts)
+        self.assertIn("initialSettings: initialSettings", active_accounts)
+        snapshot = active_accounts.index("grvmSettings(accountId: context.account.peerId")
+        register_call = active_accounts.index("registry.register(", snapshot)
+        self.assertLess(snapshot, register_call)
+
+    def test_registry_rebind_still_quiesces_before_exact_snapshot_publication(self) -> None:
+        source = REGISTRY.read_text(encoding="utf-8")
+        register_on_queue = source[
+            source.index("private func registerOnQueue(") :
+            source.index("public func unregister(")
+        ]
+        removal = register_on_queue.index(
+            "self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: false)"
+        )
+        coordinator = register_on_queue.index("GRVMMessageArchiveCoordinator(", removal)
+        publish = register_on_queue.index("state.services[accountPeerId] = coordinator", coordinator)
+        self.assertLess(removal, coordinator)
         self.assertLess(coordinator, publish)
-        self.assertIn("guard state.prepared", source)
         self.assertIn(
             "service.isBound(to: accountRecordId, postbox: postbox, mediaBox: mediaBox)",
-            source,
+            register_on_queue,
         )
+        self.assertIn("service.updateSettings(initialSettings)", register_on_queue)
+        self.assertIn("guard state.prepared", source)
         self.assertIn(
             "self.removeRegistration(accountPeerId: accountPeerId, clearPrimary: false)",
             source,
@@ -124,27 +165,80 @@ class AccountRegistryContractTests(unittest.TestCase):
         register = swift_block(registry, "public func register(")
         self.assertIn("var shutdownWaiters", register)
         register_sync = swift_block(register, "self.lifecycleQueue.sync")
-        self.assertNotIn("self.deliverShutdownErrors", register_sync)
+        self.assertNotIn("Self.deliverShutdownErrors", register_sync)
         self.assertLess(
             register.index(register_sync) + len(register_sync),
-            register.index("self.deliverShutdownErrors(shutdownWaiters)"),
+            register.index("Self.deliverShutdownErrors(shutdownWaiters)"),
         )
 
         unregister = swift_block(registry, "public func unregister(")
         self.assertIn("var shutdownWaiters", unregister)
         unregister_sync = swift_block(unregister, "self.lifecycleQueue.sync")
-        self.assertNotIn("self.deliverShutdownErrors", unregister_sync)
+        self.assertNotIn("Self.deliverShutdownErrors", unregister_sync)
         self.assertLess(
             unregister.index(unregister_sync) + len(unregister_sync),
-            unregister.index("self.deliverShutdownErrors(shutdownWaiters)"),
+            unregister.index("Self.deliverShutdownErrors(shutdownWaiters)"),
         )
 
         removal = swift_block(registry, "private func removeRegistration(")
         self.assertNotIn("subscriber.putError", removal)
-        delivery = swift_block(registry, "private func deliverShutdownErrors(")
+        delivery = swift_block(registry, "private static func deliverShutdownErrors(")
         self.assertIn("Queue.concurrentDefaultQueue().async", delivery)
         async_delivery = swift_block(delivery, "Queue.concurrentDefaultQueue().async")
         self.assertIn("subscriber.putError(.archiveUnavailable)", async_delivery)
+
+    def test_registry_deinit_detaches_services_and_terminates_every_waiter(self) -> None:
+        events = []
+
+        class Service:
+            def __init__(self, name: str, waiter_count: int) -> None:
+                self.name = name
+                self.waiter_count = waiter_count
+
+            def shutdown_for_replacement(self):
+                events.append(("shutdown", self.name))
+                return [f"{self.name}:{index}" for index in range(self.waiter_count)]
+
+        class Disposable:
+            def __init__(self, name: str) -> None:
+                self.name = name
+
+            def dispose(self) -> None:
+                events.append(("dispose", self.name))
+
+        services = [Service("a", 2), Service("b", 1)]
+        disposables = [Disposable("a"), Disposable("b")]
+        waiters = []
+        for service in services:
+            waiters.extend(service.shutdown_for_replacement())
+        for disposable in disposables:
+            disposable.dispose()
+        for waiter in waiters:
+            events.append(("error", waiter))
+
+        self.assertEqual(3, sum(1 for kind, _ in events if kind == "error"))
+        self.assertLess(
+            max(index for index, event in enumerate(events) if event[0] == "shutdown"),
+            min(index for index, event in enumerate(events) if event[0] == "error"),
+        )
+
+        registry = REGISTRY.read_text(encoding="utf-8")
+        deinit = swift_block(registry, "deinit")
+        required = (
+            "services = Array(state.services.values)",
+            "state.services.removeAll()",
+            "state.settingsDisposables.removeAll()",
+            "service.shutdownForReplacement()",
+            "disposable.dispose()",
+            "Self.deliverShutdownErrors(waiters)",
+        )
+        self.assertEqual([], [token for token in required if token not in deinit])
+        self.assertLess(
+            deinit.index("service.shutdownForReplacement()"),
+            deinit.index("Self.deliverShutdownErrors(waiters)"),
+        )
+        delivery = swift_block(registry, "private static func deliverShutdownErrors(")
+        self.assertIn("Queue.concurrentDefaultQueue().async", delivery)
 
     def test_app_delegate_migrates_then_registers_active_contexts(self) -> None:
         source = APP_DELEGATE.read_text(encoding="utf-8")

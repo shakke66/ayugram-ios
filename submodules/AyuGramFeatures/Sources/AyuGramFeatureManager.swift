@@ -17,13 +17,22 @@ public final class AyuGramFeatureManager {
     public func wireHooks() {
         // MARK: - Spy Mode
         AyuGramHooks.shouldSaveDeletedMessages = { [weak self] accountPeerId in
-            return self?.registry.service(accountPeerId: accountPeerId)?.settingsSnapshot().saveDeletedMessages ?? false
+            guard let service = self?.registry.service(accountPeerId: accountPeerId) else {
+                return true
+            }
+            return service.settingsSnapshot().saveDeletedMessages
         }
         AyuGramHooks.preserveDeletedMessages = { [weak self] accountPeerId, messages, source in
-            return self?.registry.service(accountPeerId: accountPeerId)?.preserveDeletedMessages(messages, source: source) ?? [:]
+            guard let service = self?.registry.service(accountPeerId: accountPeerId) else {
+                return .unavailable
+            }
+            return service.preserveDeletedMessages(messages, source: source)
         }
-        AyuGramHooks.preserveEditRevision = { [weak self] accountPeerId, message in
-            return self?.registry.service(accountPeerId: accountPeerId)?.preserveEditRevision(message) ?? false
+        AyuGramHooks.preserveEditRevision = { [weak self] accountPeerId, message, content in
+            return self?.registry.service(accountPeerId: accountPeerId)?.preserveEditRevision(
+                message,
+                content: content
+            ) ?? false
         }
         AyuGramHooks.hasEditHistory = { [weak self] accountPeerId, messageId in
             return self?.registry.service(accountPeerId: accountPeerId)?.hasEditHistory(messageId) ?? false
@@ -45,7 +54,10 @@ public final class AyuGramFeatureManager {
             return self?.registry.service(accountPeerId: accountPeerId)?.editHistory(messageId) ?? .single([])
         }
         AyuGramHooks.shouldPreserveOneTimeMedia = { [weak self] accountPeerId in
-            return self?.registry.service(accountPeerId: accountPeerId)?.settingsSnapshot().saveDeletedMessages ?? false
+            guard let service = self?.registry.service(accountPeerId: accountPeerId) else {
+                return true
+            }
+            return service.settingsSnapshot().saveDeletedMessages
         }
 
         // MARK: - Ghost Mode

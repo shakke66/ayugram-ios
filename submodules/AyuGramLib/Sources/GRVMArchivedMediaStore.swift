@@ -176,17 +176,11 @@ public final class GRVMArchivedMediaStore {
                             continue
                         }
 
-                        let temporaryURL = location.url.appendingPathExtension("tmp")
-                        if mediaBox.completedResourcePath(id: resource.id) == nil {
-                            guard self.removeIfPresent(temporaryURL) else {
-                                subscriber.putCompletion()
-                                return
-                            }
-                        }
                         let recovered = self.archiveRecord(record, resource: resource, mediaBox: mediaBox)
                         if recovered.copyState == .complete {
                             updates.append(recovered)
                         } else {
+                            let temporaryURL = location.url.appendingPathExtension("tmp")
                             guard self.removeIfPresent(temporaryURL) else {
                                 subscriber.putCompletion()
                                 return
@@ -200,19 +194,36 @@ public final class GRVMArchivedMediaStore {
                             ))
                         }
                     case .complete:
-                        guard let url = self.archiveURL(record: record),
-                              self.fileManager.fileExists(atPath: url.path) else {
-                            updates.append(GRVMArchivedMedia(
-                                accountId: record.accountId,
-                                resourceId: record.resourceId,
-                                relativePath: record.relativePath,
-                                byteCount: record.byteCount,
-                                kind: record.kind,
-                                copyState: .missing
-                            ))
+                        if let url = self.archiveURL(record: record),
+                           let byteCount = self.fileSize(at: url), byteCount > 0 {
                             continue
                         }
-                    case .unavailable, .missing:
+                        let resource = GRVMMediaResourceReference(
+                            id: MediaResourceId(record.resourceId),
+                            kind: record.kind
+                        )
+                        let recovered = self.archiveRecord(record, resource: resource, mediaBox: mediaBox)
+                        if recovered.copyState == .complete {
+                            updates.append(recovered)
+                        } else {
+                            updates.append(self.terminalRecord(
+                                record,
+                                resource: resource,
+                                relativePath: self.resourceLocation(accountId: record.accountId, id: resource.id).relativePath,
+                                byteCount: 0,
+                                copyState: .missing
+                            ))
+                        }
+                    case .missing:
+                        let resource = GRVMMediaResourceReference(
+                            id: MediaResourceId(record.resourceId),
+                            kind: record.kind
+                        )
+                        let recovered = self.archiveRecord(record, resource: resource, mediaBox: mediaBox)
+                        if recovered.copyState == .complete {
+                            updates.append(recovered)
+                        }
+                    case .unavailable:
                         break
                     }
                 }
@@ -241,6 +252,15 @@ public final class GRVMArchivedMediaStore {
         mediaBox: MediaBox
     ) -> GRVMArchivedMedia {
         let location = self.resourceLocation(accountId: record.accountId, id: resource.id)
+        if let archivedByteCount = self.fileSize(at: location.url), archivedByteCount > 0 {
+            return self.terminalRecord(
+                record,
+                resource: resource,
+                relativePath: location.relativePath,
+                byteCount: archivedByteCount,
+                copyState: .complete
+            )
+        }
         guard let sourcePath = mediaBox.completedResourcePath(id: resource.id),
               let byteCount = self.fileSize(atPath: sourcePath),
               byteCount > 0 else {
@@ -378,7 +398,8 @@ public final class GRVMArchivedMediaStore {
             relativePath: relativePath,
             byteCount: byteCount,
             kind: resource.kind,
-            copyState: copyState
+            copyState: copyState,
+            generation: record.generation
         )
     }
 }

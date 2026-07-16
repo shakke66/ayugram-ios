@@ -1,12 +1,18 @@
 import Foundation
 import Postbox
 
+public enum GRVMDeletedMessagesPreservationResult {
+    case disabled
+    case preserved([MessageId: [String]])
+    case unavailable
+}
+
 public final class AyuGramHooks {
     // MARK: - Spy Mode
     public static var onMessagesDeleted: (([Message]) -> Void)?
     public static var shouldSaveDeletedMessages: ((PeerId) -> Bool)?
-    public static var preserveDeletedMessages: ((PeerId, [Message], GRVMDeletionSource) -> [MessageId: [String]])?
-    public static var preserveEditRevision: ((PeerId, Message) -> Bool)?
+    public static var preserveDeletedMessages: ((PeerId, [Message], GRVMDeletionSource) -> GRVMDeletedMessagesPreservationResult)?
+    public static var preserveEditRevision: ((PeerId, Message, GRVMEditableMessageContent) -> Bool)?
     public static var hasEditHistory: ((PeerId, MessageId) -> Bool)?
     public static var shouldPreserveOneTimeMedia: ((PeerId) -> Bool)?
 
@@ -128,21 +134,78 @@ func grvmMergedEditStateAttributes(
     return result
 }
 
-func grvmMessageEditContentMatches(previous: Message, incoming: StoreMessage) -> Bool {
-    guard previous.text == incoming.text else {
+func grvmPreserveEditRevisionIfNeeded(
+    accountPeerId: PeerId,
+    transaction: Transaction,
+    id: MessageId,
+    incoming: StoreMessage
+) -> Bool {
+    guard let previous = transaction.getMessage(id) else {
         return false
     }
-    let previousEntities = previous.textEntitiesAttribute?.entities ?? []
-    let incomingEntities = (incoming.attributes.first(where: {
-        $0 is TextEntitiesMessageAttribute
-    }) as? TextEntitiesMessageAttribute)?.entities ?? []
-    guard previousEntities == incomingEntities, previous.media.count == incoming.media.count else {
+    let previousContent = GRVMEditableMessageContent(message: previous)
+    let incomingContent = GRVMEditableMessageContent(message: grvmMergedEditedMessage(
+        previous: previous,
+        incoming: incoming,
+        markHistory: false
+    ))
+    guard previousContent != incomingContent else {
         return false
     }
-    for (previousMedia, incomingMedia) in zip(previous.media, incoming.media) {
-        if !previousMedia.isEqual(to: incomingMedia) {
-            return false
-        }
+    return AyuGramHooks.preserveEditRevision?(accountPeerId, previous, previousContent) == true
+}
+
+func grvmMergedEditedMessage(
+    previous: Message,
+    incoming: StoreMessage,
+    markHistory: Bool
+) -> StoreMessage {
+    var updatedFlags = incoming.flags
+    var updatedLocalTags = incoming.localTags
+    if previous.localTags.contains(.OutgoingLiveLocation) {
+        updatedLocalTags.insert(.OutgoingLiveLocation)
     }
-    return true
+    if previous.flags.contains(.Incoming) {
+        updatedFlags.insert(.Incoming)
+    } else {
+        updatedFlags.remove(.Incoming)
+    }
+
+    var updatedMedia = incoming.media
+    if let previousPaidContent = previous.media.first(where: { $0 is TelegramMediaPaidContent })
+        as? TelegramMediaPaidContent,
+       case .full = previousPaidContent.extendedMedia.first {
+        updatedMedia = previous.media
+    }
+
+    return incoming
+        .withUpdatedLocalTags(updatedLocalTags)
+        .withUpdatedFlags(updatedFlags)
+        .withUpdatedAttributes(grvmMergedEditStateAttributes(
+            previous: previous.attributes,
+            incoming: incoming.attributes,
+            markHistory: markHistory
+        ))
+        .withUpdatedMedia(updatedMedia)
+}
+
+func grvmApplyEditedMessage(
+    accountPeerId: PeerId,
+    transaction: Transaction,
+    id: MessageId,
+    message: StoreMessage
+) {
+    let shouldMarkHistory = grvmPreserveEditRevisionIfNeeded(
+        accountPeerId: accountPeerId,
+        transaction: transaction,
+        id: id,
+        incoming: message
+    )
+    transaction.updateMessage(id, update: { previous in
+        return .update(grvmMergedEditedMessage(
+            previous: previous,
+            incoming: message,
+            markHistory: shouldMarkHistory
+        ))
+    })
 }

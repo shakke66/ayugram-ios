@@ -16,10 +16,9 @@ private struct GRVMHistoryVersion: Equatable {
     let stableId: Int64
     let version: Int32
     let timestamp: Int32
-    let text: String
-    let entitiesData: Data
-    let mediaSummary: String
-    let resourceIds: [String]
+    let content: GRVMEditableMessageContent
+    let legacyMediaSummary: String
+    let legacyResourceIds: [String]
     let isCurrent: Bool
 }
 
@@ -94,52 +93,37 @@ private enum GRVMHistoryEntry: ItemListNodeEntry {
     }
 }
 
-private func grvmHistoryEntities(_ data: Data) -> [MessageTextEntity] {
-    guard !data.isEmpty,
-          let attribute = PostboxDecoder(buffer: MemoryBuffer(data: data)).decodeRootObject()
-            as? TextEntitiesMessageAttribute else {
-        return []
-    }
-    return attribute.entities
-}
-
-private func grvmHistoryEntitiesData(_ message: Message) -> Data {
-    guard let attribute = message.attributes.first(where: { $0 is TextEntitiesMessageAttribute }) else {
-        return Data()
-    }
-    let encoder = PostboxEncoder()
-    encoder.encodeRootObject(attribute)
-    return encoder.makeData()
-}
-
-private func grvmHistoryMediaSummary(_ media: [Media]) -> String {
-    return media.compactMap { item -> String? in
-        if item is TelegramMediaImage {
-            return "photo"
-        } else if let file = item as? TelegramMediaFile {
-            if file.isInstantVideo {
-                return "video message"
-            } else if file.isVideo {
-                return "video"
-            } else if file.isVoice {
-                return "voice message"
-            } else if file.isSticker {
-                return "sticker"
-            } else if file.isMusic {
-                return "audio"
-            } else {
-                return file.fileName ?? "document"
+private func grvmHistoryMediaLabel(_ media: GRVMEditableMediaContent) -> String {
+    switch media {
+    case .todo:
+        return "Todo"
+    case .poll:
+        return "Poll"
+    case .webpage:
+        return "Link preview"
+    case let .file(file):
+        for attribute in file.attributes {
+            if case let .fileName(name) = attribute {
+                return name
             }
-        } else if item is TelegramMediaContact {
-            return "contact"
-        } else if item is TelegramMediaMap {
-            return "location"
-        } else if item is TelegramMediaPoll {
-            return "poll"
-        } else {
-            return nil
         }
-    }.joined(separator: ", ")
+        return "File"
+    case .image:
+        return "Photo"
+    case let .game(game):
+        return game.title.isEmpty ? "Game" : game.title
+    case .paidContent:
+        return "Paid media"
+    case let .contact(contact):
+        let name = "\(contact.firstName) \(contact.lastName)".trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? "Contact" : name
+    case .map:
+        return "Location"
+    case let .invoice(invoice):
+        return invoice.title.isEmpty ? "Invoice" : invoice.title
+    case let .other(type, _):
+        return type
+    }
 }
 
 private func grvmHistoryAttributedText(
@@ -157,7 +141,7 @@ private func grvmHistoryAttributedText(
         textColor: presentationData.theme.list.itemSecondaryTextColor
     )
 
-    if version.text.isEmpty {
+    if version.content.text.isEmpty {
         result.append(NSAttributedString(
             string: "[empty]",
             font: Font.regular(16.0),
@@ -165,8 +149,8 @@ private func grvmHistoryAttributedText(
         ))
     } else {
         result.append(stringWithAppliedEntities(
-            version.text,
-            entities: grvmHistoryEntities(version.entitiesData),
+            version.content.text,
+            entities: version.content.textEntities,
             baseColor: presentationData.theme.list.itemPrimaryTextColor,
             linkColor: presentationData.theme.list.itemAccentColor,
             baseFont: Font.regular(16.0),
@@ -180,12 +164,12 @@ private func grvmHistoryAttributedText(
         ))
     }
 
-    var mediaParts: [String] = []
-    if !version.mediaSummary.isEmpty {
-        mediaParts.append("Media: \(version.mediaSummary)")
+    var mediaParts = version.content.media.map(grvmHistoryMediaLabel)
+    if mediaParts.isEmpty, !version.legacyMediaSummary.isEmpty {
+        mediaParts.append(version.legacyMediaSummary)
     }
-    if !version.resourceIds.isEmpty {
-        mediaParts.append("Archived resources: \(version.resourceIds.count)")
+    if version.content.media.isEmpty, !version.legacyResourceIds.isEmpty {
+        mediaParts.append("Archived resources: \(version.legacyResourceIds.count)")
     }
     if !mediaParts.isEmpty {
         result.append(NSAttributedString(
@@ -230,22 +214,21 @@ public func grvmMessageHistoryController(
                 stableId: revision.rowId,
                 version: revision.version,
                 timestamp: revision.savedAt,
-                text: revision.text,
-                entitiesData: revision.entitiesData,
-                mediaSummary: revision.mediaSummary,
-                resourceIds: revision.resourceIds,
+                content: revision.editableContent,
+                legacyMediaSummary: revision.mediaSummary,
+                legacyResourceIds: revision.resourceIds,
                 isCurrent: false
             )
         }
         if let currentMessage {
+            let content = GRVMEditableMessageContent(message: currentMessage)
             versions.append(GRVMHistoryVersion(
                 stableId: Int64.max,
                 version: (revisions.map(\.version).max() ?? 0) + 1,
                 timestamp: currentMessage.timestamp,
-                text: currentMessage.text,
-                entitiesData: grvmHistoryEntitiesData(currentMessage),
-                mediaSummary: grvmHistoryMediaSummary(currentMessage.media),
-                resourceIds: grvmMediaResources(currentMessage.media).map(\.id.stringRepresentation),
+                content: content,
+                legacyMediaSummary: "",
+                legacyResourceIds: [],
                 isCurrent: true
             ))
         }

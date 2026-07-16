@@ -1132,13 +1132,23 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }, appDelegate: self, testingEnvironment: isUITest)
 
             let grvmActiveAccounts = sharedContext.activeAccountContexts
-            |> mapToSignal { primary, accounts, _ -> Signal<(AccountContext?, [(AccountRecordId, AccountContext, Int32)]), NoError> in
+            |> mapToSignal { primary, accounts, _ -> Signal<(AccountContext?, [(AccountRecordId, AccountContext, Int32)], [(PeerId, AyuGramSettings)]), NoError> in
                 let accountPeerIds = accounts.map { $0.1.account.peerId }
+                let initialSettings = combineLatest(accounts.map { _, context, _ -> Signal<(PeerId, AyuGramSettings), NoError> in
+                    return grvmSettings(accountId: context.account.peerId, accountManager: accountManager)
+                    |> take(1)
+                    |> map { settings in
+                        return (context.account.peerId, settings)
+                    }
+                })
                 return migrateGRVMSettings(accountIds: accountPeerIds, accountManager: accountManager)
-                |> then(.single((primary, accounts)))
+                |> then(initialSettings
+                |> map { initialSettings in
+                    return (primary, accounts, initialSettings)
+                })
             }
             |> deliverOnMainQueue
-            self.grvmActiveAccountsDisposable.set(grvmActiveAccounts.start(next: { [weak self] primary, accounts in
+            self.grvmActiveAccountsDisposable.set(grvmActiveAccounts.start(next: { [weak self] primary, accounts, initialSettings in
                 guard let self, let registry = self.grvmAccountFeatureRegistry else {
                     return
                 }
@@ -1155,12 +1165,17 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     registry.unregister(accountPeerId: peerId)
                 }
                 registry.setPrimaryAccount(primary?.account.peerId)
+                let initialSettingsByAccount = Dictionary(uniqueKeysWithValues: initialSettings)
                 for (recordId, context, _) in accounts {
+                    guard let initialSettings = initialSettingsByAccount[context.account.peerId] else {
+                        continue
+                    }
                     registry.register(
                         accountPeerId: context.account.peerId,
                         accountRecordId: recordId,
                         postbox: context.account.postbox,
-                        mediaBox: context.account.postbox.mediaBox
+                        mediaBox: context.account.postbox.mediaBox,
+                        initialSettings: initialSettings
                     )
                 }
                 if #available(iOS 10.3, *), let primary {
