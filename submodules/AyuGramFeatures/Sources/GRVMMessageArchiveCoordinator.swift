@@ -6,22 +6,9 @@ import AyuGramLib
 
 private struct GRVMCoordinatorSettingsState {
     let settings: AyuGramSettings
-    let filters: [NSRegularExpression]
-    let reversedFilters: [NSRegularExpression]
 
     init(settings: AyuGramSettings) {
         self.settings = settings
-        if settings.enableFilters {
-            self.filters = settings.messageFilters.compactMap {
-                try? NSRegularExpression(pattern: $0, options: [.caseInsensitive])
-            }
-            self.reversedFilters = settings.reversedFilters.compactMap {
-                try? NSRegularExpression(pattern: $0, options: [.caseInsensitive])
-            }
-        } else {
-            self.filters = []
-            self.reversedFilters = []
-        }
     }
 }
 
@@ -723,40 +710,6 @@ public final class GRVMMessageArchiveCoordinator {
             }
             return EmptyDisposable
         }
-    }
-
-    func isShadowBanned(_ peerId: Int64) -> Bool {
-        let state = self.settingsState.with { $0 }
-        return state.settings.enableFilters && state.settings.shadowBanIds.contains(peerId)
-    }
-
-    func isMessageHiddenByFilter(peerId: Int64, text: String) -> Bool {
-        let state = self.settingsState.with { $0 }
-        guard state.settings.enableFilters else {
-            return false
-        }
-        if state.settings.shadowBanIds.contains(peerId) {
-            return true
-        }
-        let isChannel = PeerId(peerId).namespace == Namespaces.Peer.CloudChannel
-        if !isChannel && !state.settings.enableFiltersInChats {
-            return false
-        }
-        let range = NSRange(text.startIndex..., in: text)
-        if !text.isEmpty && state.filters.contains(where: {
-            $0.firstMatch(in: text, options: [], range: range) != nil
-        }) {
-            return true
-        }
-        if !state.reversedFilters.isEmpty {
-            if text.isEmpty {
-                return true
-            }
-            return !state.reversedFilters.contains(where: {
-                $0.firstMatch(in: text, options: [], range: range) != nil
-            })
-        }
-        return false
     }
 
     private func restore(_ records: [GRVMArchivedMedia]) {

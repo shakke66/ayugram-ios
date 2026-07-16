@@ -738,7 +738,7 @@ private func synchronizeMessageStarsReactions(transaction: Transaction, postbox:
 }
 
 public extension EngineMessageReactionListContext.State {
-    init(message: EngineMessage, readStats: MessageReadStats?, reaction: MessageReaction.Reaction?) {
+    init(accountPeerId: PeerId, message: EngineMessage, readStats: MessageReadStats?, reaction: MessageReaction.Reaction?) {
         var totalCount = 0
         var hasOutgoingReaction = false
         var items: [EngineMessageReactionListContext.Item] = []
@@ -759,14 +759,16 @@ public extension EngineMessageReactionListContext.State {
                 }
             }
         }
+        let canLoadMore = items.count != totalCount && totalCount != 0
         if items.count != totalCount {
             items.removeAll()
         }
+        items.removeAll(where: { AyuGramHooks.isShadowBanned?(accountPeerId, $0.peer.id) == true })
         self.init(
             hasOutgoingReaction: hasOutgoingReaction,
             totalCount: totalCount,
             items: items,
-            canLoadMore: items.count != totalCount && totalCount != 0
+            canLoadMore: canLoadMore
         )
     }
 }
@@ -854,7 +856,7 @@ public final class EngineMessageReactionListContext {
             self.message = message
             self.reaction = reaction
             
-            let initialState = EngineMessageReactionListContext.State(message: message, readStats: readStats, reaction: reaction)
+            let initialState = EngineMessageReactionListContext.State(accountPeerId: account.peerId, message: message, readStats: readStats, reaction: reaction)
             self.state = InternalState(hasOutgoingReaction: initialState.hasOutgoingReaction, totalCount: initialState.totalCount, items: initialState.items, canLoadMore: initialState.canLoadMore, nextOffset: nil)
             
             if initialState.canLoadMore {
@@ -918,7 +920,9 @@ public final class EngineMessageReactionListContext {
                                 switch reaction {
                                 case let .messagePeerReaction(messagePeerReactionData):
                                     let (peer, date, reaction) = (messagePeerReactionData.peerId, messagePeerReactionData.date, messagePeerReactionData.reaction)
-                                    if let peer = transaction.getPeer(peer.peerId), let reaction = MessageReaction.Reaction(apiReaction: reaction) {
+                                    if let peer = transaction.getPeer(peer.peerId),
+                                       AyuGramHooks.isShadowBanned?(accountPeerId, peer.id) != true,
+                                       let reaction = MessageReaction.Reaction(apiReaction: reaction) {
                                         items.append(EngineMessageReactionListContext.Item(peer: EnginePeer(peer), reaction: reaction, timestamp: date, timestampIsReaction: true))
                                     }
                                 }
@@ -955,11 +959,7 @@ public final class EngineMessageReactionListContext {
                     existingItems.insert(itemHash)
                     strongSelf.state.items.append(item)
                 }
-                if state.canLoadMore {
-                    strongSelf.state.totalCount = max(state.totalCount, strongSelf.state.items.count)
-                } else {
-                    strongSelf.state.totalCount = strongSelf.state.items.count
-                }
+                strongSelf.state.totalCount = max(strongSelf.state.totalCount, state.totalCount)
                 strongSelf.state.canLoadMore = state.canLoadMore
                 strongSelf.state.nextOffset = state.nextOffset
                 

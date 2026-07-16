@@ -2157,7 +2157,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                         if let stats, !stats.readTimestamps.isEmpty {
                             displayReadTimestamps = true
                         }
-                        let tempState = EngineMessageReactionListContext.State(message: EngineMessage(message), readStats: stats, reaction: nil)
+                        let tempState = EngineMessageReactionListContext.State(accountPeerId: context.account.peerId, message: EngineMessage(message), readStats: stats, reaction: nil)
                         var allItemsHaveTimestamp = true
                         for item in tempState.items {
                             if item.timestamp == nil {

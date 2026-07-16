@@ -1178,6 +1178,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                         initialSettings: initialSettings
                     )
                 }
+                self.ayuGramFeatureManager?.updateActiveAccounts(accounts.map { $0.1.account })
                 if #available(iOS 10.3, *), let primary {
                     self.grvmAppIconDisposable.set((grvmSettings(accountId: primary.account.peerId, accountManager: accountManager)
                     |> take(1)

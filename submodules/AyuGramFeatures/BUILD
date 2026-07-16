@@ -16,6 +16,7 @@ swift_library(
         "//submodules/TelegramUIPreferences:TelegramUIPreferences",
         "//submodules/AccountContext:AccountContext",
         "//submodules/AyuGramLib:AyuGramLib",
+        "//submodules/Emoji:Emoji",
     ],
     visibility = [
         "//visibility:public",

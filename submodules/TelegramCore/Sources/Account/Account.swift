@@ -1621,7 +1621,13 @@ public class Account {
     public func peerInputActivities(peerId: PeerActivitySpace) -> Signal<[(PeerId, PeerInputActivity)], NoError> {
         return self.peerInputActivityManager.activities(peerId: peerId)
         |> map { activities in
-            return activities.map({ ($0.0, $0.1.activity) })
+            return activities.compactMap { entry in
+                let peerId = entry.0
+                if AyuGramHooks.isShadowBanned?(self.peerId, peerId) == true {
+                    return nil
+                }
+                return (peerId, entry.1.activity)
+            }
         }
     }
     
@@ -1630,7 +1636,13 @@ public class Account {
         |> map { activities in
             var result: [PeerActivitySpace: [(PeerId, PeerInputActivity)]] = [:]
             for (chatPeerId, chatActivities) in activities {
-                result[chatPeerId] = chatActivities.map { ($0.0, $0.1.activity) }
+                result[chatPeerId] = chatActivities.compactMap { entry in
+                    let peerId = entry.0
+                    if AyuGramHooks.isShadowBanned?(self.peerId, peerId) == true {
+                        return nil
+                    }
+                    return (peerId, entry.1.activity)
+                }
             }
             return result
         }

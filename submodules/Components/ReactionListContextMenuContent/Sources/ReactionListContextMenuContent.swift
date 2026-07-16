@@ -818,7 +818,7 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
             self.openPeer = openPeer
             
             self.listContext = context.engine.messages.messageReactionList(message: message, readStats: readStats, reaction: reaction)
-            self.state = ItemsState(listState: EngineMessageReactionListContext.State(message: message, readStats: readStats, reaction: reaction), readStats: readStats)
+            self.state = ItemsState(listState: EngineMessageReactionListContext.State(accountPeerId: context.account.peerId, message: message, readStats: readStats, reaction: reaction), readStats: readStats)
             
             self.scrollNode = ASScrollNode()
             self.scrollNode.canCancelAllTouchesInViews = true

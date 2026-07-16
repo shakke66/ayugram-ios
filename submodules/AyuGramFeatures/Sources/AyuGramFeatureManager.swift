@@ -3,8 +3,19 @@ import SwiftSignalKit
 import TelegramCore
 import AyuGramLib
 
+private struct FilterRuntimeState {
+    var engines: [PeerId: GRVMMessageFilterEngine] = [:]
+    var blockedPeerIds: [PeerId: Set<PeerId>] = [:]
+}
+
 public final class AyuGramFeatureManager {
     public let registry: GRVMAccountFeatureRegistry
+
+    private let filterRuntimeState = Atomic<FilterRuntimeState>(value: FilterRuntimeState())
+    private let filteredMessageVisibility = GRVMFilteredMessageVisibility()
+    private lazy var blockedPeersRegistry = GRVMBlockedPeersRegistry(updated: { [weak self] accountPeerId, peerIds in
+        self?.updateBlockedPeerIds(accountPeerId: accountPeerId, peerIds: peerIds)
+    })
 
     private var currentSettings: AyuGramSettings {
         return self.registry.primaryService()?.settingsSnapshot() ?? .defaultSettings
@@ -16,6 +27,74 @@ public final class AyuGramFeatureManager {
 
     public init(registry: GRVMAccountFeatureRegistry) {
         self.registry = registry
+    }
+
+    public func updateActiveAccounts(_ accounts: [Account]) {
+        assert(Queue.mainQueue().isCurrent())
+        let activeAccountPeerIds = Set(accounts.map(\.peerId))
+        self.filteredMessageVisibility.retainAccounts(activeAccountPeerIds)
+        _ = self.filterRuntimeState.modify { state in
+            var state = state
+            state.engines = state.engines.filter { activeAccountPeerIds.contains($0.key) }
+            state.blockedPeerIds = state.blockedPeerIds.filter { activeAccountPeerIds.contains($0.key) }
+            return state
+        }
+        self.blockedPeersRegistry.updateAccounts(accounts)
+    }
+
+    private func updateBlockedPeerIds(accountPeerId: PeerId, peerIds: Set<PeerId>) {
+        guard let settings = self.registry.service(accountPeerId: accountPeerId)?.settingsSnapshot() else {
+            _ = self.filterRuntimeState.modify { state in
+                var state = state
+                state.engines.removeValue(forKey: accountPeerId)
+                state.blockedPeerIds.removeValue(forKey: accountPeerId)
+                return state
+            }
+            return
+        }
+        _ = self.filterRuntimeState.modify { state in
+            var state = state
+            if state.blockedPeerIds[accountPeerId] == peerIds,
+               let engine = state.engines[accountPeerId],
+               engine.settings == settings {
+                return state
+            }
+            state.blockedPeerIds[accountPeerId] = peerIds
+            state.engines[accountPeerId] = GRVMMessageFilterEngine(
+                accountPeerId: accountPeerId,
+                settings: settings,
+                blockedPeerIds: peerIds
+            )
+            return state
+        }
+    }
+
+    private func filterEngine(accountPeerId: PeerId) -> GRVMMessageFilterEngine? {
+        guard let settings = self.registry.service(accountPeerId: accountPeerId)?.settingsSnapshot() else {
+            _ = self.filterRuntimeState.modify { state in
+                var state = state
+                state.engines.removeValue(forKey: accountPeerId)
+                state.blockedPeerIds.removeValue(forKey: accountPeerId)
+                return state
+            }
+            return nil
+        }
+        let state = self.filterRuntimeState.modify { state in
+            var state = state
+            let blockedPeerIds = state.blockedPeerIds[accountPeerId] ?? []
+            if let engine = state.engines[accountPeerId],
+               engine.settings == settings,
+               engine.blockedPeerIds == blockedPeerIds {
+                return state
+            }
+            state.engines[accountPeerId] = GRVMMessageFilterEngine(
+                accountPeerId: accountPeerId,
+                settings: settings,
+                blockedPeerIds: blockedPeerIds
+            )
+            return state
+        }
+        return state.engines[accountPeerId]
     }
 
     public func wireHooks() {
@@ -268,15 +347,42 @@ public final class AyuGramFeatureManager {
 
         // MARK: - Filters (W4)
         AyuGramHooks.isShadowBanned = { [weak self] accountPeerId, peerId in
-            return self?.registry.service(accountPeerId: accountPeerId)?.isShadowBanned(
-                peerId.toInt64()
-            ) ?? false
+            return self?.filterEngine(accountPeerId: accountPeerId)?.isShadowBanned(peerId) ?? false
         }
         AyuGramHooks.isMessageHiddenByFilter = { [weak self] accountPeerId, message in
-            return self?.registry.service(accountPeerId: accountPeerId)?.isMessageHiddenByFilter(
-                peerId: message.id.peerId.toInt64(),
-                text: message.text
-            ) ?? false
+            guard let self,
+                  let engine = self.filterEngine(accountPeerId: accountPeerId),
+                  !self.filteredMessageVisibility.isShowing(
+                    accountPeerId: accountPeerId,
+                    chatPeerId: message.id.peerId
+                  ) else {
+                return false
+            }
+            return engine.isMessageHidden(message)
+        }
+        AyuGramHooks.matchingMessageFilterIds = { [weak self] accountPeerId, message in
+            return self?.filterEngine(accountPeerId: accountPeerId)?.matchingFilterIds(for: message) ?? []
+        }
+        AyuGramHooks.isShowingFilteredMessages = { [weak self] accountPeerId, chatPeerId in
+            guard let self,
+                  self.registry.service(accountPeerId: accountPeerId) != nil else {
+                return false
+            }
+            return self.filteredMessageVisibility.isShowing(
+                accountPeerId: accountPeerId,
+                chatPeerId: chatPeerId
+            )
+        }
+        AyuGramHooks.setShowingFilteredMessages = { [weak self] accountPeerId, chatPeerId, value in
+            guard let self,
+                  self.registry.service(accountPeerId: accountPeerId) != nil else {
+                return
+            }
+            self.filteredMessageVisibility.setShowing(
+                accountPeerId: accountPeerId,
+                chatPeerId: chatPeerId,
+                value: value
+            )
         }
     }
 }

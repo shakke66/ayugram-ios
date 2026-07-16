@@ -148,7 +148,8 @@ func chatHistoryEntriesForView(
             continue
         }
 
-        if AyuGramHooks.isMessageHiddenByFilter?(context.account.peerId, message) == true {
+        if AyuGramHooks.isShowingFilteredMessages?(context.account.peerId, message.id.peerId) != true
+            && AyuGramHooks.isMessageHiddenByFilter?(context.account.peerId, message) == true {
             continue loop
         }
 
