@@ -88,6 +88,10 @@ public final class AyuGramFeatureManager {
             guard let settings = self?.settings(accountPeerId: accountPeerId) else { return false }
             return settings.ghostModeEnabled && settings.suppressReadReceipts
         }
+        AyuGramHooks.shouldForceOfflineAfterOnline = { [weak self] accountPeerId in
+            guard let settings = self?.settings(accountPeerId: accountPeerId) else { return false }
+            return settings.ghostModeEnabled && settings.goOfflineAfterOnline
+        }
 
         // MARK: - Premium & Ads
         AyuGramHooks.isLocalPremiumEnabled = { [weak self] peerId in

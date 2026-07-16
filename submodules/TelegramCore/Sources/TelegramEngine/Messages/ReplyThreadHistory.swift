@@ -332,6 +332,7 @@ private class ReplyThreadHistoryContextImpl {
         self.maxReadIncomingMessageIdValue = messageIndex.id
 
         let account = self.account
+        let shouldSuppressReadReceipts = AyuGramHooks.shouldSuppressReadReceipts?(self.account.peerId) == true
         
         let _ = (self.account.postbox.transaction { transaction -> (Api.InputPeer?, Api.InputPeer?, MessageId?, Int?) in
             guard let peer = transaction.getPeer(peerId) else {
@@ -456,6 +457,10 @@ private class ReplyThreadHistoryContextImpl {
                         revalidate = true
                     }
                 }
+            }
+
+            if shouldSuppressReadReceipts {
+                return
             }
 
             if let subPeerId {

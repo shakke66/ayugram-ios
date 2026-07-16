@@ -11,14 +11,19 @@ import PresentationDataUtils
 import AccountContext
 import AyuGramLib
 
+private func grvmLocalizedString(_ key: String, fallback: String) -> String {
+    return Bundle.main.localizedString(forKey: key, value: fallback, table: nil)
+}
+
 private final class AyuGramCoreArguments {
     let context: AccountContext
     let toggleGhostMode: (Bool) -> Void
     let toggleSuppressReadReceipts: (Bool) -> Void
     let toggleSuppressStoryReads: (Bool) -> Void
     let toggleSuppressOnlineStatus: (Bool) -> Void
-    let toggleSuppressTypingStatus: (Bool) -> Void
-    let toggleSuppressUploadProgress: (Bool) -> Void
+    let toggleSuppressTypingAndUploads: (Bool) -> Void
+    let toggleGoOfflineAfterOnline: (Bool) -> Void
+    let openGhostLockedComponents: () -> Void
     let toggleReadOnAction: (Bool) -> Void
     let toggleUseScheduledMessages: (Bool) -> Void
     let toggleSendWithoutSound: (Bool) -> Void
@@ -35,8 +40,9 @@ private final class AyuGramCoreArguments {
         toggleSuppressReadReceipts: @escaping (Bool) -> Void,
         toggleSuppressStoryReads: @escaping (Bool) -> Void,
         toggleSuppressOnlineStatus: @escaping (Bool) -> Void,
-        toggleSuppressTypingStatus: @escaping (Bool) -> Void,
-        toggleSuppressUploadProgress: @escaping (Bool) -> Void,
+        toggleSuppressTypingAndUploads: @escaping (Bool) -> Void,
+        toggleGoOfflineAfterOnline: @escaping (Bool) -> Void,
+        openGhostLockedComponents: @escaping () -> Void,
         toggleReadOnAction: @escaping (Bool) -> Void,
         toggleUseScheduledMessages: @escaping (Bool) -> Void,
         toggleSendWithoutSound: @escaping (Bool) -> Void,
@@ -52,8 +58,9 @@ private final class AyuGramCoreArguments {
         self.toggleSuppressReadReceipts = toggleSuppressReadReceipts
         self.toggleSuppressStoryReads = toggleSuppressStoryReads
         self.toggleSuppressOnlineStatus = toggleSuppressOnlineStatus
-        self.toggleSuppressTypingStatus = toggleSuppressTypingStatus
-        self.toggleSuppressUploadProgress = toggleSuppressUploadProgress
+        self.toggleSuppressTypingAndUploads = toggleSuppressTypingAndUploads
+        self.toggleGoOfflineAfterOnline = toggleGoOfflineAfterOnline
+        self.openGhostLockedComponents = openGhostLockedComponents
         self.toggleReadOnAction = toggleReadOnAction
         self.toggleUseScheduledMessages = toggleUseScheduledMessages
         self.toggleSendWithoutSound = toggleSendWithoutSound
@@ -80,8 +87,9 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
     case ghostComponentReadReceipts(PresentationTheme, Bool)
     case ghostComponentStoryReads(PresentationTheme, Bool)
     case ghostComponentOnlineStatus(PresentationTheme, Bool)
-    case ghostComponentTypingStatus(PresentationTheme, Bool)
-    case ghostComponentUploadProgress(PresentationTheme, Bool)
+    case ghostComponentTypingAndUploads(PresentationTheme, Bool)
+    case ghostComponentGoOfflineAfterOnline(PresentationTheme, Bool)
+    case ghostLockedComponents(PresentationTheme, String)
     case readOnAction(PresentationTheme, Bool)
     case readOnActionInfo(PresentationTheme)
     case suggestGhostForStories(PresentationTheme, Bool)
@@ -100,7 +108,7 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
 
     var section: ItemListSectionId {
         switch self {
-        case .ghostModeHeader, .ghostModeToggle, .ghostComponentReadReceipts, .ghostComponentStoryReads, .ghostComponentOnlineStatus, .ghostComponentTypingStatus, .ghostComponentUploadProgress, .readOnAction, .readOnActionInfo, .suggestGhostForStories, .suggestGhostForStoriesInfo:
+        case .ghostModeHeader, .ghostModeToggle, .ghostComponentReadReceipts, .ghostComponentStoryReads, .ghostComponentOnlineStatus, .ghostComponentTypingAndUploads, .ghostComponentGoOfflineAfterOnline, .ghostLockedComponents, .readOnAction, .readOnActionInfo, .suggestGhostForStories, .suggestGhostForStoriesInfo:
             return AyuGramCoreSection.ghostMode.rawValue
         case .useScheduledMessages, .useScheduledMessagesInfo, .sendWithoutSound, .sendWithoutSoundInfo:
             return AyuGramCoreSection.sending.rawValue
@@ -118,23 +126,24 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
         case .ghostComponentReadReceipts: return 2
         case .ghostComponentStoryReads: return 3
         case .ghostComponentOnlineStatus: return 4
-        case .ghostComponentTypingStatus: return 5
-        case .ghostComponentUploadProgress: return 6
-        case .readOnAction: return 7
-        case .readOnActionInfo: return 8
-        case .suggestGhostForStories: return 9
-        case .suggestGhostForStoriesInfo: return 10
-        case .useScheduledMessages: return 11
-        case .useScheduledMessagesInfo: return 12
-        case .sendWithoutSound: return 13
-        case .sendWithoutSoundInfo: return 14
-        case .spyModeHeader: return 15
-        case .saveDeletedMessages: return 16
-        case .saveEditHistory: return 17
-        case .saveForBots: return 18
-        case .otherHeader: return 19
-        case .localPremium: return 20
-        case .disableAds: return 21
+        case .ghostComponentTypingAndUploads: return 5
+        case .ghostComponentGoOfflineAfterOnline: return 6
+        case .ghostLockedComponents: return 7
+        case .readOnAction: return 8
+        case .readOnActionInfo: return 9
+        case .suggestGhostForStories: return 10
+        case .suggestGhostForStoriesInfo: return 11
+        case .useScheduledMessages: return 12
+        case .useScheduledMessagesInfo: return 13
+        case .sendWithoutSound: return 14
+        case .sendWithoutSoundInfo: return 15
+        case .spyModeHeader: return 16
+        case .saveDeletedMessages: return 17
+        case .saveEditHistory: return 18
+        case .saveForBots: return 19
+        case .otherHeader: return 20
+        case .localPremium: return 21
+        case .disableAds: return 22
         }
     }
 
@@ -148,9 +157,11 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
             return lhsValue == rhsValue
         case let (.ghostComponentOnlineStatus(_, lhsValue), .ghostComponentOnlineStatus(_, rhsValue)):
             return lhsValue == rhsValue
-        case let (.ghostComponentTypingStatus(_, lhsValue), .ghostComponentTypingStatus(_, rhsValue)):
+        case let (.ghostComponentTypingAndUploads(_, lhsValue), .ghostComponentTypingAndUploads(_, rhsValue)):
             return lhsValue == rhsValue
-        case let (.ghostComponentUploadProgress(_, lhsValue), .ghostComponentUploadProgress(_, rhsValue)):
+        case let (.ghostComponentGoOfflineAfterOnline(_, lhsValue), .ghostComponentGoOfflineAfterOnline(_, rhsValue)):
+            return lhsValue == rhsValue
+        case let (.ghostLockedComponents(_, lhsValue), .ghostLockedComponents(_, rhsValue)):
             return lhsValue == rhsValue
         case let (.suggestGhostForStories(_, lhsValue), .suggestGhostForStories(_, rhsValue)):
             return lhsValue == rhsValue
@@ -200,13 +211,17 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
             return ItemListSwitchItem(presentationData: presentationData, title: "Don't Send Online Status", value: value, sectionId: self.section, style: .blocks, updated: { value in
                 arguments.toggleSuppressOnlineStatus(value)
             })
-        case let .ghostComponentTypingStatus(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Don't Send Typing Status", value: value, sectionId: self.section, style: .blocks, updated: { value in
-                arguments.toggleSuppressTypingStatus(value)
+        case let .ghostComponentTypingAndUploads(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Don't Send Typing or Upload Status", value: value, sectionId: self.section, style: .blocks, updated: { value in
+                arguments.toggleSuppressTypingAndUploads(value)
             })
-        case let .ghostComponentUploadProgress(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Don't Send Upload Progress", value: value, sectionId: self.section, style: .blocks, updated: { value in
-                arguments.toggleSuppressUploadProgress(value)
+        case let .ghostComponentGoOfflineAfterOnline(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Go Offline After Going Online", value: value, sectionId: self.section, style: .blocks, updated: { value in
+                arguments.toggleGoOfflineAfterOnline(value)
+            })
+        case let .ghostLockedComponents(_, value):
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: grvmLocalizedString("GRVMgram.Ghost.LockedComponents", fallback: "Locked Components"), label: value, sectionId: self.section, style: .blocks, action: {
+                arguments.openGhostLockedComponents()
             })
         case let .readOnAction(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Mark Read on Action", value: value, sectionId: self.section, style: .blocks, updated: { value in
@@ -269,8 +284,9 @@ private func ayuGramCoreEntries(settings: AyuGramSettings, presentationData: Pre
     entries.append(.ghostComponentReadReceipts(presentationData.theme, settings.suppressReadReceipts))
     entries.append(.ghostComponentStoryReads(presentationData.theme, settings.suppressStoryReads))
     entries.append(.ghostComponentOnlineStatus(presentationData.theme, settings.suppressOnlineStatus))
-    entries.append(.ghostComponentTypingStatus(presentationData.theme, settings.suppressTypingStatus))
-    entries.append(.ghostComponentUploadProgress(presentationData.theme, settings.suppressUploadProgress))
+    entries.append(.ghostComponentTypingAndUploads(presentationData.theme, settings.suppressTypingStatus || settings.suppressUploadProgress))
+    entries.append(.ghostComponentGoOfflineAfterOnline(presentationData.theme, settings.goOfflineAfterOnline))
+    entries.append(.ghostLockedComponents(presentationData.theme, "\(settings.ghostLockedComponents.count)/5"))
     entries.append(.readOnAction(presentationData.theme, settings.readOnAction))
     entries.append(.readOnActionInfo(presentationData.theme))
     entries.append(.suggestGhostForStories(presentationData.theme, settings.suggestGhostForStories))
@@ -294,12 +310,14 @@ private func ayuGramCoreEntries(settings: AyuGramSettings, presentationData: Pre
 }
 
 public func ayuGramCoreController(context: AccountContext) -> ViewController {
+    var pushControllerImpl: ((ViewController) -> Void)?
+
     let arguments = AyuGramCoreArguments(
         context: context,
         toggleGhostMode: { value in
             let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
-                settings.setGhostMode(value)
+                settings.setGhostModeEnabled(value)
                 return settings
             }).startStandalone()
         },
@@ -324,19 +342,23 @@ public func ayuGramCoreController(context: AccountContext) -> ViewController {
                 return settings
             }).startStandalone()
         },
-        toggleSuppressTypingStatus: { value in
+        toggleSuppressTypingAndUploads: { value in
             let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.suppressTypingStatus = value
-                return settings
-            }).startStandalone()
-        },
-        toggleSuppressUploadProgress: { value in
-            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
-                var settings = settings
                 settings.suppressUploadProgress = value
                 return settings
             }).startStandalone()
+        },
+        toggleGoOfflineAfterOnline: { value in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
+                var settings = settings
+                settings.goOfflineAfterOnline = value
+                return settings
+            }).startStandalone()
+        },
+        openGhostLockedComponents: {
+            pushControllerImpl?(ayuGramGhostLockedComponentsController(context: context))
         },
         toggleReadOnAction: { value in
             let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
@@ -425,5 +447,104 @@ public func ayuGramCoreController(context: AccountContext) -> ViewController {
     }
 
     let controller = ItemListController(context: context, state: signal)
+    pushControllerImpl = { [weak controller] childController in
+        controller?.push(childController)
+    }
     return controller
+}
+
+private final class AyuGramGhostLockedComponentsArguments {
+    let toggleLock: (GRVMGhostComponent, Bool) -> Void
+
+    init(toggleLock: @escaping (GRVMGhostComponent, Bool) -> Void) {
+        self.toggleLock = toggleLock
+    }
+}
+
+private enum AyuGramGhostLockedComponentsEntry: ItemListNodeEntry {
+    case component(PresentationTheme, Int32, GRVMGhostComponent, String, Bool)
+
+    var section: ItemListSectionId {
+        return 0
+    }
+
+    var stableId: Int32 {
+        switch self {
+        case let .component(_, stableId, _, _, _):
+            return stableId
+        }
+    }
+
+    static func ==(lhs: AyuGramGhostLockedComponentsEntry, rhs: AyuGramGhostLockedComponentsEntry) -> Bool {
+        switch (lhs, rhs) {
+        case let (.component(_, lhsId, _, lhsTitle, lhsValue), .component(_, rhsId, _, rhsTitle, rhsValue)):
+            return lhsId == rhsId && lhsTitle == rhsTitle && lhsValue == rhsValue
+        }
+    }
+
+    static func <(lhs: AyuGramGhostLockedComponentsEntry, rhs: AyuGramGhostLockedComponentsEntry) -> Bool {
+        return lhs.stableId < rhs.stableId
+    }
+
+    func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
+        let arguments = arguments as! AyuGramGhostLockedComponentsArguments
+        switch self {
+        case let .component(_, _, component, title, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: title, value: value, sectionId: self.section, style: .blocks, updated: { value in
+                arguments.toggleLock(component, value)
+            })
+        }
+    }
+}
+
+private func ayuGramGhostLockedComponentsController(context: AccountContext) -> ViewController {
+    let components: [(component: GRVMGhostComponent, title: String)] = [
+        (.readReceipts, "Read Receipts"),
+        (.storyReads, "Story Views"),
+        (.onlineStatus, "Online Status"),
+        (.typingAndUploads, "Typing and Upload Status"),
+        (.goOfflineAfterOnline, "Go Offline After Going Online")
+    ]
+    let arguments = AyuGramGhostLockedComponentsArguments(toggleLock: { component, value in
+        let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
+            var settings = settings
+            if value {
+                settings.ghostLockedComponents.insert(component)
+            } else {
+                settings.ghostLockedComponents.remove(component)
+            }
+            return settings
+        }).startStandalone()
+    })
+
+    let signal = combineLatest(
+        context.sharedContext.presentationData,
+        grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager)
+    )
+    |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let entries: [AyuGramGhostLockedComponentsEntry] = components.enumerated().map { index, item in
+            return .component(
+                presentationData.theme,
+                Int32(index),
+                item.component,
+                item.title,
+                settings.ghostLockedComponents.contains(item.component)
+            )
+        }
+        let controllerState = ItemListControllerState(
+            presentationData: ItemListPresentationData(presentationData),
+            title: .text(grvmLocalizedString("GRVMgram.Ghost.LockedComponents", fallback: "Locked Components")),
+            leftNavigationButton: nil,
+            rightNavigationButton: nil,
+            backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)
+        )
+        let listState = ItemListNodeState(
+            presentationData: ItemListPresentationData(presentationData),
+            entries: entries,
+            style: .blocks
+        )
+        return (controllerState, (listState, arguments))
+    }
+
+    return ItemListController(context: context, state: signal)
 }

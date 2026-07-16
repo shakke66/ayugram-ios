@@ -16,6 +16,7 @@ private final class AccountPresenceManagerImpl {
     private var shouldKeepOnlinePresenceDisposable: Disposable?
     private let currentRequestDisposable = MetaDisposable()
     private var onlineTimer: SignalKitTimer?
+    private var presenceUpdateId: Int = 0
     
     private var wasOnline: Bool = false
     
@@ -65,16 +66,30 @@ private final class AccountPresenceManagerImpl {
             self.onlineTimer = nil
             request = self.network.request(Api.functions.account.updateStatus(offline: .boolTrue))
         }
+
+        self.presenceUpdateId &+= 1
+        let requestId = self.presenceUpdateId
         self.isPerformingUpdate.set(true)
         self.currentRequestDisposable.set((request
-        |> `catch` { _ -> Signal<Api.Bool, NoError> in
-            return .single(.boolFalse)
+        |> ignoreValues
+        |> then(Signal<Bool, MTRpcError>.single(true))
+        |> `catch` { _ -> Signal<Bool, NoError> in
+            return .single(false)
         }
-        |> deliverOn(self.queue)).start(completed: { [weak self] in
-            guard let strongSelf = self else {
+        |> deliverOn(self.queue)).start(next: { [weak self] requestSucceeded in
+            guard let self = self else {
                 return
             }
-            strongSelf.isPerformingUpdate.set(false)
+            guard requestId == self.presenceUpdateId else {
+                return
+            }
+            if isOnline && requestSucceeded && AyuGramHooks.shouldForceOfflineAfterOnline?(self.accountPeerId) == true {
+                self.onlineTimer?.invalidate()
+                self.onlineTimer = nil
+                self.updatePresence(false)
+            } else {
+                self.isPerformingUpdate.set(false)
+            }
         }))
     }
 }
