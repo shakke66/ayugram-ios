@@ -31,6 +31,8 @@
         |
 03 message lifecycle + history + Local Premium
         |
+03a lifecycle remediation review gate
+        |
 04 Ghost + filters + general settings
         |
 05 chat + appearance parity
@@ -45,6 +47,7 @@
 | 1 | `2026-07-15-grvmgram-crash-foundation.md` | Proven read-state recursion fix and local contract |
 | 2 | `2026-07-15-grvmgram-account-storage-media.md` | Account-scoped SQL store, settings, indexes, media backup |
 | 3 | `2026-07-15-grvmgram-message-lifecycle-history.md` | Persistent inline deletes, all edit paths, archive/history UI, Local Premium |
+| 3a | `2026-07-16-grvmgram-message-lifecycle-remediation.md` | Durable cleanup and whole-review lifecycle fixes |
 | 4 | `2026-07-15-grvmgram-ghost-filters-general.md` | Complete Ghost, filters, translation/link/Webview/general parity |
 | 5 | `2026-07-15-grvmgram-chat-appearance-parity.md` | Correct context menus, marks, rendering, channel controls, Message Shot |
 | 6 | `2026-07-15-grvmgram-standalone-features.md` | Remaining applicable Desktop features and removal of unimplemented toggles |
