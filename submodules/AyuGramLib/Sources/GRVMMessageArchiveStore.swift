@@ -593,9 +593,10 @@ public final class GRVMMessageArchiveStore {
                     guard references == Int64(targetedReferences) else {
                         continue
                     }
-                    if let record = try self.media(database, accountId: accountId, resourceId: resourceId) {
-                        mediaRecords.append(record)
+                    guard let record = try self.media(database, accountId: accountId, resourceId: resourceId) else {
+                        throw GRVMArchiveError.sqlite("targeted archived media is missing")
                     }
+                    mediaRecords.append(record)
                 }
                 mediaRecords.sort {
                     $0.accountId == $1.accountId

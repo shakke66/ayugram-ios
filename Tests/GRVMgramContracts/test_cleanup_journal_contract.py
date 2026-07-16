@@ -49,3 +49,23 @@ class CleanupJournalContractTests(unittest.TestCase):
         self.assertNotIn("return nil", reader)
         self.assertIn("result.append(try self.readMedia(statement))", source)
         self.assertIn("return try self.readMedia(statement)", source)
+
+    def test_cleanup_planning_fails_closed_when_targeted_blob_is_missing(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        begin = source[
+            source.index("public func beginDeletedCleanup(") :
+            source.index("public func pendingCleanupJobs(")
+        ]
+        self.assertIn("guard let record = try self.media(", begin)
+        self.assertIn(
+            'throw GRVMArchiveError.sqlite("targeted archived media is missing")',
+            begin,
+        )
+        self.assertNotIn("if let record = try self.media(", begin)
+
+        lookup = source[
+            source.index("private func media(") :
+            source.index("private func readMedia(")
+        ]
+        self.assertIn("throws -> GRVMArchivedMedia?", lookup)
+        self.assertIn("return nil", lookup)
