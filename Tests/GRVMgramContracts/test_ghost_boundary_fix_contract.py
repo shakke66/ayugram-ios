@@ -144,8 +144,9 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
                 "shouldDisableSimilarChannels?(context.account.peerId)",
             ),
             "submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/StoryContainerScreen.swift": (
-                "shouldSuggestGhostForStories?(component.context.account.peerId)",
-                "shouldSuppressStoryRead?(component.context.account.peerId)",
+                "let accountPeerId = component.context.account.peerId",
+                "shouldSuggestGhostForStories?(accountPeerId)",
+                "shouldSuppressStoryRead?(accountPeerId)",
             ),
         }
         for path, tokens in expected.items():
@@ -209,8 +210,11 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
         self.assertNotIn("shouldSendWithoutSound?()", runtime)
 
         core = source("submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift")
-        self.assertIn("settings.sendWithoutSoundOption != 0", core)
-        self.assertIn("settings.sendWithoutSoundOption = value ? 2 : 0", core)
+        for label in ('"Never"', '"InGhost"', '"Always"'):
+            self.assertIn(label, core)
+        self.assertIn("settings.sendWithoutSoundOption = value", core)
+        self.assertIn("ItemListDisclosureItem", swift_block(core, "case let .sendWithoutSoundMode("))
+        self.assertNotIn("toggleSendWithoutSound", core)
         general = source(
             "submodules/AyuGramSettingsUI/Sources/AyuGramGeneralController.swift"
         )
@@ -241,13 +245,10 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
             chat,
             "func transformEnqueueMessages(_ messages:",
         )
-        comparison = re.search(
-            r"silentPosting = .* \|\| sendWithoutSoundMode\s*([!=]=)\s*(-?\d+)",
+        self.assertIn(
+            "sendWithoutSoundMode == 1 || sendWithoutSoundMode == 2",
             send_gate,
         )
-        self.assertIsNotNone(comparison)
-        operator, raw_value = comparison.groups()
-        compared_value = int(raw_value)
 
         switch_body = re.search(
             r"switch\s+settings\.sendWithoutSoundOption\s*\{\s*"
@@ -278,9 +279,7 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
             return default_mode
 
         def gate_is_silent(mode: int) -> bool:
-            if operator == "!=":
-                return mode != compared_value
-            return mode == compared_value
+            return mode == 1 or mode == 2
 
         cases = (
             (0, False, False),

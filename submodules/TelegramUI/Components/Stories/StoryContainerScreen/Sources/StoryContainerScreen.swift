@@ -20,6 +20,8 @@ import TooltipUI
 import ChatEntityKeyboardInputNode
 import notify
 import TelegramNotices
+import PresentationDataUtils
+import AyuGramLib
 
 func hasFirstResponder(_ view: UIView) -> Bool {
     if view.isFirstResponder {
@@ -432,6 +434,11 @@ private final class StoryContainerScreenComponent: Component {
         
         private var previousSeekTime: Double?
         private var initialSeekTimestamp: Double?
+
+        private var didHandleGhostStorySuggestion = false
+        private var isAwaitingGhostStoryChoice = false
+        private let ghostStorySettingsDisposable = MetaDisposable()
+        private var ghostStoryAcknowledgementTimer: SwiftSignalKit.Timer?
         
         private var isUpdating: Bool = false
         
@@ -749,6 +756,8 @@ private final class StoryContainerScreenComponent: Component {
             self.stealthModeDisposable?.dispose()
             self.stealthModeTimer?.invalidate()
             self.displayInteractionGuideDisposable?.dispose()
+            self.ghostStorySettingsDisposable.dispose()
+            self.ghostStoryAcknowledgementTimer?.invalidate()
         }
         
         override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -1079,19 +1088,109 @@ private final class StoryContainerScreenComponent: Component {
                     }
                 })
 
-                if AyuGramHooks.shouldSuggestGhostForStories?(component.context.account.peerId) != false, AyuGramHooks.shouldSuppressStoryRead?(component.context.account.peerId) != true {
-                    let presentationData = component.context.sharedContext.currentPresentationData.with({ $0 })
-                    self.environment?.controller()?.present(UndoOverlayController(
-                        presentationData: presentationData,
-                        content: .info(title: nil, text: "Enable Ghost Mode to view stories privately", timeout: nil, customUndoText: nil),
-                        elevatedLayout: false,
-                        position: .top,
-                        animateInAsReplacement: false,
-                        appearance: UndoOverlayController.Appearance(isBlurred: true),
-                        action: { _ in return false }
-                    ), in: .current)
-                }
             })
+        }
+
+        private func grvmMarkStoryAsSeen(id: StoryId) {
+            guard let component = self.component else {
+                return
+            }
+            if self.didHandleGhostStorySuggestion {
+                guard !self.isAwaitingGhostStoryChoice else {
+                    return
+                }
+                component.content.markAsSeen(id: id)
+                return
+            }
+
+            self.didHandleGhostStorySuggestion = true
+            let accountPeerId = component.context.account.peerId
+            guard AyuGramHooks.shouldSuggestGhostForStories?(accountPeerId) == true,
+                  AyuGramHooks.shouldSuppressStoryRead?(accountPeerId) != true else {
+                component.content.markAsSeen(id: id)
+                return
+            }
+            guard let controller = self.environment?.controller() else {
+                self.didHandleGhostStorySuggestion = false
+                return
+            }
+
+            self.isAwaitingGhostStoryChoice = true
+            controller.present(textAlertController(
+                context: component.context,
+                updatedPresentationData: nil,
+                title: nil,
+                text: "Enable Ghost Mode before marking this story as viewed?",
+                actions: [
+                    TextAlertAction(type: .defaultAction, title: "Enable Ghost Mode", action: { [weak self] in
+                        self?.grvmEnableGhostForStory(id: id)
+                    }),
+                    TextAlertAction(type: .genericAction, title: "View Normally", action: { [weak self] in
+                        self?.grvmFinishStoryGhostChoice(id: id)
+                    })
+                ],
+                dismissOnOutsideTap: false
+            ), in: .window(.root))
+        }
+
+        private func grvmEnableGhostForStory(id: StoryId) {
+            guard let component = self.component else {
+                return
+            }
+            self.ghostStorySettingsDisposable.set((updateGRVMSettings(
+                accountId: component.context.account.peerId,
+                accountManager: component.context.sharedContext.accountManager,
+                { settings in
+                    var settings = settings
+                    settings.ghostModeEnabled = true
+                    settings.suppressStoryReads = true
+                    return settings
+                }
+            )
+            |> deliverOnMainQueue).startStandalone(completed: { [weak self] in
+                self?.grvmWaitForStoryGhostSnapshot(id: id)
+            }))
+        }
+
+        private func grvmWaitForStoryGhostSnapshot(id: StoryId) {
+            guard let component = self.component else {
+                return
+            }
+            let accountPeerId = component.context.account.peerId
+            if AyuGramHooks.shouldSuppressStoryRead?(accountPeerId) == true {
+                self.grvmFinishStoryGhostChoice(id: id)
+                return
+            }
+
+            self.ghostStoryAcknowledgementTimer?.invalidate()
+            let timer = SwiftSignalKit.Timer(timeout: 0.05, repeat: true, completion: { [weak self] in
+                guard let self, let component = self.component else {
+                    return
+                }
+                let accountPeerId = component.context.account.peerId
+                guard AyuGramHooks.shouldSuppressStoryRead?(accountPeerId) == true else {
+                    return
+                }
+                self.ghostStoryAcknowledgementTimer?.invalidate()
+                self.ghostStoryAcknowledgementTimer = nil
+                self.grvmFinishStoryGhostChoice(id: id)
+            }, queue: .mainQueue())
+            self.ghostStoryAcknowledgementTimer = timer
+            timer.start()
+        }
+
+        private func grvmFinishStoryGhostChoice(id: StoryId) {
+            guard self.isAwaitingGhostStoryChoice else {
+                return
+            }
+            self.isAwaitingGhostStoryChoice = false
+            self.ghostStoryAcknowledgementTimer?.invalidate()
+            self.ghostStoryAcknowledgementTimer = nil
+            self.ghostStorySettingsDisposable.set(nil)
+            guard let component = self.component else {
+                return
+            }
+            component.content.markAsSeen(id: id)
         }
                 
         func animateOut(completion: @escaping () -> Void) {
@@ -1702,10 +1801,10 @@ private final class StoryContainerScreenComponent: Component {
                                     }
                                 },
                                 markAsSeen: { [weak self] id in
-                                    guard let self, let component = self.component else {
+                                    guard let self else {
                                         return
                                     }
-                                    component.content.markAsSeen(id: id)
+                                    self.grvmMarkStoryAsSeen(id: id)
                                 },
                                 reorder: { [weak self] in
                                     guard let self, let environment = self.environment else {

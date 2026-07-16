@@ -26,7 +26,7 @@ private final class AyuGramCoreArguments {
     let openGhostLockedComponents: () -> Void
     let toggleReadOnAction: (Bool) -> Void
     let toggleUseScheduledMessages: (Bool) -> Void
-    let toggleSendWithoutSound: (Bool) -> Void
+    let setSendWithoutSoundMode: (Int32) -> Void
     let toggleSaveDeletedMessages: (Bool) -> Void
     let toggleSaveEditHistory: (Bool) -> Void
     let toggleSaveForBots: (Bool) -> Void
@@ -45,7 +45,7 @@ private final class AyuGramCoreArguments {
         openGhostLockedComponents: @escaping () -> Void,
         toggleReadOnAction: @escaping (Bool) -> Void,
         toggleUseScheduledMessages: @escaping (Bool) -> Void,
-        toggleSendWithoutSound: @escaping (Bool) -> Void,
+        setSendWithoutSoundMode: @escaping (Int32) -> Void,
         toggleSaveDeletedMessages: @escaping (Bool) -> Void,
         toggleSaveEditHistory: @escaping (Bool) -> Void,
         toggleSaveForBots: @escaping (Bool) -> Void,
@@ -63,7 +63,7 @@ private final class AyuGramCoreArguments {
         self.openGhostLockedComponents = openGhostLockedComponents
         self.toggleReadOnAction = toggleReadOnAction
         self.toggleUseScheduledMessages = toggleUseScheduledMessages
-        self.toggleSendWithoutSound = toggleSendWithoutSound
+        self.setSendWithoutSoundMode = setSendWithoutSoundMode
         self.toggleSaveDeletedMessages = toggleSaveDeletedMessages
         self.toggleSaveEditHistory = toggleSaveEditHistory
         self.toggleSaveForBots = toggleSaveForBots
@@ -96,7 +96,7 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
     case suggestGhostForStoriesInfo(PresentationTheme)
     case useScheduledMessages(PresentationTheme, Bool)
     case useScheduledMessagesInfo(PresentationTheme)
-    case sendWithoutSound(PresentationTheme, Bool)
+    case sendWithoutSoundMode(PresentationTheme, String, Int32)
     case sendWithoutSoundInfo(PresentationTheme)
     case spyModeHeader(PresentationTheme)
     case saveDeletedMessages(PresentationTheme, Bool)
@@ -110,7 +110,7 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
         switch self {
         case .ghostModeHeader, .ghostModeToggle, .ghostComponentReadReceipts, .ghostComponentStoryReads, .ghostComponentOnlineStatus, .ghostComponentTypingAndUploads, .ghostComponentGoOfflineAfterOnline, .ghostLockedComponents, .readOnAction, .readOnActionInfo, .suggestGhostForStories, .suggestGhostForStoriesInfo:
             return AyuGramCoreSection.ghostMode.rawValue
-        case .useScheduledMessages, .useScheduledMessagesInfo, .sendWithoutSound, .sendWithoutSoundInfo:
+        case .useScheduledMessages, .useScheduledMessagesInfo, .sendWithoutSoundMode, .sendWithoutSoundInfo:
             return AyuGramCoreSection.sending.rawValue
         case .spyModeHeader, .saveDeletedMessages, .saveEditHistory, .saveForBots:
             return AyuGramCoreSection.spyMode.rawValue
@@ -135,7 +135,7 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
         case .suggestGhostForStoriesInfo: return 11
         case .useScheduledMessages: return 12
         case .useScheduledMessagesInfo: return 13
-        case .sendWithoutSound: return 14
+        case .sendWithoutSoundMode: return 14
         case .sendWithoutSoundInfo: return 15
         case .spyModeHeader: return 16
         case .saveDeletedMessages: return 17
@@ -169,8 +169,8 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
             return lhsValue == rhsValue
         case let (.useScheduledMessages(_, lhsValue), .useScheduledMessages(_, rhsValue)):
             return lhsValue == rhsValue
-        case let (.sendWithoutSound(_, lhsValue), .sendWithoutSound(_, rhsValue)):
-            return lhsValue == rhsValue
+        case let (.sendWithoutSoundMode(_, lhsLabel, lhsValue), .sendWithoutSoundMode(_, rhsLabel, rhsValue)):
+            return lhsLabel == rhsLabel && lhsValue == rhsValue
         case let (.saveDeletedMessages(_, lhsValue), .saveDeletedMessages(_, rhsValue)):
             return lhsValue == rhsValue
         case let (.saveEditHistory(_, lhsValue), .saveEditHistory(_, rhsValue)):
@@ -241,9 +241,9 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
             })
         case .useScheduledMessagesInfo:
             return ItemListTextItem(presentationData: presentationData, text: .plain("Automatically schedules messages with ~12 second delay. You won't appear online. Not recommended on slow internet."), sectionId: self.section)
-        case let .sendWithoutSound(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Send Without Sound", value: value, sectionId: self.section, style: .blocks, updated: { value in
-                arguments.toggleSendWithoutSound(value)
+        case let .sendWithoutSoundMode(_, label, value):
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Send Without Sound", label: label, sectionId: self.section, style: .blocks, action: {
+                arguments.setSendWithoutSoundMode((value + 1) % 3)
             })
         case .sendWithoutSoundInfo:
             return ItemListTextItem(presentationData: presentationData, text: .plain("Sends messages silently by default."), sectionId: self.section)
@@ -294,7 +294,9 @@ private func ayuGramCoreEntries(settings: AyuGramSettings, presentationData: Pre
 
     entries.append(.useScheduledMessages(presentationData.theme, settings.useScheduledMessages))
     entries.append(.useScheduledMessagesInfo(presentationData.theme))
-    entries.append(.sendWithoutSound(presentationData.theme, settings.sendWithoutSoundOption != 0))
+    let sendWithoutSoundLabels = ["Never", "InGhost", "Always"]
+    let sendWithoutSoundMode = (0 ... 2).contains(settings.sendWithoutSoundOption) ? settings.sendWithoutSoundOption : 0
+    entries.append(.sendWithoutSoundMode(presentationData.theme, sendWithoutSoundLabels[Int(sendWithoutSoundMode)], sendWithoutSoundMode))
     entries.append(.sendWithoutSoundInfo(presentationData.theme))
 
     entries.append(.spyModeHeader(presentationData.theme))
@@ -374,10 +376,10 @@ public func ayuGramCoreController(context: AccountContext) -> ViewController {
                 return settings
             }).startStandalone()
         },
-        toggleSendWithoutSound: { value in
+        setSendWithoutSoundMode: { value in
             let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
-                settings.sendWithoutSoundOption = value ? 2 : 0
+                settings.sendWithoutSoundOption = value
                 return settings
             }).startStandalone()
         },

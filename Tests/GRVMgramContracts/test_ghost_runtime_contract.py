@@ -221,6 +221,272 @@ class GhostRuntimeContractTests(unittest.TestCase):
         self.assertIn("settings.ghostLockedComponents.remove(component)", locks)
         self.assertNotIn("shift", ui.lower())
 
+    def test_schedule_policy_distinguishes_uploads_and_clamps_overflow(self) -> None:
+        schedule_path = (
+            ROOT / "submodules/AyuGramLib/Sources/GRVMGhostSchedule.swift"
+        )
+        self.assertTrue(schedule_path.exists(), "Ghost schedule helper is missing")
+        schedule = swift_block(
+            schedule_path.read_text(encoding="utf-8"),
+            "public func grvmGhostScheduleDelay(",
+        )
+        for token in (
+            "messages: [EnqueueMessage]",
+            "proxyEnabled: Bool",
+            "var baseDelay = 12.0",
+            "file.isVoice || file.isInstantVideo",
+            "baseDelay = max(baseDelay, 17.0)",
+            "case .standalone",
+            "as? LocalFileMediaResource",
+            "localResource.size",
+            "Double(resourceSize)",
+            "1_048_576.0",
+            "ceil(sizeMiB * 0.7)",
+            "13.0 + max(6.0, sizeDelay)",
+            "max(19.0, uploadDelay)",
+            "proxyEnabled ? ceil(baseDelay * 1.2) : baseDelay",
+            "Double(Int32.max)",
+            "Int32(min(",
+        ):
+            self.assertIn(token, schedule)
+        self.assertRegex(
+            schedule,
+            r"guard let resourceSize = localResource\.size, resourceSize >= 0 else \{\s*continue\s*\}",
+        )
+        self.assertNotIn("4.5", schedule)
+
+    def test_ghost_schedule_reads_one_proxy_snapshot_inside_the_ghost_gate(self) -> None:
+        chat = source("submodules/TelegramUI/Sources/ChatController.swift")
+        send = swift_block(chat, "func sendMessages(_ messages:")
+        gate_signature = (
+            "if !commit && !isScheduledMessages "
+            "&& AyuGramHooks.shouldUseScheduledMessages?(self.context.account.peerId) == true"
+        )
+        gate = swift_block(send, gate_signature)
+        for token in (
+            "accountManager.sharedData(keys: [SharedDataKeys.proxySettings])",
+            "|> take(1)",
+            "SharedDataKeys.proxySettings]?.get(ProxySettings.self)",
+            "effectiveActiveServer != nil",
+            "grvmGhostScheduleDelay(messages: messages, proxyEnabled: proxyEnabled)",
+            "Int32(clamping:",
+            "commit: true",
+            "return",
+        ):
+            self.assertIn(token, gate)
+        self.assertEqual(1, send.count("grvmGhostScheduleDelay("))
+        self.assertNotIn("fileSizeMB * 4.5", send)
+        self.assertLess(send.index(gate_signature), send.index("accountManager.sharedData"))
+        self.assertLess(send.index(gate_signature), send.index("grvmGhostScheduleDelay("))
+        self.assertGreater(
+            send.rindex("enqueueMessages(account:"),
+            send.index("grvmGhostScheduleDelay("),
+        )
+
+    def test_read_after_action_uses_one_helper_after_success(self) -> None:
+        chat = source("submodules/TelegramUI/Sources/ChatController.swift")
+        helper = swift_block(
+            chat, "private func grvmMarkCurrentChatReadAfterAction()"
+        )
+        self.assertIn(
+            "AyuGramHooks.shouldMarkReadAfterAction?(self.context.account.peerId)",
+            helper,
+        )
+        self.assertIn("guard self.chatLocation.peerId != nil", helper)
+        self.assertIn("latestMessageInCurrentHistoryView()", helper)
+        self.assertIn("self.context.applyMaxReadIndex(", helper)
+        self.assertEqual(
+            1, chat.count("AyuGramHooks.shouldMarkReadAfterAction?(")
+        )
+        self.assertEqual(6, chat.count("grvmMarkCurrentChatReadAfterAction()"))
+
+        send = swift_block(chat, "func sendMessages(_ messages:")
+        self.assertLess(
+            send.index("enqueueMessages(account:"),
+            send.index("grvmMarkCurrentChatReadAfterAction()"),
+        )
+
+        reaction = swift_block(chat, "updateMessageReaction: {")
+        reaction_update = reaction[reaction.rindex("updateMessageReactionsInteractively(") :]
+        self.assertIn(".startStandalone(completed:", reaction_update)
+        self.assertIn("grvmMarkCurrentChatReadAfterAction()", reaction_update)
+        stars_success = swift_block(
+            reaction, "strongSelf.context.engine.messages.sendStarsReaction("
+        )
+        self.assertIn("grvmMarkCurrentChatReadAfterAction()", stars_success)
+
+        poll = swift_block(chat, "requestSelectMessagePollOptions: {")
+        self.assertIn("guard let strongSelf = self, let resultPoll = resultPoll", poll)
+        poll_success = poll[
+            poll.index("guard let strongSelf = self, let resultPoll = resultPoll") :
+        ]
+        self.assertIn("strongSelf.grvmMarkCurrentChatReadAfterAction()", poll_success)
+        self.assertLess(
+            poll_success.index("strongSelf.grvmMarkCurrentChatReadAfterAction()"),
+            poll_success.index(
+                "strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(id)"
+            ),
+        )
+
+    def test_context_menu_reaction_uses_shared_read_helper_after_success(self) -> None:
+        interaction = source(
+            "submodules/TelegramUI/Components/ChatControllerInteraction/"
+            "Sources/ChatControllerInteraction.swift"
+        )
+        self.assertIn(
+            "public var grvmMarkCurrentChatReadAfterAction: (() -> Void)?",
+            interaction,
+        )
+
+        chat = source("submodules/TelegramUI/Sources/ChatController.swift")
+        wiring = swift_block(
+            chat, "controllerInteraction.grvmMarkCurrentChatReadAfterAction ="
+        )
+        self.assertIn("self?.grvmMarkCurrentChatReadAfterAction()", wiring)
+
+        context_menu = source(
+            "submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift"
+        )
+        update = context_menu[
+            context_menu.rindex("updateMessageReactionsInteractively(") :
+        ]
+        self.assertIn("|> deliverOnMainQueue", update)
+        self.assertIn(".startStandalone(completed:", update)
+        self.assertIn(
+            "controllerInteraction?.grvmMarkCurrentChatReadAfterAction?()", update
+        )
+
+    def test_read_and_schedule_predicates_remain_mutually_exclusive(self) -> None:
+        manager = source(
+            "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
+        )
+        schedule = swift_block(
+            manager, "AyuGramHooks.shouldUseScheduledMessages ="
+        )
+        self.assertIn("settings.ghostModeEnabled", schedule)
+        self.assertIn("settings.useScheduledMessages", schedule)
+        self.assertIn("!settings.readOnAction", schedule)
+        read = swift_block(manager, "AyuGramHooks.shouldMarkReadAfterAction =")
+        self.assertIn("settings.ghostModeEnabled", read)
+        self.assertIn("settings.readOnAction", read)
+        self.assertIn("!settings.useScheduledMessages", read)
+
+        ui = swift_block(
+            source("submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift"),
+            "public func ayuGramCoreController(",
+        )
+        self.assertIn("settings.setReadOnAction(value)", ui)
+        self.assertIn("settings.setScheduledMessages(value)", ui)
+        settings = source("submodules/AyuGramLib/Sources/AyuGramSettings.swift")
+        read_setter = swift_block(settings, "public var readOnAction: Bool")
+        schedule_setter = swift_block(settings, "public var useScheduledMessages: Bool")
+        self.assertIn("useScheduledMessages = false", read_setter)
+        self.assertIn("readOnAction = false", schedule_setter)
+
+    def test_silent_send_uses_the_canonical_three_mode_selector(self) -> None:
+        manager = swift_block(
+            source("submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"),
+            "AyuGramHooks.sendWithoutSoundMode =",
+        )
+        self.assertIn("settings.sendWithoutSoundOption", manager)
+        self.assertNotIn("settings.sendWithoutSound ", manager)
+        self.assertIn("case 1:", manager)
+        self.assertIn("settings.ghostModeEnabled ? 1 : 0", manager)
+        self.assertIn("case 2:", manager)
+
+        chat = swift_block(
+            source("submodules/TelegramUI/Sources/ChatController.swift"),
+            "func transformEnqueueMessages(_ messages: [EnqueueMessage], postpone:",
+        )
+        self.assertIn(
+            "AyuGramHooks.sendWithoutSoundMode?(self.context.account.peerId)", chat
+        )
+        self.assertIn(
+            "sendWithoutSoundMode == 1 || sendWithoutSoundMode == 2", chat
+        )
+
+        ui_source = source(
+            "submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift"
+        )
+        entries = swift_block(ui_source, "private func ayuGramCoreEntries(")
+        for label in ("Never", "InGhost", "Always"):
+            self.assertIn(f'"{label}"', entries)
+        self.assertIn("settings.sendWithoutSoundOption", entries)
+        self.assertIn(".sendWithoutSoundMode(", entries)
+        self.assertNotIn(".sendWithoutSound(", entries)
+
+        selector = swift_block(ui_source, "case let .sendWithoutSoundMode(")
+        self.assertIn("ItemListDisclosureItem", selector)
+        self.assertIn("arguments.setSendWithoutSoundMode((value + 1) % 3)", selector)
+        controller = swift_block(ui_source, "public func ayuGramCoreController(")
+        self.assertIn("settings.sendWithoutSoundOption = value", controller)
+        self.assertNotIn("settings.sendWithoutSound =", controller)
+
+    def test_story_gate_precedes_mark_and_waits_for_coordinator_snapshot(self) -> None:
+        story_path = (
+            "submodules/TelegramUI/Components/Stories/StoryContainerScreen/"
+            "Sources/StoryContainerScreen.swift"
+        )
+        story = source(story_path)
+        build = source(
+            "submodules/TelegramUI/Components/Stories/StoryContainerScreen/BUILD"
+        )
+        self.assertIn("import AyuGramLib", story)
+        self.assertIn('"//submodules/AyuGramLib:AyuGramLib"', build)
+        self.assertIn("private var didHandleGhostStorySuggestion", story)
+        self.assertIn("private var isAwaitingGhostStoryChoice", story)
+        self.assertIn("private let ghostStorySettingsDisposable = MetaDisposable()", story)
+        self.assertIn("private var ghostStoryAcknowledgementTimer", story)
+
+        mark_callback = swift_block(story, "markAsSeen: {")
+        self.assertIn("self.grvmMarkStoryAsSeen(id: id)", mark_callback)
+        self.assertNotIn("component.content.markAsSeen(id: id)", mark_callback)
+
+        gate = swift_block(story, "private func grvmMarkStoryAsSeen(id:")
+        self.assertIn("self.didHandleGhostStorySuggestion = true", gate)
+        self.assertIn("AyuGramHooks.shouldSuggestGhostForStories?(accountPeerId)", gate)
+        self.assertIn("AyuGramHooks.shouldSuppressStoryRead?(accountPeerId)", gate)
+        self.assertIn('title: "Enable Ghost Mode"', gate)
+        self.assertIn('title: "View Normally"', gate)
+        self.assertIn("dismissOnOutsideTap: false", gate)
+        missing_controller = swift_block(
+            gate, "guard let controller = self.environment?.controller()"
+        )
+        self.assertIn("self.didHandleGhostStorySuggestion = false", missing_controller)
+        self.assertNotIn("component.content.markAsSeen(id: id)", missing_controller)
+
+        enable = swift_block(story, "private func grvmEnableGhostForStory(id:")
+        self.assertIn("updateGRVMSettings(", enable)
+        self.assertIn("accountId: component.context.account.peerId", enable)
+        self.assertIn("settings.ghostModeEnabled = true", enable)
+        self.assertIn("settings.suppressStoryReads = true", enable)
+        self.assertIn("|> deliverOnMainQueue", enable)
+        self.assertIn("grvmWaitForStoryGhostSnapshot(id: id)", enable)
+        self.assertNotIn("component.content.markAsSeen(id: id)", enable)
+
+        acknowledgement = swift_block(
+            story, "private func grvmWaitForStoryGhostSnapshot(id:"
+        )
+        self.assertIn(
+            "AyuGramHooks.shouldSuppressStoryRead?(accountPeerId) == true",
+            acknowledgement,
+        )
+        self.assertIn("SwiftSignalKit.Timer", acknowledgement)
+        self.assertIn("queue: .mainQueue()", acknowledgement)
+        self.assertLess(
+            acknowledgement.index("shouldSuppressStoryRead?"),
+            acknowledgement.index("grvmFinishStoryGhostChoice(id: id)"),
+        )
+
+        finish = swift_block(story, "private func grvmFinishStoryGhostChoice(id:")
+        self.assertIn("self.isAwaitingGhostStoryChoice = false", finish)
+        self.assertEqual(1, finish.count("component.content.markAsSeen(id: id)"))
+        story_view = swift_block(story, "final class View: UIView")
+        deinit = swift_block(story_view, "deinit {")
+        self.assertIn("self.ghostStorySettingsDisposable.dispose()", deinit)
+        self.assertIn("self.ghostStoryAcknowledgementTimer?.invalidate()", deinit)
+        self.assertNotIn("Enable Ghost Mode to view stories privately", story)
+
 
 if __name__ == "__main__":
     unittest.main()

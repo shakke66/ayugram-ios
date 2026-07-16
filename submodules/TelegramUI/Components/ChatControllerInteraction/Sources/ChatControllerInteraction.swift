@@ -327,6 +327,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     public var enableFullTranslucency: Bool = true
     public var chatIsRotated: Bool = true
     public var canReadHistory: Bool = false
+    public var grvmMarkCurrentChatReadAfterAction: (() -> Void)?
     public var summarizedMessageIds: Set<MessageId> = Set()
     public var focusedTextInputIsMedia: Bool = false
     public var focusedPollAddOptionMessageId: MessageId?

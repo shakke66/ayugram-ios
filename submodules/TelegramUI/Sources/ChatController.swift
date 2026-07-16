@@ -99,6 +99,7 @@ import PeerReportScreen
 import PeerSelectionController
 import SaveToCameraRoll
 import ChatMessageDateAndStatusNode
+import AyuGramLib
 import ReplyAccessoryPanelNode
 import TextSelectionNode
 import ChatMessagePollBubbleContentNode
@@ -1939,6 +1940,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                 guard let strongSelf = self else {
                                     return
                                 }
+                                strongSelf.grvmMarkCurrentChatReadAfterAction()
                                 strongSelf.displayOrUpdateSendStarsUndo(messageId: message.id, count: 1, privacy: privacy)
                             })
                         })
@@ -2128,7 +2130,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             })
                         }
                         
-                        let _ = updateMessageReactionsInteractively(account: strongSelf.context.account, messageIds: [message.id], reactions: mappedUpdatedReactions, isLarge: false, storeAsRecentlyUsed: false).startStandalone()
+                        let _ = (updateMessageReactionsInteractively(account: strongSelf.context.account, messageIds: [message.id], reactions: mappedUpdatedReactions, isLarge: false, storeAsRecentlyUsed: false)
+                        |> deliverOnMainQueue).startStandalone(completed: { [weak strongSelf] in
+                            strongSelf?.grvmMarkCurrentChatReadAfterAction()
+                        })
                     }
                 }
             })
@@ -3706,6 +3711,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     guard let strongSelf = self, let resultPoll = resultPoll else {
                         return
                     }
+                    strongSelf.grvmMarkCurrentChatReadAfterAction()
                     guard let _ = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(id) else {
                         return
                     }
@@ -5568,6 +5574,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             self.interfaceInteraction?.openSetPeerAvatar()
         }, automaticMediaDownloadSettings: self.automaticMediaDownloadSettings, pollActionState: ChatInterfacePollActionState(), stickerSettings: self.stickerSettings, presentationContext: ChatPresentationContext(context: context, backgroundNode: self.chatBackgroundNode))
         controllerInteraction.enableFullTranslucency = context.sharedContext.energyUsageSettings.fullTranslucency
+        controllerInteraction.grvmMarkCurrentChatReadAfterAction = { [weak self] in
+            self?.grvmMarkCurrentChatReadAfterAction()
+        }
         
         self.controllerInteraction = controllerInteraction
         
@@ -8339,9 +8348,27 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         self.present(tooltipScreen, in: .current)
     }
             
+    private func grvmMarkCurrentChatReadAfterAction() {
+        guard AyuGramHooks.shouldMarkReadAfterAction?(self.context.account.peerId) == true else {
+            return
+        }
+        guard self.chatLocation.peerId != nil else {
+            return
+        }
+        guard let latestMessage = self.chatDisplayNode.historyNode.latestMessageInCurrentHistoryView() else {
+            return
+        }
+        self.context.applyMaxReadIndex(
+            for: self.chatLocation,
+            contextHolder: self.chatLocationContextHolder,
+            messageIndex: latestMessage.index
+        )
+    }
+
     func transformEnqueueMessages(_ messages: [EnqueueMessage], postpone: Bool = false) -> [EnqueueMessage] {
         let sendWithoutSoundMode = AyuGramHooks.sendWithoutSoundMode?(self.context.account.peerId) ?? 0
-        let silentPosting = self.presentationInterfaceState.interfaceState.silentPosting || sendWithoutSoundMode != 0
+        let sendWithoutSound = sendWithoutSoundMode == 1 || sendWithoutSoundMode == 2
+        let silentPosting = self.presentationInterfaceState.interfaceState.silentPosting || sendWithoutSound
         return transformEnqueueMessages(messages, silentPosting: silentPosting, postpone: postpone)
     }
     
@@ -8609,29 +8636,18 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
 
             if !commit && !isScheduledMessages && AyuGramHooks.shouldUseScheduledMessages?(self.context.account.peerId) == true {
-                // AyuGram Ghost "Send in Ghost": auto-delay the send via a scheduled
-                // timestamp so we never blink online. Matches desktop behaviour:
-                //  - plain text: fixed 12s delay
-                //  - media: max(6, ceil(fileSizeMB * 4.5)) seconds
-                var maxDelay: Int32 = 12
-                for message in messages {
-                    if case let .message(_, _, _, mediaReference, _, _, _, _, _, _) = message, let mediaReference = mediaReference {
-                        if let file = mediaReference.media as? TelegramMediaFile, let size = file.size {
-                            let mb = Double(size) / 1024.0 / 1024.0
-                            let mediaDelay = Int32(max(6.0, ceil(mb * 4.5)))
-                            if mediaDelay > maxDelay {
-                                maxDelay = mediaDelay
-                            }
-                        } else {
-                            // Non-file media (image without size / etc.) — use the media floor.
-                            if maxDelay < 6 {
-                                maxDelay = 6
-                            }
-                        }
+                let _ = (self.context.sharedContext.accountManager.sharedData(keys: [SharedDataKeys.proxySettings])
+                |> take(1)
+                |> deliverOnMainQueue).startStandalone(next: { [weak self] sharedData in
+                    guard let self else {
+                        return
                     }
-                }
-                let scheduleTime = Int32(Date().timeIntervalSince1970) + maxDelay
-                self.sendMessages(self.transformEnqueueMessages(messages, silentPosting: false, scheduleTime: scheduleTime, repeatPeriod: nil, postpone: postpone), commit: true)
+                    let proxySettings = sharedData.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self) ?? .defaultSettings
+                    let proxyEnabled = proxySettings.effectiveActiveServer != nil
+                    let delay = grvmGhostScheduleDelay(messages: messages, proxyEnabled: proxyEnabled)
+                    let scheduleTime = Int32(clamping: Int64(Date().timeIntervalSince1970) + Int64(delay))
+                    self.sendMessages(self.transformEnqueueMessages(messages, silentPosting: false, scheduleTime: scheduleTime, repeatPeriod: nil, postpone: postpone), commit: true)
+                })
                 return
             }
 
@@ -8642,12 +8658,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 |> deliverOnMainQueue).startStandalone(next: { [weak self] _ in
                     if let strongSelf = self, strongSelf.presentationInterfaceState.subject != .scheduledMessages {
                         strongSelf.chatDisplayNode.historyNode.scrollToEndOfHistory()
-
-                        if AyuGramHooks.shouldMarkReadAfterAction?(strongSelf.context.account.peerId) == true {
-                            if let latestMessage = strongSelf.chatDisplayNode.historyNode.latestMessageInCurrentHistoryView() {
-                                strongSelf.context.applyMaxReadIndex(for: strongSelf.chatLocation, contextHolder: strongSelf.chatLocationContextHolder, messageIndex: latestMessage.index)
-                            }
-                        }
+                        strongSelf.grvmMarkCurrentChatReadAfterAction()
                     }
                 })
                 
