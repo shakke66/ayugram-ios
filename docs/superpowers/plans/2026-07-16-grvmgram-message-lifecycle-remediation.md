@@ -302,7 +302,7 @@ do {
 }
 ```
 
-Empty legacy path is success. Invalid nonempty path is failure. A record is removed only when both paths are absent. Keep the old callback wrapper until Task 3, but implement it without `try?`.
+Empty legacy path is success. Invalid nonempty path is failure. A record is removed only when both paths are absent. Put the do/catch rule in one private `removeIfPresent` helper and reuse it for final files, `.tmp` files, and reconciliation orphan cleanup; no `FileManager.removeItem` call remains under `try?`. Keep the old callback wrapper until Task 3, but implement it through the explicit result.
 
 - [ ] **Step 3: Share synchronous archive-copy logic**
 
@@ -370,11 +370,13 @@ public func resumePendingCleanupJobs()
 
 - [ ] **Step 1: Write strict ordering/UI contracts and verify RED**
 
-The cleanup test must prove source order:
+The cleanup test must prove the public begin-before-run handoff and the runner's destructive order:
 
 ```python
+clear = coordinator[coordinator.index("public func clearDeleted(") :]
+self.assertLess(clear.index("beginDeletedCleanup("), clear.index("runCleanupJob("))
+runner = coordinator[coordinator.index("private func runCleanupJob(") :]
 anchors = [
-    "beginDeletedCleanup(",
     "removeArchivedFiles(",
     "markCleanupFilesRemoved(",
     "self.postbox.transaction",
@@ -382,7 +384,7 @@ anchors = [
     "self.index.removeDeleted",
     "subscriber.putNext(ids)",
 ]
-positions = [coordinator.index(anchor) for anchor in anchors]
+positions = [runner.index(anchor) for anchor in anchors]
 self.assertEqual(positions, sorted(positions))
 self.assertIn("Signal<[MessageId], GRVMClearDeletedError>", coordinator)
 self.assertIn("pendingCleanupJobs(accountId:", coordinator)
