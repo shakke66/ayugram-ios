@@ -5,7 +5,158 @@ private enum GRVMExternalTranslationParsingError: Error {
     case invalidResponse
 }
 
-private let maximumConcurrentGoogleRequests = 4
+private final class GRVMGoogleRequestSchedulerItem {
+    let signal: Signal<String, TranslationError>
+    let next: (String) -> Void
+    let error: (TranslationError) -> Void
+    let completion: () -> Void
+    var isActive = false
+    var disposable: Disposable?
+
+    init(
+        signal: Signal<String, TranslationError>,
+        next: @escaping (String) -> Void,
+        error: @escaping (TranslationError) -> Void,
+        completion: @escaping () -> Void
+    ) {
+        self.signal = signal
+        self.next = next
+        self.error = error
+        self.completion = completion
+    }
+
+    deinit {
+        self.disposable?.dispose()
+    }
+}
+
+private final class GRVMGoogleRequestSchedulerImpl {
+    private let queue: Queue
+    private let maxConcurrentRequests: Int
+    private var items: [GRVMGoogleRequestSchedulerItem] = []
+
+    init(queue: Queue, maxConcurrentRequests: Int) {
+        self.queue = queue
+        self.maxConcurrentRequests = maxConcurrentRequests
+    }
+
+    func add(
+        signal: Signal<String, TranslationError>,
+        next: @escaping (String) -> Void,
+        error: @escaping (TranslationError) -> Void,
+        completion: @escaping () -> Void
+    ) -> Disposable {
+        let queue = self.queue
+        let item = GRVMGoogleRequestSchedulerItem(
+            signal: signal,
+            next: next,
+            error: error,
+            completion: completion
+        )
+        self.items.append(item)
+        self.update()
+
+        return ActionDisposable { [weak self, weak item] in
+            queue.async {
+                guard let strongSelf = self, let item else {
+                    return
+                }
+                for i in 0 ..< strongSelf.items.count {
+                    if strongSelf.items[i] === item {
+                        item.disposable?.dispose()
+                        strongSelf.items.remove(at: i)
+                        strongSelf.update()
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    private func update() {
+        let queue = self.queue
+        var activeCount = self.items.reduce(into: 0) { count, item in
+            if item.isActive {
+                count += 1
+            }
+        }
+
+        while activeCount < self.maxConcurrentRequests {
+            guard let item = self.items.first(where: { !$0.isActive }) else {
+                break
+            }
+            item.isActive = true
+            activeCount += 1
+            item.disposable = item.signal.start(next: { [weak item] value in
+                queue.async {
+                    item?.next(value)
+                }
+            }, error: { [weak self, weak item] value in
+                queue.async {
+                    guard let strongSelf = self, let item else {
+                        return
+                    }
+                    for i in 0 ..< strongSelf.items.count {
+                        if strongSelf.items[i] === item {
+                            strongSelf.items.remove(at: i)
+                            item.error(value)
+                            strongSelf.update()
+                            break
+                        }
+                    }
+                }
+            }, completed: { [weak self, weak item] in
+                queue.async {
+                    guard let strongSelf = self, let item else {
+                        return
+                    }
+                    for i in 0 ..< strongSelf.items.count {
+                        if strongSelf.items[i] === item {
+                            strongSelf.items.remove(at: i)
+                            item.completion()
+                            strongSelf.update()
+                            break
+                        }
+                    }
+                }
+            })
+        }
+    }
+}
+
+private final class GRVMGoogleRequestScheduler {
+    private let queue: Queue
+    private let impl: QueueLocalObject<GRVMGoogleRequestSchedulerImpl>
+
+    init(maxConcurrentRequests: Int) {
+        let queue = Queue(name: "GRVMGoogleRequestScheduler")
+        self.queue = queue
+        self.impl = QueueLocalObject(queue: queue, generate: {
+            return GRVMGoogleRequestSchedulerImpl(
+                queue: queue,
+                maxConcurrentRequests: maxConcurrentRequests
+            )
+        })
+    }
+
+    func wrap(_ signal: Signal<String, TranslationError>) -> Signal<String, TranslationError> {
+        return Signal { subscriber in
+            let disposable = MetaDisposable()
+            self.impl.with { impl in
+                disposable.set(impl.add(signal: signal, next: { value in
+                    subscriber.putNext(value)
+                }, error: { error in
+                    subscriber.putError(error)
+                }, completion: {
+                    subscriber.putCompletion()
+                }))
+            }
+            return disposable
+        }
+    }
+}
+
+private let grvmGoogleRequestScheduler = GRVMGoogleRequestScheduler(maxConcurrentRequests: 4)
 
 func grvmExternalTranslate(
     texts: [String],
@@ -30,26 +181,10 @@ private func grvmGoogleTranslate(
     texts: [String],
     toLang: String
 ) -> Signal<[String], TranslationError> {
-    var batches: [[String]] = []
-    var index = 0
-    while index < texts.count {
-        let upperBound = min(index + maximumConcurrentGoogleRequests, texts.count)
-        batches.append(Array(texts[index ..< upperBound]))
-        index = upperBound
+    let requests = texts.map { text in
+        grvmGoogleTranslate(text: text, toLang: toLang)
     }
-
-    var result: Signal<[String], TranslationError> = .single([])
-    for batch in batches {
-        result = result
-        |> mapToSignal { current in
-            let requests = batch.map { text in
-                grvmGoogleTranslate(text: text, toLang: toLang)
-            }
-            return combineLatest(requests)
-            |> map { current + $0 }
-        }
-    }
-    return result
+    return combineLatest(requests)
     |> mapToSignal { responseTexts in
         guard responseTexts.count == texts.count else {
             return .fail(.generic)
@@ -84,7 +219,7 @@ private func grvmGoogleTranslate(
     var request = URLRequest(url: url)
     request.httpMethod = "GET"
     request.timeoutInterval = 15.0
-    return grvmExternalTranslationRequest(request)
+    let signal = grvmExternalTranslationRequest(request)
     |> mapToSignal { data in
         do {
             return .single(try grvmParseGoogleTranslation(data))
@@ -92,6 +227,7 @@ private func grvmGoogleTranslate(
             return .fail(.generic)
         }
     }
+    return grvmGoogleRequestScheduler.wrap(signal)
 }
 
 private func grvmYandexTranslate(

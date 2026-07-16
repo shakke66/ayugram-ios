@@ -45,13 +45,41 @@ class GeneralTranslationContractTests(unittest.TestCase):
             "URLSession.shared.dataTask(with: request)",
             "request.timeoutInterval = 15.0",
             "200 ..< 300",
-            "maximumConcurrentGoogleRequests = 4",
+            "GRVMGoogleRequestScheduler(maxConcurrentRequests: 4)",
             "responseTexts.count == texts.count",
         ):
             self.assertIn(token, self.external)
         lowered = self.external.lower()
         for forbidden in ("api_key", "apikey", "api-key", "aiza"):
             self.assertNotIn(forbidden, lowered)
+
+    def test_google_request_limit_is_shared_at_the_request_start_boundary(self) -> None:
+        for token in (
+            "private final class GRVMGoogleRequestScheduler",
+            "private let grvmGoogleRequestScheduler = GRVMGoogleRequestScheduler(",
+            "let signal: Signal<String, TranslationError>",
+            "func wrap(_ signal: Signal<String, TranslationError>)",
+            "while activeCount < self.maxConcurrentRequests",
+            "self.items.first(where: { !$0.isActive })",
+            "let signal = grvmExternalTranslationRequest(request)",
+            "return grvmGoogleRequestScheduler.wrap(signal)",
+            "item.disposable?.dispose()",
+        ):
+            self.assertIn(token, self.external)
+        self.assertGreaterEqual(self.external.count("strongSelf.items.remove(at: i)"), 3)
+        self.assertGreaterEqual(self.external.count("strongSelf.update()"), 3)
+        cancellation_start = self.external.index(
+            "return ActionDisposable { [weak self, weak item] in"
+        )
+        cancellation_end = self.external.index(
+            "    private func update()", cancellation_start
+        )
+        cancellation = self.external[cancellation_start:cancellation_end]
+        self.assertEqual(cancellation.count("item.disposable?.dispose()"), 1)
+        self.assertEqual(cancellation.count("strongSelf.items.remove(at: i)"), 1)
+        self.assertEqual(cancellation.count("strongSelf.update()"), 1)
+        self.assertNotIn("var batches:", self.external)
+        self.assertNotIn("index + maximumConcurrentGoogleRequests", self.external)
 
     def test_provider_is_threaded_through_all_translation_paths(self) -> None:
         self.assertRegex(
