@@ -301,6 +301,28 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     var rightNavigationButton: ChatNavigationButton?
     var secondaryRightNavigationButton: ChatNavigationButton?
     var chatInfoNavigationButton: ChatNavigationButton?
+
+    lazy var grvmRecentActionsButtonItem: UIBarButtonItem = {
+        let item = UIBarButtonItem(
+            image: UIImage(bundleImageName: "Item List/Icons/View")?.withRenderingMode(.alwaysTemplate),
+            style: .plain,
+            target: self,
+            action: #selector(self.grvmRecentActionsButtonPressed)
+        )
+        item.accessibilityLabel = self.presentationData.strings.Group_Info_AdminLog
+        return item
+    }()
+
+    lazy var grvmAdminsButtonItem: UIBarButtonItem = {
+        let item = UIBarButtonItem(
+            image: UIImage(bundleImageName: "Item List/Icons/Admin")?.withRenderingMode(.alwaysTemplate),
+            style: .plain,
+            target: self,
+            action: #selector(self.grvmAdminsButtonPressed)
+        )
+        item.accessibilityLabel = self.presentationData.strings.GroupInfo_Administrators
+        return item
+    }()
     
     var moreBarButton: MoreHeaderButton
     var moreInfoNavigationButton: ChatNavigationButton?
@@ -4306,7 +4328,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             self?.displayPremiumStickerTooltip(file: file, message: message)
         }, displayEmojiPackTooltip: { [weak self] file, message in
             self?.displayEmojiPackTooltip(file: file, message: message)
-        }, openPeerContextMenu: { [weak self] peer, messageId, node, rect, gesture in
+        }, openPeerContextMenu: { [weak self] peer, _, node, rect, gesture in
             guard let strongSelf = self else {
                 return
             }
@@ -4319,23 +4341,12 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             
             let context = strongSelf.context
             
-            let dataSignal: Signal<(EnginePeer?, EngineMessage?), NoError>
-            if let messageId = messageId {
-                dataSignal = context.engine.data.get(
-                    TelegramEngine.EngineData.Item.Peer.Peer(id: peer.id),
-                    TelegramEngine.EngineData.Item.Messages.Message(id: messageId)
-                )
-            } else {
-                dataSignal = context.engine.data.get(
-                    TelegramEngine.EngineData.Item.Peer.Peer(id: peer.id)
-                )
-                |> map { peer -> (EnginePeer?, EngineMessage?) in
-                    return (peer, nil)
-                }
-            }
+            let dataSignal = context.engine.data.get(
+                TelegramEngine.EngineData.Item.Peer.Peer(id: peer.id)
+            )
             
             let _ = (dataSignal
-            |> deliverOnMainQueue).startStandalone(next: { [weak self] peer, message in
+            |> deliverOnMainQueue).startStandalone(next: { [weak self] peer in
                 guard let strongSelf = self, let peer = peer else {
                     return
                 }
@@ -4389,28 +4400,6 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             return
                         }
                         strongSelf.activateSearch(domain: .member(peer._asPeer()))
-                    })))
-                }
-
-                if AyuGramHooks.shouldUseQuickAdminShortcuts?() == true, !isChannel, let message = message, peer.id != strongSelf.context.account.peerId, let channel = strongSelf.presentationInterfaceState.renderedPeer?.peer as? TelegramChannel, channel.hasPermission(.banMembers) {
-                    items.append(.action(ContextMenuActionItem(text: strongSelf.presentationData.strings.Conversation_ContextMenuBan, icon: { theme in
-                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Restrict"), color: theme.actionSheet.primaryTextColor)
-                    }, action: { _, f in
-                        f(.dismissWithoutContent)
-
-                        guard let strongSelf = self else {
-                            return
-                        }
-
-                        let messageIds: Set<MessageId> = [message.id]
-                        strongSelf.messageContextDisposable.set((strongSelf.context.sharedContext.chatAvailableMessageActions(engine: strongSelf.context.engine, accountPeerId: strongSelf.context.account.peerId, messageIds: messageIds, keepUpdated: false)
-                        |> deliverOnMainQueue).startStrict(next: { [weak self] actions in
-                            guard let strongSelf = self else {
-                                return
-                            }
-                            let banAuthor = actions.banAuthor ?? peer._asPeer()
-                            strongSelf.presentBanMessageOptions(accountPeerId: strongSelf.context.account.peerId, author: banAuthor, messageIds: messageIds, options: actions.options)
-                        }))
                     })))
                 }
 
@@ -8060,6 +8049,24 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         if let button = self.secondaryRightNavigationButton {
             self.navigationButtonAction(button.action)
         }
+    }
+
+    @objc func grvmRecentActionsButtonPressed() {
+        let availability = grvmQuickAdminNavigationAvailability(self.presentationInterfaceState)
+        guard availability.recentActions, let channel = self.presentationInterfaceState.renderedPeer?.peer as? TelegramChannel else {
+            return
+        }
+        let controller = self.context.sharedContext.makeChatRecentActionsController(context: self.context, peer: channel, adminPeerId: nil, starsState: nil)
+        self.push(controller)
+    }
+
+    @objc func grvmAdminsButtonPressed() {
+        let availability = grvmQuickAdminNavigationAvailability(self.presentationInterfaceState)
+        guard availability.admins, let channel = self.presentationInterfaceState.renderedPeer?.peer as? TelegramChannel else {
+            return
+        }
+        let controller = channelAdminsController(context: self.context, updatedPresentationData: self.updatedPresentationData, peerId: channel.id)
+        self.push(controller)
     }
     
     @objc func moreButtonPressed() {

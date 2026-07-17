@@ -557,6 +557,15 @@ func updateChatPresentationInterfaceStateImpl(
     if let secondaryRightNavigationButton = selfController.secondaryRightNavigationButton {
         rightBarButtons.append(secondaryRightNavigationButton.buttonItem)
     }
+    let quickAdminAvailability = grvmQuickAdminNavigationAvailability(updatedChatPresentationInterfaceState)
+    if quickAdminAvailability.recentActions {
+        selfController.grvmRecentActionsButtonItem.accessibilityLabel = updatedChatPresentationInterfaceState.strings.Group_Info_AdminLog
+        rightBarButtons.append(selfController.grvmRecentActionsButtonItem)
+    }
+    if quickAdminAvailability.admins {
+        selfController.grvmAdminsButtonItem.accessibilityLabel = updatedChatPresentationInterfaceState.strings.GroupInfo_Administrators
+        rightBarButtons.append(selfController.grvmAdminsButtonItem)
+    }
     var rightBarButtonsUpdated = false
     let currentRightBarButtons = selfController.navigationItem.rightBarButtonItems ?? []
     if rightBarButtons.count != currentRightBarButtons.count {

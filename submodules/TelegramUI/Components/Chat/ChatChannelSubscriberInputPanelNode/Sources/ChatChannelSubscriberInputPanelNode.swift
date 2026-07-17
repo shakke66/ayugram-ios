@@ -23,6 +23,7 @@ import BundleIconComponent
 import MultilineTextComponent
 
 private enum SubscriberAction: Equatable, Hashable {
+    case hidden
     case join
     case joinGroup
     case applyToJoin
@@ -34,10 +35,13 @@ private enum SubscriberAction: Equatable, Hashable {
     case openChannel
     case openGroup
     case openChat
+    case openDiscussion(PeerId)
 }
 
 private func titleAndColorForAction(_ action: SubscriberAction, theme: PresentationTheme, strings: PresentationStrings) -> (String, UIColor) {
     switch action {
+        case .hidden:
+            return ("", theme.chat.inputPanel.panelControlDisabledColor)
         case .join:
             return (strings.Channel_JoinChannel, theme.chat.inputPanel.panelControlAccentColor)
         case .joinGroup:
@@ -60,10 +64,29 @@ private func titleAndColorForAction(_ action: SubscriberAction, theme: Presentat
             return (strings.SavedMessages_OpenGroup, theme.chat.inputPanel.panelControlAccentColor)
         case .openChat:
             return (strings.SavedMessages_OpenChat, theme.chat.inputPanel.panelControlAccentColor)
+        case .openDiscussion:
+            return (strings.PeerInfo_ButtonDiscuss, theme.chat.inputPanel.panelControlAccentColor)
     }
 }
 
 private func actionForPeer(context: AccountContext, peer: Peer, interfaceState: ChatPresentationInterfaceState, isJoining: Bool, isMuted: Bool) -> SubscriberAction? {
+    let muteAction: SubscriberAction = isMuted ? .unmuteNotifications : .muteNotifications
+
+    func configuredMuteAction(channel: TelegramChannel?) -> SubscriberAction {
+        let bottomButtonMode = AyuGramHooks.chatAppearance(accountPeerId: interfaceState.accountPeerId).chats.channelBottomButton
+        switch bottomButtonMode {
+        case .hidden:
+            return .hidden
+        case .mute:
+            return muteAction
+        case .discussWithFallback:
+            if let channel, case .broadcast = channel.info, let peerDiscussionId = interfaceState.peerDiscussionId {
+                return .openDiscussion(peerDiscussionId)
+            }
+            return muteAction
+        }
+    }
+
     if case let .replyThread(message) = interfaceState.chatLocation, message.peerId == context.account.peerId {
         if let peer = interfaceState.savedMessagesTopicPeer {
             if case let .channel(channel) = peer {
@@ -102,12 +125,8 @@ private func actionForPeer(context: AccountContext, peer: Peer, interfaceState: 
         }
     } else {
         if let channel = peer as? TelegramChannel {
-            if case .broadcast = channel.info, isJoining, AyuGramHooks.channelBottomButtonMode?() != 0 {
-                if isMuted {
-                    return .unmuteNotifications
-                } else {
-                    return .muteNotifications
-                }
+            if case .broadcast = channel.info, isJoining {
+                return configuredMuteAction(channel: channel)
             }
             switch channel.participationStatus {
                 case .kicked:
@@ -127,21 +146,22 @@ private func actionForPeer(context: AccountContext, peer: Peer, interfaceState: 
                         return .join
                     }
                 case .member:
-                    if AyuGramHooks.channelBottomButtonMode?() != 0 {
-                        if isMuted {
-                            return .unmuteNotifications
-                        } else {
-                            return .muteNotifications
+                    switch channel.info {
+                    case .broadcast:
+                        if !channel.hasPermission(.sendSomething) {
+                            return configuredMuteAction(channel: channel)
+                        }
+                    case .group:
+                        if channel.flags.contains(.isGigagroup) && !channel.hasPermission(.sendSomething) {
+                            return configuredMuteAction(channel: channel)
                         }
                     }
                     return nil
             }
+        } else if peer.id.isRepliesOrVerificationCodes {
+            return configuredMuteAction(channel: nil)
         } else {
-            if isMuted {
-                return .unmuteNotifications
-            } else {
-                return .muteNotifications
-            }
+            return muteAction
         }
     }
 }
@@ -280,7 +300,7 @@ public final class ChatChannelSubscriberInputPanelNode: ChatInputPanelNode {
                     }
                 }
             }))
-        case .kicked:
+        case .hidden, .kicked:
             break
         case .muteNotifications, .unmuteNotifications:
             if let context = self.context, let presentationInterfaceState = self.presentationInterfaceState, let peer = presentationInterfaceState.renderedPeer?.peer {
@@ -292,6 +312,8 @@ public final class ChatChannelSubscriberInputPanelNode: ChatInputPanelNode {
             if let presentationInterfaceState = self.presentationInterfaceState, let savedMessagesTopicPeer = presentationInterfaceState.savedMessagesTopicPeer {
                 self.interfaceInteraction?.navigateToChat(savedMessagesTopicPeer.id)
             }
+        case let .openDiscussion(peerId):
+            self.interfaceInteraction?.navigateToChat(peerId)
         }
     }
     
@@ -403,9 +425,21 @@ public final class ChatChannelSubscriberInputPanelNode: ChatInputPanelNode {
         
         self.presentationInterfaceState = interfaceState
         
+        let action: SubscriberAction?
+        if let context = self.context, let peer = interfaceState.renderedPeer?.peer {
+            action = actionForPeer(context: context, peer: peer, interfaceState: interfaceState, isJoining: self.isJoining, isMuted: interfaceState.peerIsMuted)
+        } else {
+            action = nil
+        }
+        self.action = action
+        if action == .hidden {
+            self.panelContainer.isHidden = true
+            return 0.0
+        }
+        self.panelContainer.isHidden = false
+
         var centerAction: (title: String, isAccent: Bool)?
-        if let context = self.context, let peer = interfaceState.renderedPeer?.peer, let action = actionForPeer(context: context, peer: peer, interfaceState: interfaceState, isJoining: self.isJoining, isMuted: interfaceState.peerIsMuted) {
-            self.action = action
+        if let action {
             let (title, _) = titleAndColorForAction(action, theme: interfaceState.theme, strings: interfaceState.strings)
             
             var isAccent = false
@@ -531,6 +565,9 @@ public final class ChatChannelSubscriberInputPanelNode: ChatInputPanelNode {
     }
     
     override public func minimalHeight(interfaceState: ChatPresentationInterfaceState, metrics: LayoutMetrics) -> CGFloat {
+        if let context = self.context, let peer = interfaceState.renderedPeer?.peer, actionForPeer(context: context, peer: peer, interfaceState: interfaceState, isJoining: self.isJoining, isMuted: interfaceState.peerIsMuted) == .hidden {
+            return 0.0
+        }
         return defaultHeight(metrics: metrics)
     }
 }

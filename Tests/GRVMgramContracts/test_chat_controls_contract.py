@@ -84,6 +84,22 @@ def reactions_visible(peer_kind: str, settings: dict[str, bool]) -> bool:
 
 
 class ChatControlsContractTests(unittest.TestCase):
+    subscriber_path = (
+        "submodules/TelegramUI/Components/Chat/"
+        "ChatChannelSubscriberInputPanelNode/Sources/"
+        "ChatChannelSubscriberInputPanelNode.swift"
+    )
+    controller_path = "submodules/TelegramUI/Sources/ChatController.swift"
+    feature_manager_path = (
+        "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
+    )
+    navigation_buttons_path = (
+        "submodules/TelegramUI/Sources/ChatInterfaceStateNavigationButtons.swift"
+    )
+    update_state_path = (
+        "submodules/TelegramUI/Sources/Chat/"
+        "UpdateChatPresentationInterfaceState.swift"
+    )
     keyboard_path = (
         "submodules/TelegramUI/Components/ChatEntityKeyboardInputNode/Sources/"
         "ChatEntityKeyboardInputNode.swift"
@@ -246,6 +262,210 @@ class ChatControlsContractTests(unittest.TestCase):
             "&& grvmShouldShowReactions"
         )
         self.assertIn(render_condition, normalized(begin_layout))
+
+    def test_channel_bottom_mode_is_typed_and_routes_real_discussion(self) -> None:
+        subscriber = source(self.subscriber_path)
+        action_enum = swift_block(subscriber, "private enum SubscriberAction")
+        action_for_peer = swift_block(subscriber, "private func actionForPeer(")
+        button_pressed = swift_block(subscriber, "@objc private func buttonPressed(")
+
+        for token in ["case hidden", "case openDiscussion(PeerId)"]:
+            self.assertIn(normalized(token), normalized(action_enum))
+
+        for token in [
+            "let bottomButtonMode = AyuGramHooks.chatAppearance("
+            "accountPeerId: interfaceState.accountPeerId).chats.channelBottomButton",
+            "case .hidden:",
+            "case .mute:",
+            "case .discussWithFallback:",
+            "case .broadcast = channel.info",
+            "let peerDiscussionId = interfaceState.peerDiscussionId",
+            "return .openDiscussion(peerDiscussionId)",
+            "return muteAction",
+            "!channel.hasPermission(.sendSomething)",
+            "channel.flags.contains(.isGigagroup)",
+            "peer.id.isRepliesOrVerificationCodes",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), normalized(action_for_peer))
+
+        assert_ordered_tokens(
+            self,
+            action_for_peer,
+            [
+                "case .discussWithFallback:",
+                "let peerDiscussionId = interfaceState.peerDiscussionId",
+                "return .openDiscussion(peerDiscussionId)",
+                "return muteAction",
+            ],
+        )
+
+        self.assertNotIn("AyuGramHooks.channelBottomButtonMode", subscriber)
+        self.assertNotIn(
+            "AyuGramHooks.channelBottomButtonMode =",
+            source(self.feature_manager_path),
+        )
+        for token in [
+            "case let .openDiscussion(peerId)",
+            "self.interfaceInteraction?.navigateToChat(peerId)",
+        ]:
+            self.assertIn(normalized(token), normalized(button_pressed))
+
+    def test_hidden_channel_bottom_panel_resets_visibility_and_height(self) -> None:
+        subscriber = source(self.subscriber_path)
+        update_layout = swift_block(
+            subscriber,
+            "private func updateLayout(width: CGFloat",
+        )
+        minimal_height = swift_block(
+            subscriber,
+            "override public func minimalHeight(",
+        )
+
+        assert_ordered_tokens(
+            self,
+            update_layout,
+            [
+                "action = actionForPeer(",
+                "self.action = action",
+                "if action == .hidden",
+                "self.panelContainer.isHidden = true",
+                "return 0.0",
+                "self.panelContainer.isHidden = false",
+            ],
+        )
+        for token in [
+            "actionForPeer(",
+            "== .hidden",
+            "return 0.0",
+            "return defaultHeight(metrics: metrics)",
+        ]:
+            self.assertIn(normalized(token), normalized(minimal_height))
+
+    def test_quick_admin_availability_is_typed_account_exact_and_permissioned(
+        self,
+    ) -> None:
+        navigation = source(self.navigation_buttons_path)
+        availability = swift_block(
+            navigation,
+            "struct GRVMQuickAdminNavigationAvailability",
+        )
+        policy = swift_block(
+            navigation,
+            "func grvmQuickAdminNavigationAvailability(",
+        )
+
+        for token in ["let recentActions: Bool", "let admins: Bool"]:
+            self.assertIn(normalized(token), normalized(availability))
+        for token in [
+            "AyuGramHooks.chatAppearance("
+            "accountPeerId: presentationInterfaceState.accountPeerId)"
+            ".chats.quickAdminShortcuts",
+            "presentationInterfaceState.interfaceState.selectionState == nil",
+            "case .standard(.default) = presentationInterfaceState.mode",
+            "case .peer = presentationInterfaceState.chatLocation",
+            "case .scheduledMessages, .pinnedMessages, .messageOptions, "
+            ".customChatContents:",
+            "channel.adminRights != nil || channel.flags.contains(.isCreator)",
+            "case .group:",
+            "recentActions: isAdmin, admins: true",
+            "case .broadcast:",
+            "recentActions: isAdmin, admins: isAdmin",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), normalized(policy))
+
+    def test_quick_admin_items_append_after_stock_and_open_native_controllers(
+        self,
+    ) -> None:
+        controller = source(self.controller_path)
+        update_state = source(self.update_state_path)
+        recent_item = swift_block(
+            controller,
+            "lazy var grvmRecentActionsButtonItem",
+        )
+        admins_item = swift_block(controller, "lazy var grvmAdminsButtonItem")
+        recent_action = swift_block(
+            controller,
+            "@objc func grvmRecentActionsButtonPressed(",
+        )
+        admins_action = swift_block(
+            controller,
+            "@objc func grvmAdminsButtonPressed(",
+        )
+        peer_context_menu = swift_block(controller, "openPeerContextMenu:")
+        update = swift_block(update_state, "func updateChatPresentationInterfaceStateImpl(")
+
+        for block, tokens in [
+            (
+                recent_item,
+                [
+                    'UIImage(bundleImageName: "Item List/Icons/View")',
+                    ".withRenderingMode(.alwaysTemplate)",
+                    "#selector(self.grvmRecentActionsButtonPressed)",
+                    "self.presentationData.strings.Group_Info_AdminLog",
+                ],
+            ),
+            (
+                admins_item,
+                [
+                    'UIImage(bundleImageName: "Item List/Icons/Admin")',
+                    ".withRenderingMode(.alwaysTemplate)",
+                    "#selector(self.grvmAdminsButtonPressed)",
+                    "self.presentationData.strings.GroupInfo_Administrators",
+                ],
+            ),
+            (
+                recent_action,
+                [
+                    "grvmQuickAdminNavigationAvailability("
+                    "self.presentationInterfaceState)",
+                    "availability.recentActions",
+                    "makeChatRecentActionsController(",
+                    "adminPeerId: nil",
+                    "starsState: nil",
+                    "self.push(controller)",
+                ],
+            ),
+            (
+                admins_action,
+                [
+                    "grvmQuickAdminNavigationAvailability("
+                    "self.presentationInterfaceState)",
+                    "availability.admins",
+                    "channelAdminsController(",
+                    "peerId: channel.id",
+                    "self.push(controller)",
+                ],
+            ),
+        ]:
+            for token in tokens:
+                with self.subTest(token=token):
+                    self.assertIn(normalized(token), normalized(block))
+
+        assert_ordered_tokens(
+            self,
+            update,
+            [
+                "rightBarButtons.append(rightNavigationButton.buttonItem)",
+                "rightBarButtons.append(secondaryRightNavigationButton.buttonItem)",
+                "let quickAdminAvailability = "
+                "grvmQuickAdminNavigationAvailability("
+                "updatedChatPresentationInterfaceState)",
+                "rightBarButtons.append("
+                "selfController.grvmRecentActionsButtonItem)",
+                "rightBarButtons.append(selfController.grvmAdminsButtonItem)",
+            ],
+        )
+
+        self.assertNotIn("AyuGramHooks.shouldUseQuickAdminShortcuts", controller)
+        self.assertNotIn(
+            "AyuGramHooks.shouldUseQuickAdminShortcuts =",
+            source(self.feature_manager_path),
+        )
+        self.assertNotIn("Conversation_ContextMenuBan", peer_context_menu)
+        self.assertNotIn("chatAvailableMessageActions", peer_context_menu)
+        self.assertNotIn("EngineData.Item.Messages.Message", peer_context_menu)
 
     def test_behavior_fixture_preserves_stock_and_filters_before_cap(self) -> None:
         candidates = [

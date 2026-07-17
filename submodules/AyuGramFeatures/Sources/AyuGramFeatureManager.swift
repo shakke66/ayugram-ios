@@ -311,13 +311,11 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.shouldUseMD3Switches = { [weak self] in self?.currentSettings.md3StyleSwitches ?? false }
         AyuGramHooks.shouldDisableCustomBackgrounds = { [weak self] in self?.currentSettings.disableCustomBackgrounds ?? false }
         AyuGramHooks.codeFontName = { [weak self] in self?.currentSettings.codeFontName ?? "" }
-        AyuGramHooks.shouldUseQuickAdminShortcuts = { [weak self] in self?.currentSettings.quickAdminShortcuts ?? false }
         AyuGramHooks.shouldShowMessageShot = { [weak self] in self?.currentSettings.messageShotFeature ?? false }
         AyuGramHooks.shouldReplaceMarksWithIcons = { [weak self] in self?.currentSettings.replaceMarksWithIcons ?? false }
         AyuGramHooks.shouldShowChannelReactions = { [weak self] in self?.currentSettings.showChannelReactions ?? true }
         AyuGramHooks.shouldShowGroupReactions = { [weak self] in self?.currentSettings.showGroupReactions ?? true }
         AyuGramHooks.recentStickersLimit = { [weak self] in self?.currentSettings.recentStickersCount ?? 20 }
-        AyuGramHooks.channelBottomButtonMode = { [weak self] in self?.currentSettings.channelBottomButton ?? 1 }
 
         AyuGramHooks.contextMenuReactionsPanel = { [weak self] in self?.currentSettings.showReactionsPanelInContextMenu ?? 0 }
         AyuGramHooks.contextMenuViewsPanel = { [weak self] in self?.currentSettings.showViewsPanelInContextMenu ?? 0 }
