@@ -15,7 +15,15 @@ def swift_block(text: str, signature: str) -> str:
         raise AssertionError(f"Missing Swift block: {signature}")
     opening_brace = text.index("{", start)
     depth = 0
+    in_line_comment = False
     for index in range(opening_brace, len(text)):
+        if in_line_comment:
+            if text[index] == "\n":
+                in_line_comment = False
+            continue
+        if text.startswith("//", index):
+            in_line_comment = True
+            continue
         if text[index] == "{":
             depth += 1
         elif text[index] == "}":
@@ -573,7 +581,10 @@ class ChatControlsContractTests(unittest.TestCase):
 
     def test_compose_accessories_use_one_exact_account_snapshot(self) -> None:
         input_contexts = source(self.input_contexts_path)
-        panel_state = input_contexts
+        panel_state = swift_block(
+            input_contexts,
+            "func inputTextPanelStateForChatPresentationInterfaceState(",
+        )
         exact_snapshot = (
             "let compose = AyuGramHooks.chatAppearance("
             "accountPeerId: context.account.peerId).compose"
@@ -613,6 +624,10 @@ class ChatControlsContractTests(unittest.TestCase):
         panel = source(self.input_panel_path)
         calculate_metrics = swift_block(panel, "private func calculateTextFieldMetrics(")
         update_layout = swift_block(panel, "override public func updateLayout(")
+        attach_popup_should_begin = swift_block(
+            panel,
+            "self.attachmentButtonContextGesture.shouldBegin =",
+        )
 
         exact_snapshot = (
             "let compose = AyuGramHooks.chatAppearance("
@@ -624,6 +639,11 @@ class ChatControlsContractTests(unittest.TestCase):
         self.assertIn("if self.isAIEnabled && compose.showAiEditorButton", update_layout)
         self.assertIn("let aiButton", update_layout)
         self.assertIn("let inlineAiButton", update_layout)
+        self.assertIn("self.attachmentButton.isEnabled", attach_popup_should_begin)
+        self.assertIn(
+            normalized("compose.showAttachButton && compose.showAttachPopup"),
+            normalized(attach_popup_should_begin),
+        )
 
         for token in [
             "let showAttachmentButton = displayMediaButton && compose.showAttachButton",

@@ -825,7 +825,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 return false
             }
             let compose = AyuGramHooks.chatAppearance(accountPeerId: interfaceState.accountPeerId).compose
-            return compose.showAttachButton && compose.showAttachPopup
+            return self.attachmentButton.isEnabled && compose.showAttachButton && compose.showAttachPopup
         }
         self.attachmentButtonContextGesture.activated = { [weak self] _, _ in
             self?.displayAttachmentMenu()
