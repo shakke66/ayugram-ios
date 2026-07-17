@@ -1154,6 +1154,8 @@ private final class StoryContainerScreenComponent: Component {
 
         private func grvmWaitForStoryGhostSnapshot(id: StoryId) {
             guard let component = self.component else {
+                self.isAwaitingGhostStoryChoice = false
+                self.ghostStorySettingsDisposable.set(nil)
                 return
             }
             let accountPeerId = component.context.account.peerId
@@ -1163,17 +1165,16 @@ private final class StoryContainerScreenComponent: Component {
             }
 
             self.ghostStoryAcknowledgementTimer?.invalidate()
+            // ponytail: bounded 1s polling; use the registry signal if one is exposed.
+            var remainingAttempts = 20
             let timer = SwiftSignalKit.Timer(timeout: 0.05, repeat: true, completion: { [weak self] in
-                guard let self, let component = self.component else {
+                guard let self else {
                     return
                 }
-                let accountPeerId = component.context.account.peerId
-                guard AyuGramHooks.shouldSuppressStoryRead?(accountPeerId) == true else {
-                    return
+                remainingAttempts -= 1
+                if AyuGramHooks.shouldSuppressStoryRead?(accountPeerId) == true || remainingAttempts <= 0 {
+                    self.grvmFinishStoryGhostChoice(id: id)
                 }
-                self.ghostStoryAcknowledgementTimer?.invalidate()
-                self.ghostStoryAcknowledgementTimer = nil
-                self.grvmFinishStoryGhostChoice(id: id)
             }, queue: .mainQueue())
             self.ghostStoryAcknowledgementTimer = timer
             timer.start()
