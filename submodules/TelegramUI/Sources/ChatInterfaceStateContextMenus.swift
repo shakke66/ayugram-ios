@@ -2129,23 +2129,21 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             canViewStats = canViewReadStats(message: message, participantCount: infoSummaryData.participantCount, isMessageRead: isMessageRead, isPremium: isPremium, appConfig: appConfig)
         }
         
-        var reactionCount = 0
-        for reaction in mergedMessageReactionsAndPeers(accountPeerId: context.account.peerId, accountPeer: nil, message: message).reactions {
-            reactionCount += Int(reaction.count)
-        }
-        if let reactionsAttribute = message.reactionsAttribute {
-            if !reactionsAttribute.canViewList {
-                reactionCount = 0
-            }
-        }
-
         let viewsPlacement = grvmContextMenuPlacement(contextMenuSettings.views, modifierPressed: modifierPressed)
         let reactionsPlacement = grvmContextMenuPlacement(contextMenuSettings.reactions, modifierPressed: modifierPressed)
         if case .hidden = viewsPlacement {
             canViewStats = false
         }
-        if case .hidden = reactionsPlacement {
-            reactionCount = 0
+        var reactionCount = 0
+        if reactionsPlacement != .hidden {
+            for reaction in mergedMessageReactionsAndPeers(accountPeerId: context.account.peerId, accountPeer: nil, message: message).reactions {
+                reactionCount += Int(reaction.count)
+            }
+            if let reactionsAttribute = message.reactionsAttribute {
+                if !reactionsAttribute.canViewList {
+                    reactionCount = 0
+                }
+            }
         }
 
         let isEdited = message.attributes.contains(where: { attribute in

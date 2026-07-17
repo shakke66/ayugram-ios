@@ -311,6 +311,31 @@ class ContextMenuSemanticsContractTests(unittest.TestCase):
         self.assertIn("grvmFilteredReadStats(", node)
         self.assertIn("self.item.includeReactions ? self.customEmojiPacks : []", node)
 
+    def test_hidden_reactions_skip_menu_level_merge_and_validation(self) -> None:
+        menu = swift_block(
+            self.context_menu, "func contextMenuForChatPresentationInterfaceState("
+        )
+        reaction_window = menu[
+            menu.index("var canViewStats = false") : menu.index(
+                "let isEdited = message.attributes.contains("
+            )
+        ]
+        self.assertLess(
+            reaction_window.index("let reactionsPlacement"),
+            reaction_window.index("mergedMessageReactionsAndPeers("),
+        )
+
+        non_hidden_guard = swift_block(
+            reaction_window, "if reactionsPlacement != .hidden"
+        )
+        self.assertIn("mergedMessageReactionsAndPeers(", non_hidden_guard)
+        self.assertIn("if let reactionsAttribute = message.reactionsAttribute", non_hidden_guard)
+        self.assertEqual(reaction_window.count("mergedMessageReactionsAndPeers("), 1)
+        self.assertEqual(
+            reaction_window.count("if let reactionsAttribute = message.reactionsAttribute"),
+            1,
+        )
+
     def test_stock_delete_send_now_and_history_remain_independent(self) -> None:
         menu = swift_block(
             self.context_menu, "func contextMenuForChatPresentationInterfaceState("

@@ -81,3 +81,20 @@ Implemented real GRVMgram context-menu actions on `codex/grvmgram-full-parity` f
   - `submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift`
   - `Tests/GRVMgramContracts/test_context_menu_semantics_contract.py`
   - `.superpowers/sdd/chat-task-7-report.md`
+
+## Reviewer Fix: Hidden Reaction Work
+
+- Root cause: menu construction unconditionally merged reaction state and validated `ReactionsMessageAttribute` before it derived `reactionsPlacement`; `.hidden` only reset the resulting count afterward.
+- RED:
+  - Added one brace/window-scoped contract that requires `reactionsPlacement` before menu-level reaction work and requires the merge plus attribute validation inside the single non-hidden guard.
+  - Command: `python -m unittest Tests.GRVMgramContracts.test_context_menu_semantics_contract.ContextMenuSemanticsContractTests.test_hidden_reactions_skip_menu_level_merge_and_validation -v`
+  - Result: `Ran 1 test`, `FAILED (failures=1)` because the merge preceded placement (`1427 not less than 954`).
+- Implementation:
+  - Derived views and reactions placements before reaction counting, then moved the merge/count and reaction-attribute validation into `if reactionsPlacement != .hidden`.
+  - Kept the stats-route grouping, account-scoped reaction anchor, and all node behavior unchanged.
+- GREEN:
+  - New focused contract: `Ran 1 test`, `OK`.
+  - Context-menu contract plus the affected account-scoped reaction-row regression: `Ran 11 tests`, `OK`.
+  - Full command: `python -m unittest discover -s Tests/GRVMgramContracts -p "test_*.py" -v`.
+  - Full result: `Ran 260 tests`, `OK`.
+  - `git diff --check` passed.
