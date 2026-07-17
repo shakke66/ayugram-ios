@@ -113,6 +113,10 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
             "UIFont(name: fontName, size: baseFontSize) ?? Font.monospace(baseFontSize)",
             "theme: theme",
             "accountPeerId: self.accountPeerId",
+            "private let chatAppearance: GRVMAppearanceSettings?",
+            "chatAppearance: GRVMAppearanceSettings? = nil",
+            "self.chatAppearance = chatAppearance",
+            "chatAppearance: self.chatAppearance",
         ]:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, data)
@@ -122,6 +126,27 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
         self.assertGreaterEqual(
             history.count("accountPeerId: context.account.peerId"), 2
         )
+        presentation_management = swift_block(
+            history, "private func beginPresentationDataManagement("
+        )
+        for fragment in [
+            "grvmSettings(",
+            "accountId: self.context.account.peerId",
+            "accountManager: self.context.sharedContext.accountManager",
+            "settings.grvmChatAppearanceSettings.appearance",
+            "lhs.messageBubbleRadius == rhs.messageBubbleRadius",
+            "lhs.codeFontName == rhs.codeFontName",
+            "previousChatAppearance?.messageBubbleRadius != chatAppearance.messageBubbleRadius",
+            "previousChatAppearance?.codeFontName != chatAppearance.codeFontName",
+            "previousChatAppearance = chatAppearance",
+            "chatAppearance: chatAppearance",
+        ]:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, presentation_management)
+
+        telegram_ui_build = source("submodules/TelegramUI/BUILD")
+        self.assertIn('"//submodules/AyuGramFeatures:AyuGramFeatures"', telegram_ui_build)
+        self.assertIn('"//submodules/AyuGramLib:AyuGramLib"', telegram_ui_build)
 
         images = source(
             "submodules/TelegramPresentationData/Sources/ChatMessageBubbleImages.swift"
@@ -235,10 +260,21 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
         peer_status = swift_block(
             producer, "let peerStatus: Signal<NetworkStatusTitle.Status?, NoError>"
         )
-        self.assertIn("context.account.peerId", peer_status)
-        self.assertIn(".appearance.hidePremiumStatuses", peer_status)
+        for fragment in [
+            "combineLatest(",
+            "grvmSettings(",
+            "accountId: context.account.peerId",
+            "accountManager: context.sharedContext.accountManager",
+            "settings.hidePremiumStatuses",
+        ]:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, peer_status)
+        self.assertNotIn("AyuGramHooks.chatAppearance(", peer_status)
         self.assertIn("if let emojiStatus = user.emojiStatus", peer_status)
         self.assertIn("else if user.isPremium", peer_status)
+
+        chat_list_build = source("submodules/ChatListUI/BUILD")
+        self.assertIn('"//submodules/AyuGramLib:AyuGramLib"', chat_list_build)
 
     def test_premium_gate_never_wraps_trust_badges(self) -> None:
         paths = [

@@ -35,6 +35,7 @@ public final class ChatPresentationData {
     public let animatedEmojiScale: CGFloat
     public let isPreview: Bool
     private let sourceChatBubbleCorners: PresentationChatBubbleCorners
+    private let chatAppearance: GRVMAppearanceSettings?
     
     public let messageFont: UIFont
     public let messageEmojiFont: UIFont
@@ -44,7 +45,7 @@ public final class ChatPresentationData {
     public let messageFixedFont: UIFont
     public let messageBlockQuoteFont: UIFont
     
-    public init(theme: ChatPresentationThemeData, fontSize: PresentationFontSize, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameDisplayOrder: PresentationPersonNameOrder, disableAnimations: Bool, largeEmoji: Bool, chatBubbleCorners: PresentationChatBubbleCorners, animatedEmojiScale: CGFloat = 1.0, isPreview: Bool = false, accountPeerId: PeerId? = nil) {
+    public init(theme: ChatPresentationThemeData, fontSize: PresentationFontSize, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameDisplayOrder: PresentationPersonNameOrder, disableAnimations: Bool, largeEmoji: Bool, chatBubbleCorners: PresentationChatBubbleCorners, animatedEmojiScale: CGFloat = 1.0, isPreview: Bool = false, accountPeerId: PeerId? = nil, chatAppearance: GRVMAppearanceSettings? = nil) {
         self.theme = theme
         self.accountPeerId = accountPeerId
         self.fontSize = fontSize
@@ -53,8 +54,11 @@ public final class ChatPresentationData {
         self.nameDisplayOrder = nameDisplayOrder
         self.disableAnimations = disableAnimations
         self.sourceChatBubbleCorners = chatBubbleCorners
+        self.chatAppearance = chatAppearance
         let appearance: GRVMAppearanceSettings
-        if let accountPeerId {
+        if let chatAppearance {
+            appearance = chatAppearance
+        } else if let accountPeerId {
             appearance = AyuGramHooks.chatAppearance(accountPeerId: accountPeerId).appearance
         } else {
             appearance = GRVMChatAppearanceSettings.default.appearance
@@ -99,7 +103,8 @@ public final class ChatPresentationData {
             chatBubbleCorners: self.sourceChatBubbleCorners,
             animatedEmojiScale: self.animatedEmojiScale,
             isPreview: self.isPreview,
-            accountPeerId: self.accountPeerId
+            accountPeerId: self.accountPeerId,
+            chatAppearance: self.chatAppearance
         )
     }
 }

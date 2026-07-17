@@ -5,6 +5,8 @@ import SwiftSignalKit
 import Display
 import AsyncDisplayKit
 import TelegramCore
+import AyuGramFeatures
+import AyuGramLib
 import Postbox
 import TelegramPresentationData
 import TelegramUIPreferences
@@ -2474,13 +2476,27 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
         |> map { view in
             return view.values[PreferencesKeys.appConfiguration]?.get(AppConfiguration.self) ?? .defaultValue
         }
+
+        let chatAppearance = grvmSettings(
+            accountId: self.context.account.peerId,
+            accountManager: self.context.sharedContext.accountManager
+        )
+        |> map { settings in
+            return settings.grvmChatAppearanceSettings.appearance
+        }
+        |> distinctUntilChanged(isEqual: { lhs, rhs in
+            return lhs.messageBubbleRadius == rhs.messageBubbleRadius
+                && lhs.codeFontName == rhs.codeFontName
+        })
         
         var didSetPresentationData = false
+        var previousChatAppearance: GRVMAppearanceSettings?
         self.presentationDataDisposable = (combineLatest(queue: .mainQueue(),
             updated |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_beginPresentationDataManagement_updated"),
-            appConfiguration |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_beginPresentationDataManagement_appConfiguration")
+            appConfiguration |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_beginPresentationDataManagement_appConfiguration"),
+            chatAppearance
         )
-        |> deliverOnMainQueue).startStrict(next: { [weak self] presentationData, appConfiguration in
+        |> deliverOnMainQueue).startStrict(next: { [weak self] presentationData, appConfiguration, chatAppearance in
             if let strongSelf = self {
                 let previousTheme = strongSelf.currentPresentationData.theme
                 let previousStrings = strongSelf.currentPresentationData.strings
@@ -2489,11 +2505,12 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
                 
                 let animatedEmojiConfig = ChatHistoryAnimatedEmojiConfiguration.with(appConfiguration: appConfiguration)
                 
-                if !didSetPresentationData || previousTheme !== presentationData.theme || previousStrings !== presentationData.strings || previousWallpaper != presentationData.chatWallpaper || previousAnimatedEmojiScale != animatedEmojiConfig.scale {
+                if !didSetPresentationData || previousTheme !== presentationData.theme || previousStrings !== presentationData.strings || previousWallpaper != presentationData.chatWallpaper || previousAnimatedEmojiScale != animatedEmojiConfig.scale || previousChatAppearance?.messageBubbleRadius != chatAppearance.messageBubbleRadius || previousChatAppearance?.codeFontName != chatAppearance.codeFontName {
                     didSetPresentationData = true
+                    previousChatAppearance = chatAppearance
                     
                     let themeData = ChatPresentationThemeData(theme: presentationData.theme, wallpaper: presentationData.chatWallpaper)
-                    let chatPresentationData = ChatPresentationData(theme: themeData, fontSize: presentationData.chatFontSize, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat, nameDisplayOrder: presentationData.nameDisplayOrder, disableAnimations: true, largeEmoji: presentationData.largeEmoji, chatBubbleCorners: presentationData.chatBubbleCorners, animatedEmojiScale: animatedEmojiConfig.scale, accountPeerId: context.account.peerId)
+                    let chatPresentationData = ChatPresentationData(theme: themeData, fontSize: presentationData.chatFontSize, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat, nameDisplayOrder: presentationData.nameDisplayOrder, disableAnimations: true, largeEmoji: presentationData.largeEmoji, chatBubbleCorners: presentationData.chatBubbleCorners, animatedEmojiScale: animatedEmojiConfig.scale, accountPeerId: context.account.peerId, chatAppearance: chatAppearance)
                     
                     strongSelf.currentPresentationData = chatPresentationData
                     

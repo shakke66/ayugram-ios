@@ -54,6 +54,7 @@ import TextFormat
 import AvatarUploadToastScreen
 import AdsInfoScreen
 import AdsReportScreen
+import AyuGramLib
 import AyuGramSettingsUI
 import SearchBarNode
 import ChatListFilterTabContainerNode
@@ -6725,14 +6726,21 @@ private final class ChatListLocationContext {
         let peerStatus: Signal<NetworkStatusTitle.Status?, NoError>
         switch self.location {
         case .chatList(.root):
-            peerStatus = context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
-            |> map { peer -> NetworkStatusTitle.Status? in
+            peerStatus = combineLatest(
+                context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId)),
+                grvmSettings(
+                    accountId: context.account.peerId,
+                    accountManager: context.sharedContext.accountManager
+                )
+                |> map { settings in
+                    return settings.hidePremiumStatuses
+                }
+                |> distinctUntilChanged
+            )
+            |> map { peer, hidePremiumStatuses -> NetworkStatusTitle.Status? in
                 guard case let .user(user) = peer else {
                     return nil
                 }
-                let hidePremiumStatuses = AyuGramHooks.chatAppearance(
-                    accountPeerId: context.account.peerId
-                ).appearance.hidePremiumStatuses
                 if hidePremiumStatuses {
                     return nil
                 }
