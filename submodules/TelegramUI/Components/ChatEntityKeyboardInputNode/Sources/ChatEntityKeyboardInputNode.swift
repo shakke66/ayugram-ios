@@ -35,6 +35,24 @@ import GlassBackgroundComponent
 
 private let keyboardCornerRadius: CGFloat = 30.0
 
+private func grvmIsMediaInstalled(
+    _ file: TelegramMediaFile,
+    namespace: ItemCollectionId.Namespace,
+    installedCollectionIds: Set<ItemCollectionId>
+) -> Bool {
+    for attribute in file.attributes {
+        switch attribute {
+        case let .Sticker(_, packReference, _), let .CustomEmoji(_, _, _, packReference):
+            if case let .id(id, _) = packReference, installedCollectionIds.contains(ItemCollectionId(namespace: namespace, id: id)) {
+                return true
+            }
+        default:
+            break
+        }
+    }
+    return false
+}
+
 public final class EmptyInputView: UIView, UIInputViewAudioFeedback {
     public var enableInputClicksWhenVisible: Bool {
         return true
@@ -181,8 +199,9 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
     ) -> Signal<InputData, NoError> {
         let animationCache = context.animationCache
         let animationRenderer = context.animationRenderer
+        let chats = AyuGramHooks.chatAppearance(accountPeerId: context.account.peerId).chats
         
-        let effectiveHasTrending = hasTrending && AyuGramHooks.shouldShowOnlyAddedStickers?() != true
+        let effectiveHasTrending = hasTrending && !chats.showOnlyAddedStickers
 
         let emojiItems = EmojiPagerContentComponent.emojiInputData(
             context: context,
@@ -488,6 +507,28 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
     }
     
     public init(context: AccountContext, currentInputData: InputData, updatedInputData: Signal<InputData, NoError>, defaultToEmojiTab: Bool, opaqueTopPanelBackground: Bool = false, useOpaqueTheme: Bool = false, interaction: ChatEntityKeyboardInputNode.Interaction?, chatPeerId: PeerId?, stateContext: StateContext?, forceHasPremium: Bool = false, displayBottomPanel: Bool = true) {
+        let chats = AyuGramHooks.chatAppearance(accountPeerId: context.account.peerId).chats
+        let installedEmojiCollectionIds = context.account.postbox.itemCollectionsView(
+            orderedItemListCollectionIds: [],
+            namespaces: [Namespaces.ItemCollection.CloudEmojiPacks],
+            aroundIndex: nil,
+            count: 10000000
+        )
+        |> map { view in
+            Set(view.collectionInfos.map { $0.0 })
+        }
+        |> distinctUntilChanged
+        let installedStickerCollectionIds = context.account.postbox.itemCollectionsView(
+            orderedItemListCollectionIds: [],
+            namespaces: [Namespaces.ItemCollection.CloudStickerPacks],
+            aroundIndex: nil,
+            count: 10000000
+        )
+        |> map { view in
+            Set(view.collectionInfos.map { $0.0 })
+        }
+        |> distinctUntilChanged
+
         self.context = context
         self.currentInputData = currentInputData
         self.defaultToEmojiTab = defaultToEmojiTab
@@ -991,8 +1032,8 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                                 remoteSignal = .single(([], true))
                                 remotePacksSignal = .single((FoundStickerSets(), true))
                             }
-                            return combineLatest(remoteSignal, remotePacksSignal)
-                            |> mapToSignal { foundEmoji, foundPacks -> Signal<[EmojiPagerContentComponent.ItemGroup], NoError> in
+                            return combineLatest(remoteSignal, remotePacksSignal, installedEmojiCollectionIds)
+                            |> mapToSignal { foundEmoji, foundPacks, installedEmojiCollectionIds -> Signal<[EmojiPagerContentComponent.ItemGroup], NoError> in
                                 if foundEmoji.items.isEmpty && !foundEmoji.isFinalResult {
                                     return .complete()
                                 }
@@ -1026,6 +1067,9 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                                         continue
                                     }
                                     existingIds.insert(itemFile.fileId)
+                                    if chats.showOnlyAddedStickers && !grvmIsMediaInstalled(itemFile, namespace: Namespaces.ItemCollection.CloudEmojiPacks, installedCollectionIds: installedEmojiCollectionIds) {
+                                        continue
+                                    }
                                     if itemFile.isPremiumEmoji && !hasPremium {
                                         continue
                                     }
@@ -1066,6 +1110,9 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                                 ))
                                 
                                 for (collectionId, info, _, _) in foundPacks.sets.infos {
+                                    if chats.showOnlyAddedStickers && !installedEmojiCollectionIds.contains(collectionId) {
+                                        continue
+                                    }
                                     if let info = info as? StickerPackCollectionInfo {
                                         var topItems: [StickerPackItem] = []
                                         for e in foundPacks.sets.entries {
@@ -1135,8 +1182,9 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                         }))
                     }
                 case let .category(value):
-                    let resultSignal = self.context.engine.stickers.searchEmoji(category: value)
-                    |> mapToSignal { files, isFinalResult -> Signal<(items: [EmojiPagerContentComponent.ItemGroup], isFinalResult: Bool), NoError> in
+                    let resultSignal = combineLatest(context.engine.stickers.searchEmoji(category: value), installedEmojiCollectionIds)
+                    |> mapToSignal { result, installedEmojiCollectionIds -> Signal<(items: [EmojiPagerContentComponent.ItemGroup], isFinalResult: Bool), NoError> in
+                        let (files, isFinalResult) = result
                         var items: [EmojiPagerContentComponent.Item] = []
                         
                         var existingIds = Set<MediaId>()
@@ -1145,6 +1193,9 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                                 continue
                             }
                             existingIds.insert(itemFile.fileId)
+                            if chats.showOnlyAddedStickers && !grvmIsMediaInstalled(itemFile, namespace: Namespaces.ItemCollection.CloudEmojiPacks, installedCollectionIds: installedEmojiCollectionIds) {
+                                continue
+                            }
                             let animationData = EntityKeyboardAnimationData(file: TelegramMediaFile.Accessor(itemFile))
                             let item = EmojiPagerContentComponent.Item(
                                 animationData: animationData,
@@ -1481,8 +1532,11 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                     strongSelf.stickerSearchDisposable.set(nil)
                     strongSelf.stickerSearchStateValue = EmojiSearchState(result: nil, isSearching: false)
                 case let .category(value):
-                    let resultSignal = strongSelf.context.engine.stickers.searchStickers(category: value, scope: [.installed, .remote])
-                    |> mapToSignal { files -> Signal<(items: [EmojiPagerContentComponent.ItemGroup], isFinalResult: Bool), NoError> in
+                    let resultSignal = combineLatest(
+                        strongSelf.context.engine.stickers.searchStickers(category: value, scope: chats.showOnlyAddedStickers ? [.installed] : [.installed, .remote]),
+                        installedStickerCollectionIds
+                    )
+                    |> mapToSignal { files, installedStickerCollectionIds -> Signal<(items: [EmojiPagerContentComponent.ItemGroup], isFinalResult: Bool), NoError> in
                         var items: [EmojiPagerContentComponent.Item] = []
                         
                         var existingIds = Set<MediaId>()
@@ -1492,6 +1546,9 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                                 continue
                             }
                             existingIds.insert(itemFile.fileId)
+                            if chats.showOnlyAddedStickers && !grvmIsMediaInstalled(itemFile, namespace: Namespaces.ItemCollection.CloudStickerPacks, installedCollectionIds: installedStickerCollectionIds) {
+                                continue
+                            }
                             let animationData = EntityKeyboardAnimationData(file: TelegramMediaFile.Accessor(itemFile))
                             let item = EmojiPagerContentComponent.Item(
                                 animationData: animationData,

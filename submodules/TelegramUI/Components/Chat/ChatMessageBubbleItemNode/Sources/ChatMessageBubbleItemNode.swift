@@ -3147,15 +3147,27 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         }
         
         var reactionButtonsFinalize: ((CGFloat) -> (CGSize, (_ animation: ListViewItemUpdateAnimation) -> ChatMessageReactionButtonsNode))?
-        var ayuShouldShowReactions = true
-        if let ayuChannel = firstMessage.peers[firstMessage.id.peerId] as? TelegramChannel {
-            if case .broadcast = ayuChannel.info {
-                ayuShouldShowReactions = AyuGramHooks.shouldShowChannelReactions?() != false
-            } else if case .group = ayuChannel.info {
-                ayuShouldShowReactions = AyuGramHooks.shouldShowGroupReactions?() != false
+        let chats = AyuGramHooks.chatAppearance(accountPeerId: item.context.account.peerId).chats
+        let grvmShouldShowReactions: Bool
+        if let peer = firstMessage.peers[firstMessage.id.peerId] {
+            if let channel = peer as? TelegramChannel {
+                switch channel.info {
+                case .broadcast:
+                    grvmShouldShowReactions = chats.showChannelReactions
+                case .group:
+                    grvmShouldShowReactions = chats.showGroupReactions
+                }
+            } else if peer is TelegramGroup {
+                grvmShouldShowReactions = chats.showGroupReactions
+            } else if peer is TelegramUser || peer is TelegramSecretChat {
+                grvmShouldShowReactions = chats.showPrivateReactions
+            } else {
+                grvmShouldShowReactions = true
             }
+        } else {
+            grvmShouldShowReactions = true
         }
-        if !bubbleReactions.reactions.isEmpty && !item.presentationData.isPreview && ayuShouldShowReactions {
+        if !bubbleReactions.reactions.isEmpty && !item.presentationData.isPreview && grvmShouldShowReactions {
             var centerAligned = false
             for media in item.message.media {
                 if let action = media as? TelegramMediaAction {
