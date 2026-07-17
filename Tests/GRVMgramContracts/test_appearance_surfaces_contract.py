@@ -123,9 +123,7 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
         self.assertNotIn("AyuGramHooks.codeFontName?()", data)
 
         history = source("submodules/TelegramUI/Sources/ChatHistoryListNode.swift")
-        self.assertGreaterEqual(
-            history.count("accountPeerId: context.account.peerId"), 2
-        )
+        self.assertIn("accountPeerId: context.account.peerId", history)
         presentation_management = swift_block(
             history, "private func beginPresentationDataManagement("
         )
@@ -139,10 +137,14 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
             "previousChatAppearance?.messageBubbleRadius != chatAppearance.messageBubbleRadius",
             "previousChatAppearance?.codeFontName != chatAppearance.codeFontName",
             "previousChatAppearance = chatAppearance",
+            "accountPeerId: strongSelf.context.account.peerId",
             "chatAppearance: chatAppearance",
         ]:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, presentation_management)
+        self.assertNotIn(
+            "accountPeerId: context.account.peerId", presentation_management
+        )
 
         telegram_ui_build = source("submodules/TelegramUI/BUILD")
         self.assertIn('"//submodules/AyuGramFeatures:AyuGramFeatures"', telegram_ui_build)
