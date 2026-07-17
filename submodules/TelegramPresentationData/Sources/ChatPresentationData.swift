@@ -24,6 +24,7 @@ public final class ChatPresentationThemeData: Equatable {
 
 public final class ChatPresentationData {
     public let theme: ChatPresentationThemeData
+    public let accountPeerId: PeerId?
     public let fontSize: PresentationFontSize
     public let strings: PresentationStrings
     public let dateTimeFormat: PresentationDateTimeFormat
@@ -33,6 +34,7 @@ public final class ChatPresentationData {
     public let chatBubbleCorners: PresentationChatBubbleCorners
     public let animatedEmojiScale: CGFloat
     public let isPreview: Bool
+    private let sourceChatBubbleCorners: PresentationChatBubbleCorners
     
     public let messageFont: UIFont
     public let messageEmojiFont: UIFont
@@ -42,14 +44,29 @@ public final class ChatPresentationData {
     public let messageFixedFont: UIFont
     public let messageBlockQuoteFont: UIFont
     
-    public init(theme: ChatPresentationThemeData, fontSize: PresentationFontSize, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameDisplayOrder: PresentationPersonNameOrder, disableAnimations: Bool, largeEmoji: Bool, chatBubbleCorners: PresentationChatBubbleCorners, animatedEmojiScale: CGFloat = 1.0, isPreview: Bool = false) {
+    public init(theme: ChatPresentationThemeData, fontSize: PresentationFontSize, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameDisplayOrder: PresentationPersonNameOrder, disableAnimations: Bool, largeEmoji: Bool, chatBubbleCorners: PresentationChatBubbleCorners, animatedEmojiScale: CGFloat = 1.0, isPreview: Bool = false, accountPeerId: PeerId? = nil) {
         self.theme = theme
+        self.accountPeerId = accountPeerId
         self.fontSize = fontSize
         self.strings = strings
         self.dateTimeFormat = dateTimeFormat
         self.nameDisplayOrder = nameDisplayOrder
         self.disableAnimations = disableAnimations
-        self.chatBubbleCorners = chatBubbleCorners
+        self.sourceChatBubbleCorners = chatBubbleCorners
+        let appearance: GRVMAppearanceSettings
+        if let accountPeerId {
+            appearance = AyuGramHooks.chatAppearance(accountPeerId: accountPeerId).appearance
+        } else {
+            appearance = GRVMChatAppearanceSettings.default.appearance
+        }
+        let messageBubbleRadius = min(16, max(0, appearance.messageBubbleRadius))
+        let radiusScale = CGFloat(messageBubbleRadius) / 16.0
+        self.chatBubbleCorners = PresentationChatBubbleCorners(
+            mainRadius: chatBubbleCorners.mainRadius * radiusScale,
+            auxiliaryRadius: chatBubbleCorners.auxiliaryRadius * radiusScale,
+            mergeBubbleCorners: chatBubbleCorners.mergeBubbleCorners,
+            hasTails: chatBubbleCorners.hasTails
+        )
         self.largeEmoji = largeEmoji
         self.isPreview = isPreview
         
@@ -59,7 +76,8 @@ public final class ChatPresentationData {
         self.messageBoldFont = Font.bold(baseFontSize)
         self.messageItalicFont = Font.italic(baseFontSize)
         self.messageBoldItalicFont = Font.semiboldItalic(baseFontSize)
-        if let fontName = AyuGramHooks.codeFontName?(), !fontName.isEmpty {
+        let fontName = appearance.codeFontName
+        if !fontName.isEmpty {
             self.messageFixedFont = UIFont(name: fontName, size: baseFontSize) ?? Font.monospace(baseFontSize)
         } else {
             self.messageFixedFont = Font.monospace(baseFontSize)
@@ -71,16 +89,17 @@ public final class ChatPresentationData {
     
     public func withTheme(_ theme: ChatPresentationThemeData) -> ChatPresentationData {
         return ChatPresentationData(
-            theme: self.theme,
+            theme: theme,
             fontSize: self.fontSize,
             strings: self.strings,
             dateTimeFormat: self.dateTimeFormat,
             nameDisplayOrder: self.nameDisplayOrder,
             disableAnimations: self.disableAnimations,
             largeEmoji: self.largeEmoji,
-            chatBubbleCorners: self.chatBubbleCorners,
+            chatBubbleCorners: self.sourceChatBubbleCorners,
             animatedEmojiScale: self.animatedEmojiScale,
-            isPreview: self.isPreview
+            isPreview: self.isPreview,
+            accountPeerId: self.accountPeerId
         )
     }
 }

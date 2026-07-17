@@ -38,6 +38,52 @@ public enum AvatarNodeClipStyle {
     case bubble
 }
 
+private func effectiveAvatarCornerRadius(
+    clipStyle: AvatarNodeClipStyle,
+    accountPeerId: EnginePeer.Id?
+) -> CGFloat {
+    let appearance: GRVMAppearanceSettings
+    if let accountPeerId {
+        appearance = AyuGramHooks.chatAppearance(accountPeerId: accountPeerId).appearance
+    } else {
+        appearance = AyuGramHooks.primaryChatAppearance.appearance
+    }
+    let configuredRadius = CGFloat(min(50, max(0, appearance.avatarCorners))) / 100.0
+    switch clipStyle {
+    case .none, .bubble:
+        return 0.0
+    case .round:
+        return configuredRadius
+    case .roundedRect:
+        return appearance.singleCornerRadius ? configuredRadius : 0.25
+    }
+}
+
+private func updateAvatarImageClip(
+    imageNode: ImageNode,
+    clipStyle: AvatarNodeClipStyle,
+    displayDimensions: CGSize,
+    cornerRadius: CGFloat
+) {
+    switch clipStyle {
+    case .none, .bubble:
+        imageNode.clipsToBounds = false
+        imageNode.cornerRadius = 0.0
+    case .round, .roundedRect:
+        imageNode.clipsToBounds = true
+        imageNode.cornerRadius = displayDimensions.height * cornerRadius
+    }
+}
+
+private func avatarSourceClipStyle(_ clipStyle: AvatarNodeClipStyle) -> AvatarNodeClipStyle {
+    switch clipStyle {
+    case .round, .roundedRect:
+        return .none
+    case .none, .bubble:
+        return clipStyle
+    }
+}
+
 private class AvatarNodeParameters: NSObject {
     let theme: PresentationTheme?
     let accountPeerId: EnginePeer.Id?
@@ -49,9 +95,10 @@ private class AvatarNodeParameters: NSObject {
     let explicitColorIndex: Int?
     let hasImage: Bool
     let clipStyle: AvatarNodeClipStyle
+    let cornerRadius: CGFloat
     let cutoutRect: CGRect?
     
-    init(theme: PresentationTheme?, accountPeerId: EnginePeer.Id?, peerId: EnginePeer.Id?, colors: [UIColor], letters: [String], font: UIFont, icon: AvatarNodeIcon, explicitColorIndex: Int?, hasImage: Bool, clipStyle: AvatarNodeClipStyle, cutoutRect: CGRect?) {
+    init(theme: PresentationTheme?, accountPeerId: EnginePeer.Id?, peerId: EnginePeer.Id?, colors: [UIColor], letters: [String], font: UIFont, icon: AvatarNodeIcon, explicitColorIndex: Int?, hasImage: Bool, clipStyle: AvatarNodeClipStyle, cornerRadius: CGFloat, cutoutRect: CGRect?) {
         self.theme = theme
         self.accountPeerId = accountPeerId
         self.peerId = peerId
@@ -62,13 +109,14 @@ private class AvatarNodeParameters: NSObject {
         self.explicitColorIndex = explicitColorIndex
         self.hasImage = hasImage
         self.clipStyle = clipStyle
+        self.cornerRadius = cornerRadius
         self.cutoutRect = cutoutRect
         
         super.init()
     }
     
     func withUpdatedHasImage(_ hasImage: Bool) -> AvatarNodeParameters {
-        return AvatarNodeParameters(theme: self.theme, accountPeerId: self.accountPeerId, peerId: self.peerId, colors: self.colors, letters: self.letters, font: self.font, icon: self.icon, explicitColorIndex: self.explicitColorIndex, hasImage: hasImage, clipStyle: self.clipStyle, cutoutRect: self.cutoutRect)
+        return AvatarNodeParameters(theme: self.theme, accountPeerId: self.accountPeerId, peerId: self.peerId, colors: self.colors, letters: self.letters, font: self.font, icon: self.icon, explicitColorIndex: self.explicitColorIndex, hasImage: hasImage, clipStyle: self.clipStyle, cornerRadius: self.cornerRadius, cutoutRect: self.cutoutRect)
     }
 }
 
@@ -347,17 +395,20 @@ public final class AvatarNode: ASDisplayNode {
             let resourceId: String?
             let displayDimensions: CGSize
             let clipStyle: AvatarNodeClipStyle
+            let cornerRadius: CGFloat
             
             init(
                 peerId: EnginePeer.Id?,
                 resourceId: String?,
                 displayDimensions: CGSize,
-                clipStyle: AvatarNodeClipStyle
+                clipStyle: AvatarNodeClipStyle,
+                cornerRadius: CGFloat
             ) {
                 self.peerId = peerId
                 self.resourceId = resourceId
                 self.displayDimensions = displayDimensions
                 self.clipStyle = clipStyle
+                self.cornerRadius = cornerRadius
             }
         }
         
@@ -365,7 +416,7 @@ public final class AvatarNode: ASDisplayNode {
             didSet {
                 if oldValue.pointSize != font.pointSize {
                     if let parameters = self.parameters {
-                        self.parameters = AvatarNodeParameters(theme: parameters.theme, accountPeerId: parameters.accountPeerId, peerId: parameters.peerId, colors: parameters.colors, letters: parameters.letters, font: self.font, icon: parameters.icon, explicitColorIndex: parameters.explicitColorIndex, hasImage: parameters.hasImage, clipStyle: parameters.clipStyle, cutoutRect: parameters.cutoutRect)
+                        self.parameters = AvatarNodeParameters(theme: parameters.theme, accountPeerId: parameters.accountPeerId, peerId: parameters.peerId, colors: parameters.colors, letters: parameters.letters, font: self.font, icon: parameters.icon, explicitColorIndex: parameters.explicitColorIndex, hasImage: parameters.hasImage, clipStyle: parameters.clipStyle, cornerRadius: parameters.cornerRadius, cutoutRect: parameters.cutoutRect)
                     }
                     
                     if !self.displaySuspended {
@@ -635,15 +686,17 @@ public final class AvatarNode: ASDisplayNode {
                 representation = peer?.smallProfileImage
             }
             
+            let cornerRadius = effectiveAvatarCornerRadius(clipStyle: clipStyle, accountPeerId: accountPeerId)
+            updateAvatarImageClip(imageNode: self.imageNode, clipStyle: clipStyle, displayDimensions: displayDimensions, cornerRadius: cornerRadius)
             let updatedState: AvatarNodeState = .peerAvatar(peer?.id ?? EnginePeer.Id(0), peer?.nameColor, peer?.displayLetters ?? [], representation, clipStyle, cutoutRect)
-            if updatedState != self.state || overrideImage != self.overrideImage || theme !== self.theme {
+            if updatedState != self.state || overrideImage != self.overrideImage || theme !== self.theme || self.parameters?.cornerRadius != cornerRadius {
                 self.state = updatedState
                 self.overrideImage = overrideImage
                 self.theme = theme
                 
                 let parameters: AvatarNodeParameters
                 
-                if let peer = peer, let signal = peerAvatarImage(postbox: postbox, network: network, peerReference: PeerReference(peer._asPeer()), authorOfMessage: authorOfMessage, representation: representation, displayDimensions: displayDimensions, clipStyle: clipStyle, emptyColor: emptyColor, synchronousLoad: synchronousLoad, provideUnrounded: storeUnrounded, cutoutRect: cutoutRect) {
+                if let peer = peer, let signal = peerAvatarImage(postbox: postbox, network: network, peerReference: PeerReference(peer._asPeer()), authorOfMessage: authorOfMessage, representation: representation, displayDimensions: displayDimensions, clipStyle: avatarSourceClipStyle(clipStyle), emptyColor: emptyColor, synchronousLoad: synchronousLoad, provideUnrounded: storeUnrounded, cutoutRect: cutoutRect) {
                     self.contents = nil
                     self.displaySuspended = true
                     self.imageReady.set(self.imageNode.contentReady)
@@ -670,7 +723,7 @@ public final class AvatarNode: ASDisplayNode {
                         self.editOverlayNode?.isHidden = true
                     }
                     
-                    parameters = AvatarNodeParameters(theme: theme, accountPeerId: accountPeerId, peerId: peer.id, colors: calculateAvatarColors(context: nil, explicitColorIndex: nil, peerId: peer.id, nameColor: peer.nameColor, icon: icon, theme: theme), letters: peer.displayLetters, font: self.font, icon: icon, explicitColorIndex: nil, hasImage: true, clipStyle: clipStyle, cutoutRect: cutoutRect)
+                    parameters = AvatarNodeParameters(theme: theme, accountPeerId: accountPeerId, peerId: peer.id, colors: calculateAvatarColors(context: nil, explicitColorIndex: nil, peerId: peer.id, nameColor: peer.nameColor, icon: icon, theme: theme), letters: peer.displayLetters, font: self.font, icon: icon, explicitColorIndex: nil, hasImage: true, clipStyle: clipStyle, cornerRadius: cornerRadius, cutoutRect: cutoutRect)
                 } else {
                     self.imageReady.set(.single(true))
                     self.displaySuspended = false
@@ -680,7 +733,7 @@ public final class AvatarNode: ASDisplayNode {
                     
                     self.editOverlayNode?.isHidden = true
                     let colors = calculateAvatarColors(context: nil, explicitColorIndex: nil, peerId: peer?.id ?? EnginePeer.Id(0), nameColor: peer?.nameColor, icon: icon, theme: theme)
-                    parameters = AvatarNodeParameters(theme: theme, accountPeerId: accountPeerId, peerId: peer?.id ?? EnginePeer.Id(0), colors: colors, letters: peer?.displayLetters ?? [], font: self.font, icon: icon, explicitColorIndex: nil, hasImage: false, clipStyle: clipStyle, cutoutRect: cutoutRect)
+                    parameters = AvatarNodeParameters(theme: theme, accountPeerId: accountPeerId, peerId: peer?.id ?? EnginePeer.Id(0), colors: colors, letters: peer?.displayLetters ?? [], font: self.font, icon: icon, explicitColorIndex: nil, hasImage: false, clipStyle: clipStyle, cornerRadius: cornerRadius, cutoutRect: cutoutRect)
                     
                     if let badgeView = self.badgeView {
                         let badgeColor: UIColor
@@ -715,12 +768,15 @@ public final class AvatarNode: ASDisplayNode {
             displayDimensions: CGSize = CGSize(width: 60.0, height: 60.0),
             storeUnrounded: Bool = false
         ) {
+            let accountPeerId = (account ?? genericContext.account).peerId
+            let cornerRadius = effectiveAvatarCornerRadius(clipStyle: clipStyle, accountPeerId: accountPeerId)
             let smallProfileImage = peer?.smallProfileImage
             let params = Params(
                 peerId: peer?.id,
                 resourceId: smallProfileImage?.resource.id.stringRepresentation,
                 displayDimensions: displayDimensions,
-                clipStyle: clipStyle
+                clipStyle: clipStyle,
+                cornerRadius: cornerRadius
             )
             if self.params == params {
                 return
@@ -728,24 +784,7 @@ public final class AvatarNode: ASDisplayNode {
             let previousSize = self.params?.displayDimensions
             self.params = params
             
-            switch clipStyle {
-            case .none:
-                self.imageNode.clipsToBounds = false
-                self.imageNode.cornerRadius = 0.0
-            case .round:
-                self.imageNode.clipsToBounds = true
-                if let corners = AyuGramHooks.avatarCornerRadius?(), corners != 50 {
-                    // AyuGram: 0 = square, 50 = full circle (default), values in between = rounded rect.
-                    self.imageNode.cornerRadius = displayDimensions.height * (CGFloat(corners) / 100.0)
-                } else {
-                    self.imageNode.cornerRadius = displayDimensions.height * 0.5
-                }
-            case .roundedRect:
-                self.imageNode.clipsToBounds = true
-                self.imageNode.cornerRadius = displayDimensions.height * 0.25
-            case .bubble:
-                break
-            }
+            updateAvatarImageClip(imageNode: self.imageNode, clipStyle: clipStyle, displayDimensions: displayDimensions, cornerRadius: cornerRadius)
             
             if case .bubble = clipStyle {
                 var updateMask = false
@@ -847,17 +886,18 @@ public final class AvatarNode: ASDisplayNode {
                 representation = peer?.smallProfileImage
             }
             
+            let account = account ?? genericContext.account
+            let cornerRadius = effectiveAvatarCornerRadius(clipStyle: clipStyle, accountPeerId: account.peerId)
+            updateAvatarImageClip(imageNode: self.imageNode, clipStyle: clipStyle, displayDimensions: displayDimensions, cornerRadius: cornerRadius)
             let updatedState: AvatarNodeState = .peerAvatar(peer?.id ?? EnginePeer.Id(0), peer?.nameColor, peer?.displayLetters ?? [], representation, clipStyle, cutoutRect)
-            if updatedState != self.state || overrideImage != self.overrideImage || theme !== self.theme {
+            if updatedState != self.state || overrideImage != self.overrideImage || theme !== self.theme || self.parameters?.cornerRadius != cornerRadius {
                 self.state = updatedState
                 self.overrideImage = overrideImage
                 self.theme = theme
                 
                 let parameters: AvatarNodeParameters
                 
-                let account = account ?? genericContext.account
-                
-                if let peer = peer, let signal = peerAvatarImage(account: account, peerReference: PeerReference(peer._asPeer()), authorOfMessage: authorOfMessage, representation: representation, displayDimensions: displayDimensions, clipStyle: clipStyle, emptyColor: emptyColor, synchronousLoad: synchronousLoad, provideUnrounded: storeUnrounded, cutoutRect: cutoutRect) {
+                if let peer = peer, let signal = peerAvatarImage(account: account, peerReference: PeerReference(peer._asPeer()), authorOfMessage: authorOfMessage, representation: representation, displayDimensions: displayDimensions, clipStyle: avatarSourceClipStyle(clipStyle), emptyColor: emptyColor, synchronousLoad: synchronousLoad, provideUnrounded: storeUnrounded, cutoutRect: cutoutRect) {
                     self.contents = nil
                     self.displaySuspended = true
                     self.imageReady.set(self.imageNode.contentReady)
@@ -884,7 +924,7 @@ public final class AvatarNode: ASDisplayNode {
                         self.editOverlayNode?.isHidden = true
                     }
                     
-                    parameters = AvatarNodeParameters(theme: theme, accountPeerId: account.peerId, peerId: peer.id, colors: calculateAvatarColors(context: genericContext, explicitColorIndex: nil, peerId: peer.id, nameColor: peer.nameColor, icon: icon, theme: theme), letters: peer.displayLetters, font: self.font, icon: icon, explicitColorIndex: nil, hasImage: true, clipStyle: clipStyle, cutoutRect: cutoutRect)
+                    parameters = AvatarNodeParameters(theme: theme, accountPeerId: account.peerId, peerId: peer.id, colors: calculateAvatarColors(context: genericContext, explicitColorIndex: nil, peerId: peer.id, nameColor: peer.nameColor, icon: icon, theme: theme), letters: peer.displayLetters, font: self.font, icon: icon, explicitColorIndex: nil, hasImage: true, clipStyle: clipStyle, cornerRadius: cornerRadius, cutoutRect: cutoutRect)
                 } else {
                     self.imageReady.set(.single(true))
                     self.displaySuspended = false
@@ -894,7 +934,7 @@ public final class AvatarNode: ASDisplayNode {
                     
                     self.editOverlayNode?.isHidden = true
                     let colors = calculateAvatarColors(context: genericContext, explicitColorIndex: nil, peerId: peer?.id ?? EnginePeer.Id(0), nameColor: peer?.nameColor, icon: icon, theme: theme)
-                    parameters = AvatarNodeParameters(theme: theme, accountPeerId: account.peerId, peerId: peer?.id ?? EnginePeer.Id(0), colors: colors, letters: peer?.displayLetters ?? [], font: self.font, icon: icon, explicitColorIndex: nil, hasImage: false, clipStyle: clipStyle, cutoutRect: cutoutRect)
+                    parameters = AvatarNodeParameters(theme: theme, accountPeerId: account.peerId, peerId: peer?.id ?? EnginePeer.Id(0), colors: colors, letters: peer?.displayLetters ?? [], font: self.font, icon: icon, explicitColorIndex: nil, hasImage: false, clipStyle: clipStyle, cornerRadius: cornerRadius, cutoutRect: cutoutRect)
                     
                     if let badgeView = self.badgeView {
                         let badgeColor: UIColor
@@ -924,15 +964,16 @@ public final class AvatarNode: ASDisplayNode {
                         explicitIndex = 5
                 }
             }
+            let cornerRadius = effectiveAvatarCornerRadius(clipStyle: .round, accountPeerId: nil)
             let updatedState: AvatarNodeState = .custom(letter: letters, explicitColorIndex: explicitIndex, explicitIcon: icon)
-            if updatedState != self.state {
+            if updatedState != self.state || self.parameters?.cornerRadius != cornerRadius {
                 self.state = updatedState
                 
                 let parameters: AvatarNodeParameters
                 if let icon = icon, case .phone = icon {
-                    parameters = AvatarNodeParameters(theme: nil, accountPeerId: nil, peerId: nil, colors: calculateAvatarColors(context: nil, explicitColorIndex: explicitIndex, peerId: nil, nameColor: nil, icon: .phoneIcon, theme: nil), letters: [], font: self.font, icon: .phoneIcon, explicitColorIndex: explicitIndex, hasImage: false, clipStyle: .round, cutoutRect: cutoutRect)
+                    parameters = AvatarNodeParameters(theme: nil, accountPeerId: nil, peerId: nil, colors: calculateAvatarColors(context: nil, explicitColorIndex: explicitIndex, peerId: nil, nameColor: nil, icon: .phoneIcon, theme: nil), letters: [], font: self.font, icon: .phoneIcon, explicitColorIndex: explicitIndex, hasImage: false, clipStyle: .round, cornerRadius: cornerRadius, cutoutRect: cutoutRect)
                 } else {
-                    parameters = AvatarNodeParameters(theme: nil, accountPeerId: nil, peerId: nil, colors: calculateAvatarColors(context: nil, explicitColorIndex: explicitIndex, peerId: nil, nameColor: nil, icon: .none, theme: nil), letters: letters, font: self.font, icon: .none, explicitColorIndex: explicitIndex, hasImage: false, clipStyle: .round, cutoutRect: cutoutRect)
+                    parameters = AvatarNodeParameters(theme: nil, accountPeerId: nil, peerId: nil, colors: calculateAvatarColors(context: nil, explicitColorIndex: explicitIndex, peerId: nil, nameColor: nil, icon: .none, theme: nil), letters: letters, font: self.font, icon: .none, explicitColorIndex: explicitIndex, hasImage: false, clipStyle: .round, cornerRadius: cornerRadius, cutoutRect: cutoutRect)
                 }
                 
                 self.displaySuspended = true
@@ -969,19 +1010,17 @@ public final class AvatarNode: ASDisplayNode {
             if let parameters = parameters as? AvatarNodeParameters {
                 colors = parameters.colors
                 
-                if case .round = parameters.clipStyle {
+                switch parameters.clipStyle {
+                case .round, .roundedRect:
                     context.beginPath()
-                    context.addEllipse(in: CGRect(x: 0.0, y: 0.0, width: bounds.size.width, height:
-                        bounds.size.height))
+                    context.addPath(UIBezierPath(roundedRect: bounds, cornerRadius: floor(bounds.size.width * parameters.cornerRadius)).cgPath)
                     context.clip()
-                } else if case .roundedRect = parameters.clipStyle {
-                    context.beginPath()
-                    context.addPath(UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: bounds.size.width, height: bounds.size.height), cornerRadius: floor(bounds.size.width * 0.25)).cgPath)
-                    context.clip()
-                } else if case .bubble = parameters.clipStyle {
+                case .bubble:
                     context.beginPath()
                     AvatarNode.addAvatarBubblePath(context: context, rect: CGRect(x: 0.0, y: 0.0, width: bounds.size.width, height: bounds.size.height))
                     context.clip()
+                case .none:
+                    break
                 }
             } else {
                 colors = grayscaleColors

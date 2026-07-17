@@ -920,6 +920,15 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
         
         return { item, params, neighbors, headerAtTop in
             var updateArrowImage: UIImage?
+            let hidePremiumStatuses: Bool
+            switch item.context {
+            case let .account(context):
+                hidePremiumStatuses = AyuGramHooks.chatAppearance(
+                    accountPeerId: context.account.peerId
+                ).appearance.hidePremiumStatuses
+            case .custom:
+                hidePremiumStatuses = false
+            }
             
             let statusFontSize: CGFloat = floor(item.presentationData.fontSize.itemListBaseFontSize * 14.0 / 17.0)
             let labelFontSize: CGFloat = floor(item.presentationData.fontSize.itemListBaseFontSize * 13.0 / 17.0)
@@ -941,12 +950,12 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
                     credibilityIcon = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased())
                 } else if item.peer.isFake {
                     credibilityIcon = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased())
-                } else if let emojiStatus = item.peer.emojiStatus {
+                } else if let emojiStatus = item.peer.emojiStatus, !hidePremiumStatuses {
                     credibilityIcon = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 20.0, height: 20.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(2))
                     if let color = emojiStatus.color {
                         credibilityParticleColor = UIColor(rgb: UInt32(bitPattern: color))
                     }
-                } else if item.peer.isPremium && !item.context.isPremiumDisabled {
+                } else if item.peer.isPremium && !item.context.isPremiumDisabled && !hidePremiumStatuses {
                     credibilityIcon = .premium(color: item.presentationData.theme.list.itemAccentColor)
                 }
                 

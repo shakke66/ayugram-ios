@@ -78,6 +78,12 @@ public final class ChatListTitleView: UIView, NavigationBarTitleView, Navigation
     }
     
     public func setTitle(_ title: NetworkStatusTitle, animated: Bool) {
+        var title = title
+        if AyuGramHooks.chatAppearance(
+            accountPeerId: self.context.account.peerId
+        ).appearance.hidePremiumStatuses {
+            title.peerStatus = nil
+        }
         let oldValue = self._title
         self._title = title
         

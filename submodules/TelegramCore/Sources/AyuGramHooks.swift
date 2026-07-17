@@ -45,9 +45,15 @@ public final class AyuGramHooks {
 
     // MARK: - Appearance
     public static var chatAppearanceSettings: ((PeerId) -> GRVMChatAppearanceSettings)?
+    public static private(set) var primaryChatAppearance = GRVMChatAppearanceSettings.default
 
     public static func chatAppearance(accountPeerId: PeerId) -> GRVMChatAppearanceSettings {
         return self.chatAppearanceSettings?(accountPeerId) ?? .default
+    }
+
+    public static func updatePrimaryChatAppearance(_ appearance: GRVMChatAppearanceSettings) {
+        assert(Thread.isMainThread)
+        self.primaryChatAppearance = appearance
     }
 
     public static var shouldHideNotificationBadge: (() -> Bool)?

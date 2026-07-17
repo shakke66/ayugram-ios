@@ -6730,6 +6730,12 @@ private final class ChatListLocationContext {
                 guard case let .user(user) = peer else {
                     return nil
                 }
+                let hidePremiumStatuses = AyuGramHooks.chatAppearance(
+                    accountPeerId: context.account.peerId
+                ).appearance.hidePremiumStatuses
+                if hidePremiumStatuses {
+                    return nil
+                }
                 if let emojiStatus = user.emojiStatus {
                     return .emoji(emojiStatus)
                 } else if user.isPremium {

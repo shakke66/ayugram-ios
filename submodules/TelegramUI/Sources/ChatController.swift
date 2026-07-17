@@ -6483,9 +6483,14 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     }
                 }
                 
+                let appearance = AyuGramHooks.chatAppearance(
+                    accountPeerId: strongSelf.context.account.peerId
+                ).appearance
                 if let forcedWallpaper = strongSelf.forcedWallpaper {
                     presentationData = presentationData.withUpdated(chatWallpaper: forcedWallpaper)
-                } else if let chatWallpaper, AyuGramHooks.shouldDisableCustomBackgrounds?() != true {
+                } else if appearance.disableCustomBackgrounds {
+                    presentationData = presentationData.withUpdated(chatWallpaper: presentationData.theme.chat.defaultWallpaper)
+                } else if let chatWallpaper {
                     presentationData = presentationData.withUpdated(chatWallpaper: chatWallpaper)
                 }
                 

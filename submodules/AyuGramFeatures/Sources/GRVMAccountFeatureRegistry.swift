@@ -100,6 +100,7 @@ public final class GRVMAccountFeatureRegistry {
         }
         if let service = existingService {
             service.updateSettings(initialSettings)
+            self.publishPrimaryAppearance()
             return []
         }
         guard self.state.with({ $0.prepared }) else {
@@ -146,6 +147,7 @@ public final class GRVMAccountFeatureRegistry {
         }
         coordinator.resumePendingCleanupJobs()
         coordinator.reconcilePersistentMessageState()
+        self.publishPrimaryAppearance()
 
         settingsDisposable.set(grvmSettings(accountId: accountPeerId, accountManager: self.accountManager).start(next: { [weak self] settings in
             guard let self else {
@@ -162,6 +164,7 @@ public final class GRVMAccountFeatureRegistry {
                     return
                 }
                 coordinator.updateSettings(settings)
+                self.publishPrimaryAppearance()
             }
         }))
         return removal.waiters
@@ -237,6 +240,13 @@ public final class GRVMAccountFeatureRegistry {
             state.primaryAccountPeerId = accountPeerId
             return state
         }
+        self.publishPrimaryAppearance()
+    }
+
+    private func publishPrimaryAppearance() {
+        publishGRVMPrimaryChatAppearance(
+            self.primaryService()?.settingsSnapshot().grvmChatAppearanceSettings ?? .default
+        )
     }
 
     public func service(accountPeerId: PeerId) -> GRVMMessageArchiveCoordinator? {

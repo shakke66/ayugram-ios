@@ -593,6 +593,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         self.presentationData = presentationData
         
         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: self.context.currentAppConfiguration.with { $0 })
+        let hidePremiumStatuses = AyuGramHooks.chatAppearance(
+            accountPeerId: self.context.account.peerId
+        ).appearance.hidePremiumStatuses
         var credibilityIcon: CredibilityIcon = .none
         var verifiedIcon: CredibilityIcon = .none
         var statusIcon: CredibilityIcon = .none
@@ -603,9 +606,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 credibilityIcon = .fake
             } else if peer.isScam {
                 credibilityIcon = .scam
-            } else if let emojiStatus = peer.emojiStatus {
+            } else if let emojiStatus = peer.emojiStatus, !hidePremiumStatuses {
                 statusIcon = .emojiStatus(emojiStatus)
-            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && (peer.id != self.context.account.peerId || self.isSettings || self.isMyProfile) {
+            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !hidePremiumStatuses && (peer.id != self.context.account.peerId || self.isSettings || self.isMyProfile) {
                 credibilityIcon = .premium
             } else {
                 credibilityIcon = .none
@@ -1192,7 +1195,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         var panelSubtitleString: (text: String, attributes: MultiScaleTextState.Attributes)?
         let usernameString: (text: String, attributes: MultiScaleTextState.Attributes)
         if let peer = peer {
-            isPremium = peer.isPremium
+            isPremium = peer.isPremium && !hidePremiumStatuses
             isVerified = peer.isVerified
             isFake = peer.isFake || peer.isScam
         }

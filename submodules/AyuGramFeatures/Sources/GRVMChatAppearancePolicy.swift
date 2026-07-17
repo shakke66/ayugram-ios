@@ -1,6 +1,8 @@
 import Foundation
+import SwiftSignalKit
 import TelegramCore
 import AyuGramLib
+import Display
 
 public extension AyuGramSettings {
     var grvmChatAppearanceSettings: GRVMChatAppearanceSettings {
@@ -93,5 +95,12 @@ public func installGRVMChatAppearanceHooks(registry: GRVMAccountFeatureRegistry)
             return .default
         }
         return service.settingsSnapshot().grvmChatAppearanceSettings
+    }
+}
+
+func publishGRVMPrimaryChatAppearance(_ appearance: GRVMChatAppearanceSettings) {
+    Queue.mainQueue().async {
+        AyuGramHooks.updatePrimaryChatAppearance(appearance)
+        SwitchNode.defaultStyle = appearance.appearance.md3StyleSwitches ? .md3 : .standard
     }
 }
