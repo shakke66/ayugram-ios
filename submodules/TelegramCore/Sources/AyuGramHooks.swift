@@ -44,6 +44,12 @@ public final class AyuGramHooks {
     public static var translationProvider: ((PeerId) -> GRVMTranslationProvider)?
 
     // MARK: - Appearance
+    public static var chatAppearanceSettings: ((PeerId) -> GRVMChatAppearanceSettings)?
+
+    public static func chatAppearance(accountPeerId: PeerId) -> GRVMChatAppearanceSettings {
+        return self.chatAppearanceSettings?(accountPeerId) ?? .default
+    }
+
     public static var shouldHideNotificationBadge: (() -> Bool)?
     public static var shouldHideNotificationCounters: (() -> Bool)?
     public static var shouldRemoveBubbleTail: (() -> Bool)?

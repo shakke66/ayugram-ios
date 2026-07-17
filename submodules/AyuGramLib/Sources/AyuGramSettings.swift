@@ -81,11 +81,20 @@ public struct AyuGramSettings: Codable, Equatable {
 
     // MARK: - Chats
     public var showOnlyAddedStickers: Bool
+    public var showPrivateReactions: Bool
     public var hideReactions: Int32
     public var recentStickersCount: Int32
     public var channelBottomButton: Int32
     public var quickAdminShortcuts: Bool
     public var messageShotFeature: Bool
+    public var messageShotShowBackground: Bool
+    public var messageShotShowDate: Bool
+    public var messageShotShowReactions: Bool
+    public var messageShotShowHeader: Bool
+    public var messageShotShowHeaderDecorations: Bool
+    public var messageShotColorfulReplies: Bool
+    public var messageShotRevealSpoilers: Bool
+    public var messageShotTheme: Int32
     public var showDeletedMark: Bool
     public var showEditedMark: Bool
     public var deletedMessageMark: String
@@ -102,6 +111,7 @@ public struct AyuGramSettings: Codable, Equatable {
     public var showUserMessagesInContextMenu: Int32
     public var showMessageDetailsInContextMenu: Int32
     public var showRepeatMessageInContextMenu: Int32
+    public var showAddFilterInContextMenu: Int32
 
     // MARK: - Message Field
     public var showAttachButton: Bool
@@ -109,6 +119,8 @@ public struct AyuGramSettings: Codable, Equatable {
     public var showTTLButton: Bool
     public var showEmojiButton: Bool
     public var showVoiceButton: Bool
+    public var showAttachPopup: Bool
+    public var showEmojiPopup: Bool
 
     // MARK: - Drawer / Sidebar
     public var showMyProfileInDrawer: Bool
@@ -219,14 +231,23 @@ public struct AyuGramSettings: Codable, Equatable {
             showGhostToggleInDrawer: true,
             showStreamerToggleInDrawer: false,
             showOnlyAddedStickers: false,
+            showPrivateReactions: true,
             hideReactions: 0,
-            recentStickersCount: 20,
+            recentStickersCount: 100,
             channelBottomButton: 1,
             quickAdminShortcuts: true,
             messageShotFeature: true,
+            messageShotShowBackground: true,
+            messageShotShowDate: false,
+            messageShotShowReactions: false,
+            messageShotShowHeader: true,
+            messageShotShowHeaderDecorations: true,
+            messageShotColorfulReplies: true,
+            messageShotRevealSpoilers: true,
+            messageShotTheme: 0,
             showDeletedMark: true,
             showEditedMark: true,
-            deletedMessageMark: "\u{1F480}",
+            deletedMessageMark: "\u{1F9F9}",
             editedMessageMark: "edited",
             replaceMarksWithIcons: false,
             hideFastShareButton: false,
@@ -238,11 +259,14 @@ public struct AyuGramSettings: Codable, Equatable {
             showUserMessagesInContextMenu: 1,
             showMessageDetailsInContextMenu: 1,
             showRepeatMessageInContextMenu: 1,
+            showAddFilterInContextMenu: 1,
             showAttachButton: true,
             showCommandsButton: true,
             showTTLButton: true,
             showEmojiButton: true,
             showVoiceButton: true,
+            showAttachPopup: true,
+            showEmojiPopup: true,
             showMyProfileInDrawer: false,
             showBotsInDrawer: false,
             showCreateGroupInDrawer: true,
@@ -321,11 +345,20 @@ public struct AyuGramSettings: Codable, Equatable {
         showGhostToggleInDrawer: Bool,
         showStreamerToggleInDrawer: Bool,
         showOnlyAddedStickers: Bool,
+        showPrivateReactions: Bool,
         hideReactions: Int32,
         recentStickersCount: Int32,
         channelBottomButton: Int32,
         quickAdminShortcuts: Bool,
         messageShotFeature: Bool,
+        messageShotShowBackground: Bool,
+        messageShotShowDate: Bool,
+        messageShotShowReactions: Bool,
+        messageShotShowHeader: Bool,
+        messageShotShowHeaderDecorations: Bool,
+        messageShotColorfulReplies: Bool,
+        messageShotRevealSpoilers: Bool,
+        messageShotTheme: Int32,
         showDeletedMark: Bool,
         showEditedMark: Bool,
         deletedMessageMark: String,
@@ -340,11 +373,14 @@ public struct AyuGramSettings: Codable, Equatable {
         showUserMessagesInContextMenu: Int32,
         showMessageDetailsInContextMenu: Int32,
         showRepeatMessageInContextMenu: Int32,
+        showAddFilterInContextMenu: Int32,
         showAttachButton: Bool,
         showCommandsButton: Bool,
         showTTLButton: Bool,
         showEmojiButton: Bool,
         showVoiceButton: Bool,
+        showAttachPopup: Bool,
+        showEmojiPopup: Bool,
         showMyProfileInDrawer: Bool,
         showBotsInDrawer: Bool,
         showCreateGroupInDrawer: Bool,
@@ -420,11 +456,20 @@ public struct AyuGramSettings: Codable, Equatable {
         self.showGhostToggleInDrawer = showGhostToggleInDrawer
         self.showStreamerToggleInDrawer = showStreamerToggleInDrawer
         self.showOnlyAddedStickers = showOnlyAddedStickers
+        self.showPrivateReactions = showPrivateReactions
         self.hideReactions = hideReactions
         self.recentStickersCount = recentStickersCount
         self.channelBottomButton = channelBottomButton
         self.quickAdminShortcuts = quickAdminShortcuts
         self.messageShotFeature = messageShotFeature
+        self.messageShotShowBackground = messageShotShowBackground
+        self.messageShotShowDate = messageShotShowDate
+        self.messageShotShowReactions = messageShotShowReactions
+        self.messageShotShowHeader = messageShotShowHeader
+        self.messageShotShowHeaderDecorations = messageShotShowHeaderDecorations
+        self.messageShotColorfulReplies = messageShotColorfulReplies
+        self.messageShotRevealSpoilers = messageShotRevealSpoilers
+        self.messageShotTheme = messageShotTheme
         self.showDeletedMark = showDeletedMark
         self.showEditedMark = showEditedMark
         self.deletedMessageMark = deletedMessageMark
@@ -439,11 +484,14 @@ public struct AyuGramSettings: Codable, Equatable {
         self.showUserMessagesInContextMenu = showUserMessagesInContextMenu
         self.showMessageDetailsInContextMenu = showMessageDetailsInContextMenu
         self.showRepeatMessageInContextMenu = showRepeatMessageInContextMenu
+        self.showAddFilterInContextMenu = showAddFilterInContextMenu
         self.showAttachButton = showAttachButton
         self.showCommandsButton = showCommandsButton
         self.showTTLButton = showTTLButton
         self.showEmojiButton = showEmojiButton
         self.showVoiceButton = showVoiceButton
+        self.showAttachPopup = showAttachPopup
+        self.showEmojiPopup = showEmojiPopup
         self.showMyProfileInDrawer = showMyProfileInDrawer
         self.showBotsInDrawer = showBotsInDrawer
         self.showCreateGroupInDrawer = showCreateGroupInDrawer
@@ -530,14 +578,23 @@ public struct AyuGramSettings: Codable, Equatable {
         self.showStreamerToggleInDrawer = try container.decodeIfPresent(Bool.self, forKey: "showStreamerToggleInDrawer") ?? false
 
         self.showOnlyAddedStickers = try container.decodeIfPresent(Bool.self, forKey: "showOnlyAddedStickers") ?? false
+        self.showPrivateReactions = try container.decodeIfPresent(Bool.self, forKey: "showPrivateReactions") ?? true
         self.hideReactions = try container.decodeIfPresent(Int32.self, forKey: "hideReactions") ?? 0
-        self.recentStickersCount = try container.decodeIfPresent(Int32.self, forKey: "recentStickersCount") ?? 20
+        self.recentStickersCount = try container.decodeIfPresent(Int32.self, forKey: "recentStickersCount") ?? 100
         self.channelBottomButton = try container.decodeIfPresent(Int32.self, forKey: "channelBottomButton") ?? 1
         self.quickAdminShortcuts = try container.decodeIfPresent(Bool.self, forKey: "quickAdminShortcuts") ?? true
         self.messageShotFeature = try container.decodeIfPresent(Bool.self, forKey: "messageShotFeature") ?? true
+        self.messageShotShowBackground = try container.decodeIfPresent(Bool.self, forKey: "messageShotShowBackground") ?? true
+        self.messageShotShowDate = try container.decodeIfPresent(Bool.self, forKey: "messageShotShowDate") ?? false
+        self.messageShotShowReactions = try container.decodeIfPresent(Bool.self, forKey: "messageShotShowReactions") ?? false
+        self.messageShotShowHeader = try container.decodeIfPresent(Bool.self, forKey: "messageShotShowHeader") ?? true
+        self.messageShotShowHeaderDecorations = try container.decodeIfPresent(Bool.self, forKey: "messageShotShowHeaderDecorations") ?? true
+        self.messageShotColorfulReplies = try container.decodeIfPresent(Bool.self, forKey: "messageShotColorfulReplies") ?? true
+        self.messageShotRevealSpoilers = try container.decodeIfPresent(Bool.self, forKey: "messageShotRevealSpoilers") ?? true
+        self.messageShotTheme = try container.decodeIfPresent(Int32.self, forKey: "messageShotTheme") ?? 0
         self.showDeletedMark = try container.decodeIfPresent(Bool.self, forKey: "showDeletedMark") ?? true
         self.showEditedMark = try container.decodeIfPresent(Bool.self, forKey: "showEditedMark") ?? true
-        self.deletedMessageMark = try container.decodeIfPresent(String.self, forKey: "deletedMessageMark") ?? "\u{1F480}"
+        self.deletedMessageMark = try container.decodeIfPresent(String.self, forKey: "deletedMessageMark") ?? "\u{1F9F9}"
         self.editedMessageMark = try container.decodeIfPresent(String.self, forKey: "editedMessageMark") ?? "edited"
         self.replaceMarksWithIcons = try container.decodeIfPresent(Bool.self, forKey: "replaceMarksWithIcons") ?? false
         self.hideFastShareButton = try container.decodeIfPresent(Bool.self, forKey: "hideFastShareButton") ?? false
@@ -550,12 +607,15 @@ public struct AyuGramSettings: Codable, Equatable {
         self.showUserMessagesInContextMenu = try container.decodeIfPresent(Int32.self, forKey: "showUserMessagesInContextMenu") ?? 1
         self.showMessageDetailsInContextMenu = try container.decodeIfPresent(Int32.self, forKey: "showMessageDetailsInContextMenu") ?? 1
         self.showRepeatMessageInContextMenu = try container.decodeIfPresent(Int32.self, forKey: "showRepeatMessageInContextMenu") ?? 1
+        self.showAddFilterInContextMenu = try container.decodeIfPresent(Int32.self, forKey: "showAddFilterInContextMenu") ?? 1
 
         self.showAttachButton = try container.decodeIfPresent(Bool.self, forKey: "showAttachButton") ?? true
         self.showCommandsButton = try container.decodeIfPresent(Bool.self, forKey: "showCommandsButton") ?? true
         self.showTTLButton = try container.decodeIfPresent(Bool.self, forKey: "showTTLButton") ?? true
         self.showEmojiButton = try container.decodeIfPresent(Bool.self, forKey: "showEmojiButton") ?? true
         self.showVoiceButton = try container.decodeIfPresent(Bool.self, forKey: "showVoiceButton") ?? true
+        self.showAttachPopup = try container.decodeIfPresent(Bool.self, forKey: "showAttachPopup") ?? true
+        self.showEmojiPopup = try container.decodeIfPresent(Bool.self, forKey: "showEmojiPopup") ?? true
 
         self.showMyProfileInDrawer = try container.decodeIfPresent(Bool.self, forKey: "showMyProfileInDrawer") ?? false
         self.showBotsInDrawer = try container.decodeIfPresent(Bool.self, forKey: "showBotsInDrawer") ?? false
@@ -656,11 +716,20 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.showStreamerToggleInDrawer, forKey: "showStreamerToggleInDrawer")
 
         try container.encode(self.showOnlyAddedStickers, forKey: "showOnlyAddedStickers")
+        try container.encode(self.showPrivateReactions, forKey: "showPrivateReactions")
         try container.encode(self.hideReactions, forKey: "hideReactions")
         try container.encode(self.recentStickersCount, forKey: "recentStickersCount")
         try container.encode(self.channelBottomButton, forKey: "channelBottomButton")
         try container.encode(self.quickAdminShortcuts, forKey: "quickAdminShortcuts")
         try container.encode(self.messageShotFeature, forKey: "messageShotFeature")
+        try container.encode(self.messageShotShowBackground, forKey: "messageShotShowBackground")
+        try container.encode(self.messageShotShowDate, forKey: "messageShotShowDate")
+        try container.encode(self.messageShotShowReactions, forKey: "messageShotShowReactions")
+        try container.encode(self.messageShotShowHeader, forKey: "messageShotShowHeader")
+        try container.encode(self.messageShotShowHeaderDecorations, forKey: "messageShotShowHeaderDecorations")
+        try container.encode(self.messageShotColorfulReplies, forKey: "messageShotColorfulReplies")
+        try container.encode(self.messageShotRevealSpoilers, forKey: "messageShotRevealSpoilers")
+        try container.encode(self.messageShotTheme, forKey: "messageShotTheme")
         try container.encode(self.showDeletedMark, forKey: "showDeletedMark")
         try container.encode(self.showEditedMark, forKey: "showEditedMark")
         try container.encode(self.deletedMessageMark, forKey: "deletedMessageMark")
@@ -676,12 +745,15 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.showUserMessagesInContextMenu, forKey: "showUserMessagesInContextMenu")
         try container.encode(self.showMessageDetailsInContextMenu, forKey: "showMessageDetailsInContextMenu")
         try container.encode(self.showRepeatMessageInContextMenu, forKey: "showRepeatMessageInContextMenu")
+        try container.encode(self.showAddFilterInContextMenu, forKey: "showAddFilterInContextMenu")
 
         try container.encode(self.showAttachButton, forKey: "showAttachButton")
         try container.encode(self.showCommandsButton, forKey: "showCommandsButton")
         try container.encode(self.showTTLButton, forKey: "showTTLButton")
         try container.encode(self.showEmojiButton, forKey: "showEmojiButton")
         try container.encode(self.showVoiceButton, forKey: "showVoiceButton")
+        try container.encode(self.showAttachPopup, forKey: "showAttachPopup")
+        try container.encode(self.showEmojiPopup, forKey: "showEmojiPopup")
 
         try container.encode(self.showMyProfileInDrawer, forKey: "showMyProfileInDrawer")
         try container.encode(self.showBotsInDrawer, forKey: "showBotsInDrawer")

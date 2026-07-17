@@ -98,6 +98,8 @@ public final class AyuGramFeatureManager {
     }
 
     public func wireHooks() {
+        installGRVMChatAppearanceHooks(registry: self.registry)
+
         // MARK: - Spy Mode
         AyuGramHooks.shouldSaveDeletedMessages = { [weak self] accountPeerId in
             guard let service = self?.registry.service(accountPeerId: accountPeerId) else {
