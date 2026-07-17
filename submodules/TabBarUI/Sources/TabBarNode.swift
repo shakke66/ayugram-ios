@@ -7,7 +7,6 @@ import UIKitRuntimeUtils
 import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import TelegramPresentationData
-import TelegramCore
 
 private extension CGRect {
     var center: CGPoint {
@@ -638,7 +637,7 @@ class TabBarNode: ASDisplayNode, ASGestureRecognizerDelegate {
     }
     
     private func updateNodeBadge(_ index: Int, value: String) {
-        self.tabBarNodeContainers[index].badgeValue = AyuGramHooks.shouldHideNotificationCounters?() == true ? "" : value
+        self.tabBarNodeContainers[index].badgeValue = value
         if self.tabBarNodeContainers[index].badgeValue != self.tabBarNodeContainers[index].appliedBadgeValue {
             if let validLayout = self.validLayout {
                 self.updateLayout(size: validLayout.0, leftInset: validLayout.1, rightInset: validLayout.2, additionalSideInsets: validLayout.3, bottomInset: validLayout.4, transition: .immediate)

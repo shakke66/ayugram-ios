@@ -3,6 +3,8 @@ import UIKit
 import AsyncDisplayKit
 import Display
 import TelegramPresentationData
+import TelegramCore
+import Postbox
 import ComponentFlow
 import ComponentDisplayAdapters
 import TabBarComponent
@@ -50,6 +52,7 @@ final class TabBarControllerNode: ASDisplayNode {
     
     private var theme: PresentationTheme
     private var strings: PresentationStrings
+    private let accountPeerId: PeerId?
     private let itemSelected: (Int, Bool, [ASDisplayNode]) -> Void
     private let itemHasDoubleTapAction: (Int) -> Bool
     private let itemDoubleTapped: (Int) -> Void
@@ -105,9 +108,10 @@ final class TabBarControllerNode: ASDisplayNode {
         return nil
     }
     
-    init(theme: PresentationTheme, strings: PresentationStrings, itemSelected: @escaping (Int, Bool, [ASDisplayNode]) -> Void, itemHasDoubleTapAction: @escaping (Int) -> Bool, itemDoubleTapped: @escaping (Int) -> Void, contextAction: @escaping (Int, ContextExtractedContentContainingView, ContextGesture) -> Void, swipeAction: @escaping (Int, TabBarItemSwipeDirection) -> Void, toolbarActionSelected: @escaping (ToolbarActionOption) -> Void, disabledPressed: @escaping () -> Void, activateSearch: @escaping () -> Void, deactivateSearch: @escaping () -> Void) {
+    init(theme: PresentationTheme, strings: PresentationStrings, accountPeerId: PeerId?, itemSelected: @escaping (Int, Bool, [ASDisplayNode]) -> Void, itemHasDoubleTapAction: @escaping (Int) -> Bool, itemDoubleTapped: @escaping (Int) -> Void, contextAction: @escaping (Int, ContextExtractedContentContainingView, ContextGesture) -> Void, swipeAction: @escaping (Int, TabBarItemSwipeDirection) -> Void, toolbarActionSelected: @escaping (ToolbarActionOption) -> Void, disabledPressed: @escaping () -> Void, activateSearch: @escaping () -> Void, deactivateSearch: @escaping () -> Void) {
         self.theme = theme
         self.strings = strings
+        self.accountPeerId = accountPeerId
         self.itemSelected = itemSelected
         self.itemHasDoubleTapAction = itemHasDoubleTapAction
         self.itemDoubleTapped = itemDoubleTapped
@@ -227,6 +231,12 @@ final class TabBarControllerNode: ASDisplayNode {
         if self.tabBarView.view == nil {
             tabBarTransition = .immediate
         }
+        let hideBadges: Bool
+        if let accountPeerId = self.accountPeerId {
+            hideBadges = AyuGramHooks.chatAppearance(accountPeerId: accountPeerId).appearance.hideNotificationCounters
+        } else {
+            hideBadges = false
+        }
         let tabBarSize = self.tabBarView.update(
             transition: tabBarTransition,
             component: AnyComponent(TabBarComponent(
@@ -265,6 +275,7 @@ final class TabBarControllerNode: ASDisplayNode {
                         }
                     )
                 },
+                hideBadges: hideBadges,
                 search: self.currentController?.tabBarSearchState.flatMap { tabBarSearchState in
                     return TabBarComponent.Search(
                         isActive: tabBarSearchState.isActive,

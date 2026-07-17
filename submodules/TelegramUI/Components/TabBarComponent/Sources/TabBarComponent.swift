@@ -351,6 +351,7 @@ public final class TabBarComponent: Component {
     public let isLiftedStateEnabled: Bool
     public let strings: PresentationStrings
     public let items: [Item]
+    public let hideBadges: Bool
     public let search: Search?
     public let selectedId: AnyHashable?
     public let outerInsets: UIEdgeInsets
@@ -361,6 +362,7 @@ public final class TabBarComponent: Component {
         isLiftedStateEnabled: Bool = true,
         strings: PresentationStrings,
         items: [Item],
+        hideBadges: Bool = false,
         search: Search?,
         selectedId: AnyHashable?,
         outerInsets: UIEdgeInsets
@@ -370,6 +372,7 @@ public final class TabBarComponent: Component {
         self.isLiftedStateEnabled = isLiftedStateEnabled
         self.strings = strings
         self.items = items
+        self.hideBadges = hideBadges
         self.search = search
         self.selectedId = selectedId
         self.outerInsets = outerInsets
@@ -389,6 +392,9 @@ public final class TabBarComponent: Component {
             return false
         }
         if lhs.items != rhs.items {
+            return false
+        }
+        if lhs.hideBadges != rhs.hideBadges {
             return false
         }
         if lhs.search != rhs.search {
@@ -692,6 +698,7 @@ public final class TabBarComponent: Component {
                         isCompact: false,
                         isSelected: false,
                         tintSelectedItem: true,
+                        hideBadges: component.hideBadges,
                         isUnconstrained: true
                     )),
                     environment: {},
@@ -769,6 +776,7 @@ public final class TabBarComponent: Component {
                         isCompact: component.search?.isActive == true,
                         isSelected: false,
                         tintSelectedItem: component.tintSelectedItem,
+                        hideBadges: component.hideBadges,
                         isUnconstrained: false
                     )),
                     environment: {},
@@ -782,6 +790,7 @@ public final class TabBarComponent: Component {
                         isCompact: component.search?.isActive == true,
                         isSelected: true,
                         tintSelectedItem: component.tintSelectedItem,
+                        hideBadges: component.hideBadges,
                         isUnconstrained: false
                     )),
                     environment: {},
@@ -957,14 +966,16 @@ private final class ItemComponent: Component {
     let isCompact: Bool
     let isSelected: Bool
     let tintSelectedItem: Bool
+    let hideBadges: Bool
     let isUnconstrained: Bool
     
-    init(item: TabBarComponent.Item, theme: PresentationTheme, isCompact: Bool, isSelected: Bool, tintSelectedItem: Bool, isUnconstrained: Bool) {
+    init(item: TabBarComponent.Item, theme: PresentationTheme, isCompact: Bool, isSelected: Bool, tintSelectedItem: Bool, hideBadges: Bool, isUnconstrained: Bool) {
         self.item = item
         self.theme = theme
         self.isCompact = isCompact
         self.isSelected = isSelected
         self.tintSelectedItem = tintSelectedItem
+        self.hideBadges = hideBadges
         self.isUnconstrained = isUnconstrained
     }
     
@@ -982,6 +993,9 @@ private final class ItemComponent: Component {
             return false
         }
         if lhs.tintSelectedItem != rhs.tintSelectedItem {
+            return false
+        }
+        if lhs.hideBadges != rhs.hideBadges {
             return false
         }
         if lhs.isUnconstrained != rhs.isUnconstrained {
@@ -1104,7 +1118,7 @@ private final class ItemComponent: Component {
             switch component.item.content {
             case let .tabBarItem(tabBarItem):
                 title = tabBarItem.title ?? " "
-                badgeValue = tabBarItem.badgeValue
+                badgeValue = component.hideBadges ? nil : tabBarItem.badgeValue
 
                 if let animationName = tabBarItem.animationName {
                     if let imageIcon = self.imageIcon {
@@ -1188,7 +1202,7 @@ private final class ItemComponent: Component {
                 }
             case let .customItem(customItem):
                 title = customItem.title
-                badgeValue = customItem.badge
+                badgeValue = component.hideBadges ? nil : customItem.badge
 
                 switch customItem.icon {
                 case let .animation(name, offset):

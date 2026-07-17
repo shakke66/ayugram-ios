@@ -206,6 +206,9 @@ private final class ItemNode: ASDisplayNode {
     }
     
     func updateText(strings: PresentationStrings, title: ChatFolderTitle, shortTitle: ChatFolderTitle, unreadCount: Int, unreadHasUnmuted: Bool, isNoFilter: Bool, selectionFraction: CGFloat, isEditing: Bool, isReordering: Bool, canReorderAllChats: Bool, isDisabled: Bool, presentationData: PresentationData, transition: ContainedViewLayoutTransition) {
+        let appearance = AyuGramHooks.chatAppearance(
+            accountPeerId: self.context.account.peerId
+        ).appearance
         self.isEditing = isEditing
         self.isDisabled = isDisabled
         
@@ -272,7 +275,7 @@ private final class ItemNode: ASDisplayNode {
             })
         }
         
-        transition.updateAlpha(node: self.badgeContainerNode, alpha: (isEditing || isDisabled || isReordering || unreadCount == 0 || AyuGramHooks.shouldHideFolderCounters?() == true) ? 0.0 : 1.0)
+        transition.updateAlpha(node: self.badgeContainerNode, alpha: (isEditing || isDisabled || isReordering || unreadCount == 0 || appearance.hideFolderCounters) ? 0.0 : 1.0)
         
         let selectionAlpha: CGFloat = selectionFraction * selectionFraction
         let deselectionAlpha: CGFloat = isDisabled ? 0.5 : 1.0// - selectionFraction
@@ -694,6 +697,9 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
     }
     
     public func update(size containerSize: CGSize, sideInset containerSideInset: CGFloat, filters: [ChatListFilterTabEntry], selectedFilter: ChatListFilterTabEntryId?, isReordering: Bool, isEditing: Bool, canReorderAllChats: Bool, filtersLimit: Int32?, transitionFraction: CGFloat, presentationData: PresentationData, transition proposedTransition: ContainedViewLayoutTransition) {
+        let appearance = AyuGramHooks.chatAppearance(
+            accountPeerId: self.context.account.peerId
+        ).appearance
         let isFirstTime = self.currentParams == nil
         let transition: ContainedViewLayoutTransition = isFirstTime ? .immediate : proposedTransition
         
@@ -710,7 +716,6 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
             isEditing = false
         }
         
-        var focusOnSelectedFilter = self.currentParams?.selectedFilter != selectedFilter
         let previousScrollBounds = self.scrollNode.bounds
         let previousContentWidth = self.scrollNode.view.contentSize.width
         
@@ -739,8 +744,6 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
             self.reorderedItemIds = nil
         }
         
-        self.currentParams = (size: containerSize, sideInset: containerSideInset, filters: filters, selectedFilter: selectedFilter, isReordering, isEditing, canReorderAllChats, filtersLimit, transitionFraction, presentationData: presentationData)
-        
         self.reorderingGesture?.isEnabled = isReordering
         
         transition.updateFrame(node: self.scrollNode, frame: CGRect(origin: CGPoint(), size: backgroundSize))
@@ -762,15 +765,26 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
                 }
             }
         }
-        
+
+        let visibleFilters: [ChatListFilterTabEntry]
+        if appearance.hideAllChatsFolder && reorderedFilters.contains(where: { $0.id != .all }) {
+            visibleFilters = reorderedFilters.filter { $0.id != .all }
+        } else {
+            visibleFilters = reorderedFilters
+        }
+
+        let resolvedSelectedFilter: ChatListFilterTabEntryId?
+        if let selectedFilter, visibleFilters.contains(where: { $0.id == selectedFilter }) {
+            resolvedSelectedFilter = selectedFilter
+        } else {
+            resolvedSelectedFilter = visibleFilters.first?.id
+        }
+        var focusOnSelectedFilter = self.currentParams?.selectedFilter != resolvedSelectedFilter
+        self.currentParams = (size: containerSize, sideInset: containerSideInset, filters: filters, selectedFilter: resolvedSelectedFilter, isReordering, isEditing, canReorderAllChats, filtersLimit, transitionFraction, presentationData: presentationData)
+
         var folderIndex = 0
-        for i in 0 ..< reorderedFilters.count {
-            let filter = reorderedFilters[i]
-
-            if case .all = filter, AyuGramHooks.shouldHideAllChatsFolder?() == true, reorderedFilters.count > 1 {
-                continue
-            }
-
+        for i in 0 ..< visibleFilters.count {
+            let filter = visibleFilters[i]
             let itemNode: ItemNode
             var itemNodeTransition = transition
             var wasAdded = false
@@ -822,11 +836,11 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
             }
             
             let selectionFraction: CGFloat
-            if selectedFilter == filter.id {
+            if resolvedSelectedFilter == filter.id {
                 selectionFraction = 1.0 - abs(transitionFraction)
-            } else if i != 0 && selectedFilter == reorderedFilters[i - 1].id {
+            } else if i != 0 && resolvedSelectedFilter == visibleFilters[i - 1].id {
                 selectionFraction = max(0.0, -transitionFraction)
-            } else if i != reorderedFilters.count - 1 && selectedFilter == reorderedFilters[i + 1].id {
+            } else if i != visibleFilters.count - 1 && resolvedSelectedFilter == visibleFilters[i + 1].id {
                 selectionFraction = max(0.0, transitionFraction)
             } else {
                 selectionFraction = 0.0
@@ -836,7 +850,7 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
         }
         var removeKeys: [ChatListFilterTabEntryId] = []
         for (id, _) in self.itemNodes {
-            if !filters.contains(where: { $0.id == id }) {
+            if !visibleFilters.contains(where: { $0.id == id }) {
                 removeKeys.append(id)
             }
         }
@@ -853,7 +867,7 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
         var totalRawTabSize: CGFloat = 0.0
         var selectionFrames: [CGRect] = []
         
-        for filter in reorderedFilters {
+        for filter in visibleFilters {
             guard let itemNode = self.itemNodes[filter.id] else {
                 continue
             }
@@ -935,7 +949,7 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
         self.scrollNode.view.contentSize = CGSize(width: leftOffset, height: backgroundSize.height)
         
         var selectedFrame: CGRect?
-        if let selectedFilter = selectedFilter, let currentIndex = reorderedFilters.firstIndex(where: { $0.id == selectedFilter }) {
+        if let selectedFilter = resolvedSelectedFilter, let currentIndex = visibleFilters.firstIndex(where: { $0.id == selectedFilter }) {
             func interpolateFrame(from fromValue: CGRect, to toValue: CGRect, t: CGFloat) -> CGRect {
                 return CGRect(x: floorToScreenPixels(toValue.origin.x * t + fromValue.origin.x * (1.0 - t)), y: floorToScreenPixels(toValue.origin.y * t + fromValue.origin.y * (1.0 - t)), width: floorToScreenPixels(toValue.size.width * t + fromValue.size.width * (1.0 - t)), height: floorToScreenPixels(toValue.size.height * t + fromValue.size.height * (1.0 - t)))
             }
@@ -944,7 +958,7 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
                 let currentFrame = selectionFrames[currentIndex]
                 let previousFrame = selectionFrames[currentIndex - 1]
                 selectedFrame = interpolateFrame(from: currentFrame, to: previousFrame, t: abs(transitionFraction))
-            } else if currentIndex != filters.count - 1 && transitionFraction < 0.0 {
+            } else if currentIndex != visibleFilters.count - 1 && transitionFraction < 0.0 {
                 let currentFrame = selectionFrames[currentIndex]
                 let previousFrame = selectionFrames[currentIndex + 1]
                 selectedFrame = interpolateFrame(from: currentFrame, to: previousFrame, t: abs(transitionFraction))
@@ -972,9 +986,9 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
             
             if focusOnSelectedFilter && self.reorderingItem == nil {
                 let updatedBounds: CGRect
-                if transitionFraction.isZero && selectedFilter == reorderedFilters.first?.id {
+                if transitionFraction.isZero && selectedFilter == visibleFilters.first?.id {
                     updatedBounds = CGRect(origin: CGPoint(), size: self.scrollNode.bounds.size)
-                } else if transitionFraction.isZero && selectedFilter == reorderedFilters.last?.id {
+                } else if transitionFraction.isZero && selectedFilter == visibleFilters.last?.id {
                     updatedBounds = CGRect(origin: CGPoint(x: max(0.0, self.scrollNode.view.contentSize.width - self.scrollNode.bounds.width), y: 0.0), size: self.scrollNode.bounds.size)
                 } else {
                     let contentOffsetX = max(0.0, min(self.scrollNode.view.contentSize.width - self.scrollNode.bounds.width, floor(selectedFrame.midX - self.scrollNode.bounds.width / 2.0)))

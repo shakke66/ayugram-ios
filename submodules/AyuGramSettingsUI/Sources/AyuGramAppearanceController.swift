@@ -25,14 +25,62 @@ private final class AyuGramAppearanceArguments {
     }
 }
 
+private func grvmAppIconPicker(
+    context: AccountContext,
+    updateString: @escaping (WritableKeyPath<AyuGramSettings, String>, String) -> Void
+) -> ViewController {
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    let controller = ActionSheetController(presentationData: presentationData)
+    let icons = context.sharedContext.applicationBindings.getAvailableAlternateIcons()
+    let currentName = context.sharedContext.applicationBindings.getAlternateIconName()
+    var requestInFlight = false
+
+    let iconItems: [ActionSheetItem] = icons.map { icon in
+        let title = icon.isDefault ? "Default" : icon.name
+        let isCurrent = icon.isDefault ? currentName == nil : icon.name == currentName
+        let storedName = icon.isDefault ? "default" : icon.name
+        return ActionSheetButtonItem(
+            title: isCurrent ? "\u{2713} \(title)" : title,
+            color: .accent,
+            action: { [weak controller] in
+                guard !requestInFlight else {
+                    return
+                }
+                requestInFlight = true
+                context.sharedContext.applicationBindings.requestSetAlternateIconName(icon.isDefault ? nil : icon.name) { success in
+                    Queue.mainQueue().async {
+                        requestInFlight = false
+                        guard success else {
+                            return
+                        }
+                        updateString(\.selectedAppIcon, storedName)
+                        controller?.dismissAnimated()
+                    }
+                }
+            }
+        )
+    }
+    controller.setItemGroups([
+        ActionSheetItemGroup(items: iconItems),
+        ActionSheetItemGroup(items: [
+            ActionSheetButtonItem(
+                title: presentationData.strings.Common_Cancel,
+                color: .accent,
+                action: { [weak controller] in
+                    controller?.dismissAnimated()
+                }
+            )
+        ])
+    ])
+    return controller
+}
+
 private enum AyuGramAppearanceSection: Int32 {
     case appIcon
     case appearance
     case folders
     case drawer
 }
-
-private let ayuGramAppIconOptions: [String] = ["default", "Black", "BlackClassic", "BlackFilled", "Blue", "BlueClassic", "BlueFilled", "WhiteFilled", "New1", "New2"]
 
 private enum AyuGramAppearanceEntry: ItemListNodeEntry {
     case appIconHeader(PresentationTheme)
@@ -118,8 +166,13 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "App Icon", sectionId: self.section)
         case let .appIcon(_, value):
             return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "App Icon", label: value == "default" ? "Default" : value, sectionId: self.section, style: .blocks, action: {
-                let idx = ayuGramAppIconOptions.firstIndex(of: value) ?? -1
-                arguments.updateString(\.selectedAppIcon, ayuGramAppIconOptions[(idx + 1) % ayuGramAppIconOptions.count])
+                arguments.context.sharedContext.mainWindow?.present(
+                    grvmAppIconPicker(
+                        context: arguments.context,
+                        updateString: arguments.updateString
+                    ),
+                    on: .root
+                )
             })
         case let .hideNotificationBadge(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Hide Notification Badge", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideNotificationBadge, v) })

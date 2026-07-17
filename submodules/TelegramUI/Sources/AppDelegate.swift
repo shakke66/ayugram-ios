@@ -1967,21 +1967,30 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     private func resetBadge() {
         var resetOnce = true
         self.badgeDisposable.set((self.context.get()
-        |> mapToSignal { context -> Signal<Int32, NoError> in
-            if let context = context {
-                return context.applicationBadge
-            } else {
-                return .single(0)
+        |> mapToSignal { context -> Signal<(AuthorizedApplicationContext?, Int32), NoError> in
+            guard let context else {
+                return .single((nil, 0))
             }
+            return context.applicationBadge
+            |> map { (context, $0) }
         }
-        |> deliverOnMainQueue).start(next: { count in
+        |> deliverOnMainQueue).start(next: { context, count in
             if resetOnce {
                 resetOnce = false
                 if count == 0 {
                     //UIApplication.shared.applicationIconBadgeNumber = 1
                 }
             }
-            UIApplication.shared.applicationIconBadgeNumber = AyuGramHooks.shouldHideNotificationBadge?() == true ? 0 : Int(count)
+            let hideBadge: Bool
+            if let context {
+                let appearance = AyuGramHooks.chatAppearance(
+                    accountPeerId: context.context.account.peerId
+                ).appearance
+                hideBadge = appearance.hideNotificationBadge
+            } else {
+                hideBadge = false
+            }
+            UIApplication.shared.applicationIconBadgeNumber = hideBadge ? 0 : Int(count)
         }))
     }
 
