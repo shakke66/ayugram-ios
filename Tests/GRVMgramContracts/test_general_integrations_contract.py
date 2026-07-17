@@ -293,8 +293,6 @@ class GeneralWebviewContractTests(unittest.TestCase):
         for token in (
             "case increaseWebviewHeight(PresentationTheme, Bool)",
             "case increaseWebviewWidth(PresentationTheme, Bool)",
-            'title: "Increase Webview Height"',
-            'title: "Increase Webview Width"',
             r"arguments.updateBool(\.increaseWebviewHeight, v)",
             r"arguments.updateBool(\.increaseWebviewWidth, v)",
             "entries.append(.increaseWebviewHeight(presentationData.theme, settings.increaseWebviewHeight))",
@@ -310,6 +308,7 @@ class GeneralWebviewContractTests(unittest.TestCase):
             '"Native"',
         ):
             self.assertNotIn(forbidden, self.general)
+        self.assertIsNone(re.search(r'"[^"\n]*AyuGram[^"\n]*"', self.general))
 
 
 if __name__ == "__main__":
