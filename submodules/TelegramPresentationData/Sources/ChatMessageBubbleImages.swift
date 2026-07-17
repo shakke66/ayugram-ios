@@ -79,17 +79,17 @@ func mediaBubbleCornerImage(incoming: Bool, radius: CGFloat, inset: CGFloat) -> 
     return formContext.generateImage()!
 }
 
-public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloat, incoming: Bool, fillColor: UIColor, strokeColor: UIColor, neighbors: MessageBubbleImageNeighbors, theme: PresentationThemeChat, wallpaper: TelegramWallpaper, knockout knockoutValue: Bool, mask: Bool = false, extendedEdges: Bool = false, onlyOutline: Bool = false, onlyShadow: Bool = false, alwaysFillColor: Bool = false) -> UIImage {
+public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloat, incoming: Bool, fillColor: UIColor, strokeColor: UIColor, neighbors: MessageBubbleImageNeighbors, theme: PresentationThemeChat, wallpaper: TelegramWallpaper, knockout knockoutValue: Bool, mask: Bool = false, extendedEdges: Bool = false, hasTail: Bool = true, onlyOutline: Bool = false, onlyShadow: Bool = false, alwaysFillColor: Bool = false) -> UIImage {
     let bubbleColors = incoming ? theme.message.incoming : theme.message.outgoing
-    return messageBubbleImage(maxCornerRadius: maxCornerRadius, minCornerRadius: minCornerRadius, incoming: incoming, fillColor: fillColor, strokeColor: strokeColor, neighbors: neighbors, shadow: bubbleColors.bubble.withWallpaper.shadow, wallpaper: wallpaper, knockout: knockoutValue, mask: mask, extendedEdges: extendedEdges, onlyOutline: onlyOutline, onlyShadow: onlyShadow, alwaysFillColor: alwaysFillColor)
+    return messageBubbleImage(maxCornerRadius: maxCornerRadius, minCornerRadius: minCornerRadius, incoming: incoming, fillColor: fillColor, strokeColor: strokeColor, neighbors: neighbors, shadow: bubbleColors.bubble.withWallpaper.shadow, wallpaper: wallpaper, knockout: knockoutValue, mask: mask, extendedEdges: extendedEdges, hasTail: hasTail, onlyOutline: onlyOutline, onlyShadow: onlyShadow, alwaysFillColor: alwaysFillColor)
 }
 
-public func messageBubbleArguments(maxCornerRadius: CGFloat, minCornerRadius: CGFloat, incoming: Bool, neighbors: MessageBubbleImageNeighbors) -> (topLeftRadius: CGFloat, topRightRadius: CGFloat, bottomLeftRadius: CGFloat, bottomRightRadius: CGFloat, drawTail: Bool) {
+public func messageBubbleArguments(maxCornerRadius: CGFloat, minCornerRadius: CGFloat, incoming: Bool, neighbors: MessageBubbleImageNeighbors, hasTail: Bool = true) -> (topLeftRadius: CGFloat, topRightRadius: CGFloat, bottomLeftRadius: CGFloat, bottomRightRadius: CGFloat, drawTail: Bool) {
     var topLeftRadius: CGFloat
     var topRightRadius: CGFloat
     var bottomLeftRadius: CGFloat
     var bottomRightRadius: CGFloat
-    var drawTail: Bool
+    var neighborDrawsTail: Bool
     
     switch neighbors {
     case .none:
@@ -97,37 +97,37 @@ public func messageBubbleArguments(maxCornerRadius: CGFloat, minCornerRadius: CG
         topRightRadius = maxCornerRadius
         bottomLeftRadius = maxCornerRadius
         bottomRightRadius = maxCornerRadius
-        drawTail = true
+        neighborDrawsTail = true
     case .both:
         topLeftRadius = maxCornerRadius
         topRightRadius = minCornerRadius
         bottomLeftRadius = maxCornerRadius
         bottomRightRadius = minCornerRadius
-        drawTail = false
+        neighborDrawsTail = false
     case .bottom:
         topLeftRadius = maxCornerRadius
         topRightRadius = minCornerRadius
         bottomLeftRadius = maxCornerRadius
         bottomRightRadius = maxCornerRadius
-        drawTail = true
+        neighborDrawsTail = true
     case .side:
         topLeftRadius = maxCornerRadius
         topRightRadius = maxCornerRadius
         bottomLeftRadius = minCornerRadius
         bottomRightRadius = minCornerRadius
-        drawTail = false
+        neighborDrawsTail = false
     case let .top(side):
         topLeftRadius = maxCornerRadius
         topRightRadius = maxCornerRadius
         bottomLeftRadius = side ? minCornerRadius : maxCornerRadius
         bottomRightRadius = minCornerRadius
-        drawTail = false
+        neighborDrawsTail = false
     case .extracted:
         topLeftRadius = maxCornerRadius
         topRightRadius = maxCornerRadius
         bottomLeftRadius = maxCornerRadius
         bottomRightRadius = maxCornerRadius
-        drawTail = false
+        neighborDrawsTail = false
     }
     
     if incoming {
@@ -140,15 +140,15 @@ public func messageBubbleArguments(maxCornerRadius: CGFloat, minCornerRadius: CG
         bottomLeftRadius = tmp
     }
     
-    return (topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius, drawTail)
+    return (topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius, neighborDrawsTail && hasTail)
 }
 
-public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloat, incoming: Bool, fillColor: UIColor, strokeColor: UIColor, neighbors: MessageBubbleImageNeighbors, shadow: PresentationThemeBubbleShadow?, wallpaper: TelegramWallpaper, knockout knockoutValue: Bool, mask: Bool = false, extendedEdges: Bool = false, onlyOutline: Bool = false, onlyShadow: Bool = false, alwaysFillColor: Bool = false) -> UIImage {
+public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloat, incoming: Bool, fillColor: UIColor, strokeColor: UIColor, neighbors: MessageBubbleImageNeighbors, shadow: PresentationThemeBubbleShadow?, wallpaper: TelegramWallpaper, knockout knockoutValue: Bool, mask: Bool = false, extendedEdges: Bool = false, hasTail: Bool = true, onlyOutline: Bool = false, onlyShadow: Bool = false, alwaysFillColor: Bool = false) -> UIImage {
     let topLeftRadius: CGFloat
     let topRightRadius: CGFloat
     let bottomLeftRadius: CGFloat
     let bottomRightRadius: CGFloat
-    let drawTail: Bool
+    let neighborDrawsTail: Bool
     
     switch neighbors {
     case .none:
@@ -156,38 +156,39 @@ public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloa
         topRightRadius = maxCornerRadius
         bottomLeftRadius = maxCornerRadius
         bottomRightRadius = maxCornerRadius
-        drawTail = true
+        neighborDrawsTail = true
     case .both:
         topLeftRadius = maxCornerRadius
         topRightRadius = minCornerRadius
         bottomLeftRadius = maxCornerRadius
         bottomRightRadius = minCornerRadius
-        drawTail = false
+        neighborDrawsTail = false
     case .bottom:
         topLeftRadius = maxCornerRadius
         topRightRadius = minCornerRadius
         bottomLeftRadius = maxCornerRadius
         bottomRightRadius = maxCornerRadius
-        drawTail = true
+        neighborDrawsTail = true
     case .side:
         topLeftRadius = maxCornerRadius
         topRightRadius = maxCornerRadius
         bottomLeftRadius = minCornerRadius
         bottomRightRadius = minCornerRadius
-        drawTail = false
+        neighborDrawsTail = false
     case let .top(side):
         topLeftRadius = maxCornerRadius
         topRightRadius = maxCornerRadius
         bottomLeftRadius = side ? minCornerRadius : maxCornerRadius
         bottomRightRadius = minCornerRadius
-        drawTail = false
+        neighborDrawsTail = false
     case .extracted:
         topLeftRadius = maxCornerRadius
         topRightRadius = maxCornerRadius
         bottomLeftRadius = maxCornerRadius
         bottomRightRadius = maxCornerRadius
-        drawTail = false
+        neighborDrawsTail = false
     }
+    let drawTail = neighborDrawsTail && hasTail
     
     let fixedMainDiameter: CGFloat = 33.0
     let innerSize = CGSize(width: fixedMainDiameter + 6.0, height: fixedMainDiameter)
@@ -299,7 +300,6 @@ public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloa
             context.strokePath()
             
             let bubbleTailContext = DrawingContext(size: imageSize)!
-            if AyuGramHooks.shouldRemoveBubbleTail?() != true {
             bubbleTailContext.withFlippedContext { context in
                 context.clear(CGRect(origin: CGPoint(), size: rawSize))
                 context.translateBy(x: additionalInset + strokeInset, y: additionalInset + strokeInset)
@@ -347,7 +347,6 @@ public func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloa
                 context.strokeEllipse(in: outlineInnerTopEllipse)
                 context.resetClip()
             }
-            } // end AyuGram shouldRemoveBubbleTail
             
             context.translateBy(x: -(additionalInset + strokeInset), y: -(additionalInset + strokeInset))
             context.draw(bubbleTailContext.generateImage()!.cgImage!, in: CGRect(origin: CGPoint(), size: rawSize))

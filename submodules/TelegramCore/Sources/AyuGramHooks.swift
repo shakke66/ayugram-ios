@@ -58,28 +58,16 @@ public final class AyuGramHooks {
 
     public static var shouldHideNotificationBadge: (() -> Bool)?
     public static var shouldHideNotificationCounters: (() -> Bool)?
-    public static var shouldRemoveBubbleTail: (() -> Bool)?
     public static var shouldHideFolderCounters: (() -> Bool)?
     public static var shouldHideAllChatsFolder: (() -> Bool)?
 
     // MARK: - Chats
     public static var shouldShowOnlyAddedStickers: (() -> Bool)?
-    public static var shouldHideFastShareButton: (() -> Bool)?
-    public static var shouldDisableColoredReplies: (() -> Bool)?
     public static var shouldShowAttachButton: (() -> Bool)?
     public static var shouldShowCommandsButton: (() -> Bool)?
     public static var shouldShowTTLButton: (() -> Bool)?
     public static var shouldShowEmojiButton: (() -> Bool)?
     public static var shouldShowVoiceButton: (() -> Bool)?
-
-    // MARK: - Message Width
-    public static var messageWidthMultiplier: (() -> Double)?
-
-    // MARK: - Message Marks
-    public static var shouldShowDeletedMark: (() -> Bool)?
-    public static var shouldShowEditedMark: (() -> Bool)?
-    public static var deletedMessageMark: (() -> String)?
-    public static var editedMessageMark: (() -> String)?
 
     // MARK: - Sending
     public static var shouldUseScheduledMessages: ((PeerId) -> Bool)?
@@ -94,7 +82,6 @@ public final class AyuGramHooks {
     public static var codeFontName: (() -> String)?
     public static var shouldUseQuickAdminShortcuts: (() -> Bool)?
     public static var shouldShowMessageShot: (() -> Bool)?
-    public static var shouldReplaceMarksWithIcons: (() -> Bool)?
     public static var shouldShowChannelReactions: (() -> Bool)?
     public static var shouldShowGroupReactions: (() -> Bool)?
     public static var recentStickersLimit: (() -> Int32)?
@@ -114,7 +101,6 @@ public final class AyuGramHooks {
     public static var shouldSuggestGhostForStories: ((PeerId) -> Bool)?
     public static var shouldFilterZalgo: ((PeerId) -> Bool)?
     public static var shouldImproveLinkPreviews: ((PeerId) -> Bool)?
-    public static var shouldUseSemiTransparentDeleted: (() -> Bool)?
     public static var shouldHidePremiumStatuses: (() -> Bool)?
     public static var avatarCornerRadius: (() -> Int32)?
     public static var messageBubbleRadius: (() -> Int32)?

@@ -150,32 +150,32 @@ public class ChatMessageBackground: ASDisplayNode {
         case let .incoming(mergeType):
             switch mergeType {
             case .None:
-                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: true, neighbors: .none)
+                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: true, neighbors: .none, hasTail: bubbleCorners.hasTails)
             case let .Top(side):
-                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: true, neighbors: .top(side: side))
+                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: true, neighbors: .top(side: side), hasTail: bubbleCorners.hasTails)
             case .Bottom:
-                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: true, neighbors: .bottom)
+                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: true, neighbors: .bottom, hasTail: bubbleCorners.hasTails)
             case .Both:
-                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: true, neighbors: .both)
+                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: true, neighbors: .both, hasTail: bubbleCorners.hasTails)
             case .Side:
-                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: true, neighbors: .side)
+                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: true, neighbors: .side, hasTail: bubbleCorners.hasTails)
             case .Extracted:
-                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: true, neighbors: .extracted)
+                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: true, neighbors: .extracted, hasTail: bubbleCorners.hasTails)
             }
         case let .outgoing(mergeType):
             switch mergeType {
             case .None:
-                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: false, neighbors: .none)
+                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: false, neighbors: .none, hasTail: bubbleCorners.hasTails)
             case let .Top(side):
-                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: false, neighbors: .top(side: side))
+                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: false, neighbors: .top(side: side), hasTail: bubbleCorners.hasTails)
             case .Bottom:
-                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: false, neighbors: .bottom)
+                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: false, neighbors: .bottom, hasTail: bubbleCorners.hasTails)
             case .Both:
-                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: false, neighbors: .both)
+                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: false, neighbors: .both, hasTail: bubbleCorners.hasTails)
             case .Side:
-                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: false, neighbors: .side)
+                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: false, neighbors: .side, hasTail: bubbleCorners.hasTails)
             case .Extracted:
-                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: false, neighbors: .extracted)
+                return messageBubbleArguments(maxCornerRadius: maxRadius, minCornerRadius: minRadius, incoming: false, neighbors: .extracted, hasTail: bubbleCorners.hasTails)
             }
         }
     }

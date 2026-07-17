@@ -539,7 +539,11 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
             }
             
             var updatedDateText = arguments.dateText
-            if arguments.edited {
+            let chats = AyuGramHooks.chatAppearance(accountPeerId: arguments.context.account.peerId).chats
+            let configuredEditedMark = chats.editedMessageMark.isEmpty ? arguments.presentationData.strings.Conversation_MessageEditedLabel : chats.editedMessageMark
+            let editedMark = chats.replaceMarksWithIcons ? "\u{270F}\u{FE0F}" : configuredEditedMark
+            let hasGRVMHistoryMark = chats.showEditedMark && arguments.dateText.hasPrefix("\(editedMark) ")
+            if arguments.edited && !hasGRVMHistoryMark {
                 updatedDateText = "\(arguments.presentationData.strings.Conversation_MessageEditedLabel) \(updatedDateText)"
             }
             if let impressionCount = arguments.impressionCount {

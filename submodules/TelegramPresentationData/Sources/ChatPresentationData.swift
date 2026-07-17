@@ -69,7 +69,7 @@ public final class ChatPresentationData {
             mainRadius: chatBubbleCorners.mainRadius * radiusScale,
             auxiliaryRadius: chatBubbleCorners.auxiliaryRadius * radiusScale,
             mergeBubbleCorners: chatBubbleCorners.mergeBubbleCorners,
-            hasTails: chatBubbleCorners.hasTails
+            hasTails: chatBubbleCorners.hasTails && !appearance.removeMessageBubbleTail
         )
         self.largeEmoji = largeEmoji
         self.isPreview = isPreview

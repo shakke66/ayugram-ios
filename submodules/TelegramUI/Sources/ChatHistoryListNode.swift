@@ -2487,6 +2487,7 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
         |> distinctUntilChanged(isEqual: { lhs, rhs in
             return lhs.messageBubbleRadius == rhs.messageBubbleRadius
                 && lhs.codeFontName == rhs.codeFontName
+                && lhs.removeMessageBubbleTail == rhs.removeMessageBubbleTail
         })
         
         var didSetPresentationData = false
@@ -2505,7 +2506,7 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
                 
                 let animatedEmojiConfig = ChatHistoryAnimatedEmojiConfiguration.with(appConfiguration: appConfiguration)
                 
-                if !didSetPresentationData || previousTheme !== presentationData.theme || previousStrings !== presentationData.strings || previousWallpaper != presentationData.chatWallpaper || previousAnimatedEmojiScale != animatedEmojiConfig.scale || previousChatAppearance?.messageBubbleRadius != chatAppearance.messageBubbleRadius || previousChatAppearance?.codeFontName != chatAppearance.codeFontName {
+                if !didSetPresentationData || previousTheme !== presentationData.theme || previousStrings !== presentationData.strings || previousWallpaper != presentationData.chatWallpaper || previousAnimatedEmojiScale != animatedEmojiConfig.scale || previousChatAppearance?.messageBubbleRadius != chatAppearance.messageBubbleRadius || previousChatAppearance?.codeFontName != chatAppearance.codeFontName || previousChatAppearance?.removeMessageBubbleTail != chatAppearance.removeMessageBubbleTail {
                     didSetPresentationData = true
                     previousChatAppearance = chatAppearance
                     

@@ -115,7 +115,8 @@ private final class ChatMessageBubbleClippingNode: ASDisplayNode {
 private func grvmDeletedMessageContentAlpha(
     item: ChatMessageItem
 ) -> CGFloat {
-    guard AyuGramHooks.shouldUseSemiTransparentDeleted?() == true,
+    let chats = AyuGramHooks.chatAppearance(accountPeerId: item.context.account.peerId).chats
+    guard chats.semiTransparentDeletedMessages,
           case let .message(message, _, _, _, _) = item.content,
           message.attributes.contains(where: { $0 is GRVMDeletedMessageAttribute }),
           !item.associatedData.isRecentActions,
@@ -1602,6 +1603,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         currentForwardInfo: (Peer?, String?)?,
         isSelected: Bool?
     ) -> (ListViewItemNodeLayout, (ListViewItemUpdateAnimation, ListViewItemApply, Bool) -> Void) {
+        let chats = AyuGramHooks.chatAppearance(accountPeerId: item.context.account.peerId).chats
         let isPreview = item.presentationData.isPreview
         let accessibilityData = ChatMessageAccessibilityData(item: item, isSelected: isSelected)
         let isSidePanelOpen = item.controllerInteraction.isSidePanelOpen
@@ -1913,6 +1915,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         if let subject = item.associatedData.subject, case .messageOptions = subject {
             needsShareButton = false
         }
+        if chats.hideFastShareButton {
+            needsShareButton = false
+        }
                         
         var tmpWidth: CGFloat
         if allowFullWidth {
@@ -1961,7 +1966,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             }
         }
         maximumContentWidth = max(0.0, maximumContentWidth)
-        if let multiplier = AyuGramHooks.messageWidthMultiplier?(), multiplier != 1.0, !hasInstantVideo {
+        let multiplier = chats.messageWidthMultiplier
+        if multiplier != 1.0 && !hasInstantVideo {
             maximumContentWidth = floor(maximumContentWidth * CGFloat(multiplier))
             maximumContentWidth = min(maximumContentWidth, baseWidth - layoutConstants.bubble.edgeInset * 2.0 - avatarInset)
             maximumContentWidth = max(0.0, maximumContentWidth)
@@ -3147,7 +3153,6 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         }
         
         var reactionButtonsFinalize: ((CGFloat) -> (CGSize, (_ animation: ListViewItemUpdateAnimation) -> ChatMessageReactionButtonsNode))?
-        let chats = AyuGramHooks.chatAppearance(accountPeerId: item.context.account.peerId).chats
         let grvmShouldShowReactions: Bool
         if let peer = firstMessage.peers[firstMessage.id.peerId] {
             if let channel = peer as? TelegramChannel {
@@ -5085,7 +5090,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             summarizeButtonNode.removeFromSupernode()
         }
         
-        if needsShareButton && AyuGramHooks.shouldHideFastShareButton?() != true {
+        if needsShareButton {
             if strongSelf.shareButtonNode == nil {
                 let shareButtonNode = ChatMessageShareButton()
                 strongSelf.shareButtonNode = shareButtonNode

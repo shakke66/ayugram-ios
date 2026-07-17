@@ -227,7 +227,8 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
             }
             
             var giftEmojiFileId: Int64?
-            if AyuGramHooks.shouldDisableColoredReplies?() != true {
+            let chats = AyuGramHooks.chatAppearance(accountPeerId: arguments.context.account.peerId).chats
+            if !chats.disableColoredReplies {
                 switch author?.nameColor {
                 case let .preset(nameColor):
                     let colors = arguments.context.peerNameColors.get(nameColor, dark: arguments.presentationData.theme.theme.overallDarkAppearance)

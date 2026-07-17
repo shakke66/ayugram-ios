@@ -112,6 +112,38 @@ class ChatControlsContractTests(unittest.TestCase):
         "submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/"
         "ChatMessageBubbleItemNode.swift"
     )
+    chats_settings_path = (
+        "submodules/AyuGramSettingsUI/Sources/AyuGramChatsController.swift"
+    )
+    timestamp_path = (
+        "submodules/TelegramUI/Components/Chat/"
+        "ChatMessageDateAndStatusNode/Sources/"
+        "StringForMessageTimestampStatus.swift"
+    )
+    date_status_path = (
+        "submodules/TelegramUI/Components/Chat/"
+        "ChatMessageDateAndStatusNode/Sources/"
+        "ChatMessageDateAndStatusNode.swift"
+    )
+    reply_path = (
+        "submodules/TelegramUI/Components/Chat/"
+        "ChatMessageReplyInfoNode/Sources/ChatMessageReplyInfoNode.swift"
+    )
+    bubble_images_path = (
+        "submodules/TelegramPresentationData/Sources/ChatMessageBubbleImages.swift"
+    )
+    essential_graphics_path = (
+        "submodules/TelegramPresentationData/Sources/"
+        "PresentationThemeEssentialGraphics.swift"
+    )
+    chat_presentation_path = (
+        "submodules/TelegramPresentationData/Sources/ChatPresentationData.swift"
+    )
+    history_list_path = "submodules/TelegramUI/Sources/ChatHistoryListNode.swift"
+    message_background_path = (
+        "submodules/ChatMessageBackground/Sources/ChatMessageBackground.swift"
+    )
+    hooks_path = "submodules/TelegramCore/Sources/AyuGramHooks.swift"
 
     def test_exact_account_snapshots_replace_migrated_hooks(self) -> None:
         keyboard = source(self.keyboard_path)
@@ -262,6 +294,273 @@ class ChatControlsContractTests(unittest.TestCase):
             "&& grvmShouldShowReactions"
         )
         self.assertIn(render_condition, normalized(begin_layout))
+
+    def test_message_mark_editors_accept_arbitrary_unicode_and_reset_natively(
+        self,
+    ) -> None:
+        settings = source(self.chats_settings_path)
+        item = swift_block(settings, "func item(")
+        deleted_start = item.index("case let .deletedMark")
+        edited_start = item.index("case let .editedMark")
+        next_start = item.index("case let .hideFastShare")
+        deleted = item[deleted_start:edited_start]
+        edited = item[edited_start:next_start]
+
+        for block, key_path, reset in [
+            (deleted, r"\.deletedMessageMark", r'"\u{1F9F9}"'),
+            (edited, r"\.editedMessageMark", '""'),
+        ]:
+            with self.subTest(key_path=key_path):
+                body = normalized(block)
+                self.assertIn("ItemListSingleLineInputItem(", block)
+                self.assertIn("clearType:.always", body)
+                self.assertIn(
+                    normalized(f"arguments.updateString({key_path}, value)"), body
+                )
+                self.assertIn(
+                    normalized(
+                        f"cleared: {{ arguments.updateString({key_path}, {reset}) }}"
+                    ),
+                    body,
+                )
+                for restriction in [
+                    "maxLength:",
+                    "trimmingCharacters",
+                    "shouldUpdateText:",
+                    "processPaste:",
+                    "presets",
+                ]:
+                    self.assertNotIn(restriction, block)
+
+        entries = swift_block(settings, "private func ayuGramChatsEntries(")
+        assert_ordered_tokens(
+            self,
+            entries,
+            [
+                ".showDeletedMark(presentationData.theme, settings.showDeletedMark)",
+                ".showEditedMark(presentationData.theme, settings.showEditedMark)",
+                ".replaceWithIcons(presentationData.theme, settings.replaceMarksWithIcons)",
+                "if !settings.replaceMarksWithIcons",
+                ".deletedMark(presentationData.theme, settings.deletedMessageMark)",
+                ".editedMark(presentationData.theme, settings.editedMessageMark)",
+            ],
+        )
+
+        for case_name, key_path in [
+            ("showDeletedMark", r"\.showDeletedMark"),
+            ("showEditedMark", r"\.showEditedMark"),
+        ]:
+            block = swift_block(settings, f"case let .{case_name}")
+            self.assertIn(
+                normalized(f"arguments.updateBool({key_path}, v)"), normalized(block)
+            )
+
+        icon_toggle = swift_block(settings, "case let .replaceWithIcons")
+        self.assertNotIn("updateString", icon_toggle)
+
+    def test_timestamp_marks_use_one_typed_snapshot_and_lifecycle_attributes(
+        self,
+    ) -> None:
+        timestamp = source(self.timestamp_path)
+        renderer = swift_block(timestamp, "public func stringForMessageTimestampStatus(")
+        body = normalized(renderer)
+
+        exact_snapshot = (
+            "let chats = AyuGramHooks.chatAppearance("
+            "accountPeerId: accountPeerId).chats"
+        )
+        self.assertEqual(body.count(normalized(exact_snapshot)), 1)
+        for token in [
+            "$0 is GRVMDeletedMessageAttribute",
+            "$0 is GRVMEditHistoryMessageAttribute",
+            "chats.showDeletedMark",
+            "chats.showEditedMark",
+            "chats.replaceMarksWithIcons",
+            "chats.deletedMessageMark",
+            "chats.editedMessageMark",
+            r'"\u{1F5D1}"',
+            r'"\u{270F}\u{FE0F}"',
+            "configuredMark.isEmpty ? "
+            "strings.Conversation_MessageEditedLabel : configuredMark",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), body)
+
+        for legacy in [
+            "shouldShowDeletedMark",
+            "shouldShowEditedMark",
+            "deletedMessageMark?()",
+            "editedMessageMark?()",
+            "shouldReplaceMarksWithIcons",
+            "isMessageDeletedCheck",
+            "hasEditHistoryCheck",
+            "AyuDeletedMessagesDB",
+        ]:
+            self.assertNotIn(legacy, renderer)
+
+    def test_date_status_does_not_double_prefix_grvm_history_mark(self) -> None:
+        date_status = source(self.date_status_path)
+        for token in [
+            "AyuGramHooks.chatAppearance("
+            "accountPeerId: arguments.context.account.peerId).chats",
+            "chats.showEditedMark",
+            "chats.replaceMarksWithIcons",
+            "chats.editedMessageMark",
+            r'"\u{270F}\u{FE0F}"',
+            "arguments.dateText.hasPrefix(\"\\(editedMark) \")",
+            "arguments.edited && !hasGRVMHistoryMark",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), normalized(date_status))
+
+    def test_deleted_opacity_uses_typed_policy_and_preserves_exclusions(self) -> None:
+        bubble = source(self.bubble_path)
+        helper = swift_block(bubble, "private func grvmDeletedMessageContentAlpha(")
+        for token in [
+            "AyuGramHooks.chatAppearance("
+            "accountPeerId: item.context.account.peerId).chats",
+            "chats.semiTransparentDeletedMessages",
+            "GRVMDeletedMessageAttribute",
+            "item.associatedData.isRecentActions",
+            "item.controllerInteraction.selectionState == nil",
+            "item.presentationData.isPreview",
+            "case .customChatContents = item.chatLocation",
+            "case .messageOptions = subject",
+            "return 0.7",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), normalized(helper))
+        self.assertNotIn("shouldUseSemiTransparentDeleted", helper)
+        self.assertIn(
+            "self.mainContextSourceNode.alpha = "
+            "grvmDeletedMessageContentAlpha(item: item)",
+            bubble,
+        )
+
+    def test_width_and_fast_share_reuse_one_validated_chat_snapshot(self) -> None:
+        bubble = source(self.bubble_path)
+        begin_layout = swift_block(bubble, "private static func beginLayout(")
+        body = normalized(begin_layout)
+        exact_snapshot = (
+            "let chats = AyuGramHooks.chatAppearance("
+            "accountPeerId: item.context.account.peerId).chats"
+        )
+        self.assertEqual(body.count(normalized(exact_snapshot)), 1)
+        for token in [
+            "let multiplier = chats.messageWidthMultiplier",
+            "multiplier != 1.0 && !hasInstantVideo",
+            "min(maximumContentWidth, baseWidth - "
+            "layoutConstants.bubble.edgeInset * 2.0 - avatarInset)",
+            "max(0.0, maximumContentWidth)",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), body)
+
+        assert_ordered_tokens(
+            self,
+            begin_layout,
+            [
+                "if isPreview",
+                "let isAd = item.content.firstMessage.adAttribute != nil",
+                "RestrictedContentMessageAttribute",
+                "case .messageOptions = subject",
+                "if chats.hideFastShareButton",
+                "needsShareButton = false",
+                "var tmpWidth: CGFloat",
+            ],
+        )
+        self.assertNotIn("messageWidthMultiplier?()", begin_layout)
+        self.assertNotIn("shouldHideFastShareButton", bubble)
+        self.assertIn("if needsShareButton {", bubble)
+
+    def test_reply_colors_use_the_exact_account_policy(self) -> None:
+        reply = source(self.reply_path)
+        for token in [
+            "let chats = AyuGramHooks.chatAppearance("
+            "accountPeerId: arguments.context.account.peerId).chats",
+            "if !chats.disableColoredReplies",
+            "authorNameColor ?? arguments.presentationData.theme.theme.chat.message."
+            "incoming.accentTextColor",
+            "arguments.presentationData.theme.theme.chat.message.outgoing."
+            "accentTextColor",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), normalized(reply))
+        self.assertNotIn("shouldDisableColoredReplies", reply)
+
+    def test_tail_is_ready_geometry_and_cached_by_hashable_corners(self) -> None:
+        images = source(self.bubble_images_path)
+        graphics = source(self.essential_graphics_path)
+        background = source(self.message_background_path)
+        chat_presentation = source(self.chat_presentation_path)
+        presentation = source(
+            "submodules/TelegramPresentationData/Sources/PresentationData.swift"
+        )
+
+        self.assertGreaterEqual(images.count("hasTail: Bool = true"), 3)
+        self.assertGreaterEqual(
+            normalized(images).count(normalized("neighborDrawsTail && hasTail")),
+            2,
+        )
+        self.assertIn("hasTail: hasTail", images)
+        for forbidden in ["AyuGramHooks", "chatAppearance", "PeerId"]:
+            self.assertNotIn(forbidden, images)
+
+        self.assertGreater(graphics.count("messageBubbleImage("), 0)
+        self.assertEqual(
+            graphics.count("messageBubbleImage("),
+            graphics.count("hasTail: bubbleCorners.hasTails"),
+        )
+
+        current_corners = swift_block(background, "public func currentCorners(")
+        self.assertGreater(current_corners.count("messageBubbleArguments("), 0)
+        self.assertEqual(
+            current_corners.count("messageBubbleArguments("),
+            current_corners.count("hasTail: bubbleCorners.hasTails"),
+        )
+        self.assertIn(
+            "PresentationChatBubbleCorners: Equatable, Hashable", presentation
+        )
+        self.assertIn("public var hasTails: Bool", presentation)
+        self.assertIn(
+            normalized(
+                "hasTails: chatBubbleCorners.hasTails "
+                "&& !appearance.removeMessageBubbleTail"
+            ),
+            normalized(chat_presentation),
+        )
+
+    def test_tail_setting_rebuilds_live_chat_presentation_data(self) -> None:
+        history = source(self.history_list_path)
+        management = swift_block(
+            history, "private func beginPresentationDataManagement("
+        )
+        for token in [
+            "lhs.removeMessageBubbleTail == rhs.removeMessageBubbleTail",
+            "previousChatAppearance?.removeMessageBubbleTail "
+            "!= chatAppearance.removeMessageBubbleTail",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), normalized(management))
+
+    def test_migrated_render_controls_have_no_zero_argument_hooks(self) -> None:
+        hooks = source(self.hooks_path)
+        manager = source(self.feature_manager_path)
+        for legacy in [
+            "shouldRemoveBubbleTail",
+            "shouldHideFastShareButton",
+            "shouldDisableColoredReplies",
+            "messageWidthMultiplier",
+            "shouldShowDeletedMark",
+            "shouldShowEditedMark",
+            "deletedMessageMark",
+            "editedMessageMark",
+            "shouldReplaceMarksWithIcons",
+            "shouldUseSemiTransparentDeleted",
+        ]:
+            with self.subTest(legacy=legacy):
+                self.assertNotIn(legacy, hooks)
+                self.assertNotIn(f"AyuGramHooks.{legacy} =", manager)
 
     def test_channel_bottom_mode_is_typed_and_routes_real_discussion(self) -> None:
         subscriber = source(self.subscriber_path)

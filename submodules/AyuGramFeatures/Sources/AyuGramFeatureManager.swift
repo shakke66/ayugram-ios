@@ -237,9 +237,6 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.shouldHideNotificationCounters = { [weak self] in
             return self?.currentSettings.hideNotificationCounters ?? false
         }
-        AyuGramHooks.shouldRemoveBubbleTail = { [weak self] in
-            return self?.currentSettings.removeMessageBubbleTail ?? false
-        }
         AyuGramHooks.shouldHideFolderCounters = { [weak self] in
             return self?.currentSettings.hideFolderCounters ?? false
         }
@@ -250,12 +247,6 @@ public final class AyuGramFeatureManager {
         // MARK: - Chats
         AyuGramHooks.shouldShowOnlyAddedStickers = { [weak self] in
             return self?.currentSettings.showOnlyAddedStickers ?? false
-        }
-        AyuGramHooks.shouldHideFastShareButton = { [weak self] in
-            return self?.currentSettings.hideFastShareButton ?? false
-        }
-        AyuGramHooks.shouldDisableColoredReplies = { [weak self] in
-            return self?.currentSettings.disableColoredReplies ?? false
         }
         AyuGramHooks.shouldShowAttachButton = { [weak self] in
             return self?.currentSettings.showAttachButton ?? true
@@ -271,25 +262,6 @@ public final class AyuGramFeatureManager {
         }
         AyuGramHooks.shouldShowVoiceButton = { [weak self] in
             return self?.currentSettings.showVoiceButton ?? true
-        }
-
-        // MARK: - Message Width
-        AyuGramHooks.messageWidthMultiplier = { [weak self] in
-            return self?.currentSettings.messageWidthMultiplier ?? 1.0
-        }
-
-        // MARK: - Message Marks
-        AyuGramHooks.shouldShowDeletedMark = { [weak self] in
-            return self?.currentSettings.showDeletedMark ?? true
-        }
-        AyuGramHooks.shouldShowEditedMark = { [weak self] in
-            return self?.currentSettings.showEditedMark ?? true
-        }
-        AyuGramHooks.deletedMessageMark = { [weak self] in
-            return self?.currentSettings.deletedMessageMark ?? "🗑"
-        }
-        AyuGramHooks.editedMessageMark = { [weak self] in
-            return self?.currentSettings.editedMessageMark ?? "✏️"
         }
 
         // MARK: - Sending
@@ -312,7 +284,6 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.shouldDisableCustomBackgrounds = { [weak self] in self?.currentSettings.disableCustomBackgrounds ?? false }
         AyuGramHooks.codeFontName = { [weak self] in self?.currentSettings.codeFontName ?? "" }
         AyuGramHooks.shouldShowMessageShot = { [weak self] in self?.currentSettings.messageShotFeature ?? false }
-        AyuGramHooks.shouldReplaceMarksWithIcons = { [weak self] in self?.currentSettings.replaceMarksWithIcons ?? false }
         AyuGramHooks.shouldShowChannelReactions = { [weak self] in self?.currentSettings.showChannelReactions ?? true }
         AyuGramHooks.shouldShowGroupReactions = { [weak self] in self?.currentSettings.showGroupReactions ?? true }
         AyuGramHooks.recentStickersLimit = { [weak self] in self?.currentSettings.recentStickersCount ?? 20 }
@@ -335,7 +306,6 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.shouldImproveLinkPreviews = { [weak self] accountPeerId in
             return self?.settings(accountPeerId: accountPeerId)?.improveLinkPreviews ?? false
         }
-        AyuGramHooks.shouldUseSemiTransparentDeleted = { [weak self] in self?.currentSettings.semiTransparentDeletedMessages ?? false }
         AyuGramHooks.shouldHidePremiumStatuses = { [weak self] in self?.currentSettings.hidePremiumStatuses ?? false }
         AyuGramHooks.avatarCornerRadius = { [weak self] in self?.currentSettings.avatarCorners ?? 50 }
         AyuGramHooks.messageBubbleRadius = { [weak self] in self?.currentSettings.messageBubbleRadius ?? 16 }

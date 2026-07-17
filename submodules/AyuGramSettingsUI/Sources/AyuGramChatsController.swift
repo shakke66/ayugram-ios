@@ -46,6 +46,8 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
     case messageShot(PresentationTheme, Bool)
     case channelBottomButton(PresentationTheme, String, Int32)
     case messagesHeader(PresentationTheme)
+    case showDeletedMark(PresentationTheme, Bool)
+    case showEditedMark(PresentationTheme, Bool)
     case deletedMark(PresentationTheme, String)
     case editedMark(PresentationTheme, String)
     case replaceWithIcons(PresentationTheme, Bool)
@@ -73,7 +75,7 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         switch self {
         case .stickersHeader, .onlyAddedStickers, .showChannelReactions, .showGroupReactions, .recentStickersCount: return AyuGramChatsSection.stickers.rawValue
         case .channelsHeader, .quickAdmin, .messageShot, .channelBottomButton: return AyuGramChatsSection.channels.rawValue
-        case .messagesHeader, .deletedMark, .editedMark, .replaceWithIcons, .hideFastShare, .disableColoredReplies, .messageWidth, .semiTransparentDeleted: return AyuGramChatsSection.messages.rawValue
+        case .messagesHeader, .showDeletedMark, .showEditedMark, .deletedMark, .editedMark, .replaceWithIcons, .hideFastShare, .disableColoredReplies, .messageWidth, .semiTransparentDeleted: return AyuGramChatsSection.messages.rawValue
         case .contextMenuHeader, .showReactionsPanel, .showViewsPanel, .showHideMessage, .showUserMessages, .showMessageDetails, .showRepeatMessage: return AyuGramChatsSection.contextMenu.rawValue
         case .messageFieldHeader, .showAttach, .showCommands, .showTTL, .showEmoji, .showVoice, .showGift, .showAiEditor: return AyuGramChatsSection.messageField.rawValue
         }
@@ -91,28 +93,30 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         case .messageShot: return 7
         case .channelBottomButton: return 8
         case .messagesHeader: return 9
-        case .deletedMark: return 10
-        case .editedMark: return 11
+        case .showDeletedMark: return 10
+        case .showEditedMark: return 11
         case .replaceWithIcons: return 12
-        case .hideFastShare: return 13
-        case .disableColoredReplies: return 14
-        case .messageWidth: return 15
-        case .semiTransparentDeleted: return 16
-        case .contextMenuHeader: return 17
-        case .showReactionsPanel: return 18
-        case .showViewsPanel: return 19
-        case .showHideMessage: return 20
-        case .showUserMessages: return 21
-        case .showMessageDetails: return 22
-        case .showRepeatMessage: return 23
-        case .messageFieldHeader: return 24
-        case .showAttach: return 25
-        case .showCommands: return 26
-        case .showTTL: return 27
-        case .showEmoji: return 28
-        case .showVoice: return 29
-        case .showGift: return 30
-        case .showAiEditor: return 31
+        case .deletedMark: return 13
+        case .editedMark: return 14
+        case .hideFastShare: return 15
+        case .disableColoredReplies: return 16
+        case .messageWidth: return 17
+        case .semiTransparentDeleted: return 18
+        case .contextMenuHeader: return 19
+        case .showReactionsPanel: return 20
+        case .showViewsPanel: return 21
+        case .showHideMessage: return 22
+        case .showUserMessages: return 23
+        case .showMessageDetails: return 24
+        case .showRepeatMessage: return 25
+        case .messageFieldHeader: return 26
+        case .showAttach: return 27
+        case .showCommands: return 28
+        case .showTTL: return 29
+        case .showEmoji: return 30
+        case .showVoice: return 31
+        case .showGift: return 32
+        case .showAiEditor: return 33
         }
     }
 
@@ -125,6 +129,8 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         case let (.quickAdmin(_, lv), .quickAdmin(_, rv)): return lv == rv
         case let (.messageShot(_, lv), .messageShot(_, rv)): return lv == rv
         case let (.channelBottomButton(_, _, lv), .channelBottomButton(_, _, rv)): return lv == rv
+        case let (.showDeletedMark(_, lv), .showDeletedMark(_, rv)): return lv == rv
+        case let (.showEditedMark(_, lv), .showEditedMark(_, rv)): return lv == rv
         case let (.replaceWithIcons(_, lv), .replaceWithIcons(_, rv)): return lv == rv
         case let (.hideFastShare(_, lv), .hideFastShare(_, rv)): return lv == rv
         case let (.disableColoredReplies(_, lv), .disableColoredReplies(_, rv)): return lv == rv
@@ -178,20 +184,40 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
             })
         case .messagesHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "Messages", sectionId: self.section)
-        case let .deletedMark(_, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Deleted Mark", label: value, sectionId: self.section, style: .blocks, action: {
-                let presets = ["\u{1F480}", "\u{1F5D1}", "\u{274C}", "\u{1F6AB}"]
-                let idx = presets.firstIndex(of: value) ?? -1
-                arguments.updateString(\.deletedMessageMark, presets[(idx + 1) % presets.count])
-            })
-        case let .editedMark(_, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Edited Mark", label: value, sectionId: self.section, style: .blocks, action: {
-                let presets = ["edited", "\u{270F}\u{FE0F}", "(ред.)"]
-                let idx = presets.firstIndex(of: value) ?? -1
-                arguments.updateString(\.editedMessageMark, presets[(idx + 1) % presets.count])
-            })
+        case let .showDeletedMark(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Show Deleted Mark", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showDeletedMark, v) })
+        case let .showEditedMark(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Show Edited Mark", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEditedMark, v) })
         case let .replaceWithIcons(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Replace with Icons", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.replaceMarksWithIcons, v) })
+        case let .deletedMark(theme, value):
+            return ItemListSingleLineInputItem(
+                context: arguments.context,
+                presentationData: presentationData,
+                title: NSAttributedString(string: "Deleted Mark", textColor: theme.list.itemPrimaryTextColor),
+                text: value,
+                placeholder: "",
+                type: .regular(capitalization: false, autocorrection: false),
+                clearType: .always,
+                sectionId: self.section,
+                textUpdated: { value in arguments.updateString(\.deletedMessageMark, value) },
+                action: {},
+                cleared: { arguments.updateString(\.deletedMessageMark, "\u{1F9F9}") }
+            )
+        case let .editedMark(theme, value):
+            return ItemListSingleLineInputItem(
+                context: arguments.context,
+                presentationData: presentationData,
+                title: NSAttributedString(string: "Edited Mark", textColor: theme.list.itemPrimaryTextColor),
+                text: value,
+                placeholder: "",
+                type: .regular(capitalization: false, autocorrection: false),
+                clearType: .always,
+                sectionId: self.section,
+                textUpdated: { value in arguments.updateString(\.editedMessageMark, value) },
+                action: {},
+                cleared: { arguments.updateString(\.editedMessageMark, "") }
+            )
         case let .hideFastShare(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Hide Fast Share Button", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideFastShareButton, v) })
         case let .disableColoredReplies(_, value):
@@ -272,9 +298,13 @@ private func ayuGramChatsEntries(settings: AyuGramSettings, presentationData: Pr
     entries.append(.messageShot(presentationData.theme, settings.messageShotFeature))
     entries.append(.channelBottomButton(presentationData.theme, channelBottomLabel, settings.channelBottomButton))
     entries.append(.messagesHeader(presentationData.theme))
-    entries.append(.deletedMark(presentationData.theme, settings.deletedMessageMark))
-    entries.append(.editedMark(presentationData.theme, settings.editedMessageMark))
+    entries.append(.showDeletedMark(presentationData.theme, settings.showDeletedMark))
+    entries.append(.showEditedMark(presentationData.theme, settings.showEditedMark))
     entries.append(.replaceWithIcons(presentationData.theme, settings.replaceMarksWithIcons))
+    if !settings.replaceMarksWithIcons {
+        entries.append(.deletedMark(presentationData.theme, settings.deletedMessageMark))
+        entries.append(.editedMark(presentationData.theme, settings.editedMessageMark))
+    }
     entries.append(.hideFastShare(presentationData.theme, settings.hideFastShareButton))
     entries.append(.disableColoredReplies(presentationData.theme, settings.disableColoredReplies))
     entries.append(.messageWidth(presentationData.theme, messageWidthLabel, settings.messageWidthMultiplier))

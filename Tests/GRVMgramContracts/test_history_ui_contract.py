@@ -55,10 +55,15 @@ class HistoryUIContractTests(unittest.TestCase):
 
         self.assertIn("$0 is GRVMDeletedMessageAttribute", value)
         self.assertIn("$0 is GRVMEditHistoryMessageAttribute", value)
-        self.assertIn("AyuGramHooks.deletedMessageMark?()", value)
-        self.assertIn("AyuGramHooks.editedMessageMark?()", value)
-        self.assertIn('replaceMarksWithIcons ? "🗑"', value)
-        self.assertIn('replaceMarksWithIcons ? "✏️"', value)
+        self.assertIn(
+            "AyuGramHooks.chatAppearance(accountPeerId: accountPeerId).chats", value
+        )
+        self.assertIn("chats.deletedMessageMark", value)
+        self.assertIn("chats.editedMessageMark", value)
+        self.assertIn('chats.replaceMarksWithIcons ? "\\u{1F5D1}"', value)
+        self.assertIn(
+            'chats.replaceMarksWithIcons ? "\\u{270F}\\u{FE0F}"', value
+        )
         self.assertNotIn("isMessageDeletedCheck", value)
         self.assertNotIn("hasEditHistoryCheck", value)
 
@@ -96,7 +101,8 @@ class HistoryUIContractTests(unittest.TestCase):
 
         for token in (
             "GRVMDeletedMessageAttribute",
-            "shouldUseSemiTransparentDeleted",
+            "AyuGramHooks.chatAppearance(accountPeerId: item.context.account.peerId).chats",
+            "semiTransparentDeletedMessages",
             "selectionState == nil",
             "isRecentActions",
             "case let .message",
