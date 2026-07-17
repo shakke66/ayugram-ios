@@ -215,6 +215,9 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.shouldIncreaseWebviewWidth = { [weak self] accountPeerId in
             return self?.settings(accountPeerId: accountPeerId)?.increaseWebviewWidth ?? false
         }
+        AyuGramHooks.shouldDisableExternalLinkWarning = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.disableExternalLinkWarning ?? false
+        }
         AyuGramHooks.shouldConfirmStickers = { [weak self] accountPeerId in
             return self?.settings(accountPeerId: accountPeerId)?.confirmSendSticker ?? false
         }

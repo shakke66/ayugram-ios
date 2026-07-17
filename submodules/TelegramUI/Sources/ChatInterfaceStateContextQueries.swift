@@ -568,7 +568,10 @@ func urlPreviewStateForInputText(_ inputText: NSAttributedString?, context: Acco
         let detectedUrls = detectUrls(inputText)
         if detectedUrls != (currentQuery?.detectedUrls ?? []) {
             if !detectedUrls.isEmpty {
-                return (UrlPreviewState(detectedUrls: detectedUrls), webpagePreview(account: context.account, urls: detectedUrls, forPeerId: forPeerId)
+                let previewUrls = AyuGramHooks.shouldImproveLinkPreviews?(context.account.peerId) == true
+                    ? detectedUrls.map(grvmRewrittenLinkPreviewUrl)
+                    : detectedUrls
+                return (UrlPreviewState(detectedUrls: detectedUrls), webpagePreview(account: context.account, urls: previewUrls, forPeerId: forPeerId)
                 |> mapToSignal { result -> Signal<(TelegramMediaWebpage, String)?, NoError> in
                     guard case let .result(webpageResult) = result else {
                         return .complete()

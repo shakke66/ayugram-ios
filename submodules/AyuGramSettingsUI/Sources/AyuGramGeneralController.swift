@@ -43,6 +43,7 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
     case showDialogId(PresentationTheme, String, Int32)
     case filterZalgo(PresentationTheme, Bool)
     case improveLinkPreviews(PresentationTheme, Bool)
+    case disableExternalLinkWarning(PresentationTheme, Bool)
     case webviewHeader(PresentationTheme)
     case spoofAndroid(PresentationTheme, Bool)
     case increaseWebview(PresentationTheme, Bool)
@@ -54,7 +55,7 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
     var section: ItemListSectionId {
         switch self {
         case .translationHeader, .translationProvider: return AyuGramGeneralSection.translation.rawValue
-        case .generalHeader, .hideStories, .disableSimilarChannels, .disableNotificationDelay, .showSeconds, .showDialogId, .filterZalgo, .improveLinkPreviews: return AyuGramGeneralSection.general.rawValue
+        case .generalHeader, .hideStories, .disableSimilarChannels, .disableNotificationDelay, .showSeconds, .showDialogId, .filterZalgo, .improveLinkPreviews, .disableExternalLinkWarning: return AyuGramGeneralSection.general.rawValue
         case .webviewHeader, .spoofAndroid, .increaseWebview: return AyuGramGeneralSection.webview.rawValue
         case .confirmHeader, .confirmSticker, .confirmGIF, .confirmVoice: return AyuGramGeneralSection.confirmations.rawValue
         }
@@ -72,13 +73,14 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
         case .showDialogId: return 7
         case .filterZalgo: return 8
         case .improveLinkPreviews: return 9
-        case .webviewHeader: return 10
-        case .spoofAndroid: return 11
-        case .increaseWebview: return 12
-        case .confirmHeader: return 13
-        case .confirmSticker: return 14
-        case .confirmGIF: return 15
-        case .confirmVoice: return 16
+        case .disableExternalLinkWarning: return 10
+        case .webviewHeader: return 11
+        case .spoofAndroid: return 12
+        case .increaseWebview: return 13
+        case .confirmHeader: return 14
+        case .confirmSticker: return 15
+        case .confirmGIF: return 16
+        case .confirmVoice: return 17
         }
     }
 
@@ -97,6 +99,7 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
         case let (.showDialogId(_, _, lv), .showDialogId(_, _, rv)): return lv == rv
         case let (.filterZalgo(_, lv), .filterZalgo(_, rv)): return lv == rv
         case let (.improveLinkPreviews(_, lv), .improveLinkPreviews(_, rv)): return lv == rv
+        case let (.disableExternalLinkWarning(_, lv), .disableExternalLinkWarning(_, rv)): return lv == rv
         default: return lhs.stableId == rhs.stableId
         }
     }
@@ -132,6 +135,8 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
             return ItemListSwitchItem(presentationData: presentationData, title: "Zalgo Filter", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.filterZalgo, v) })
         case let .improveLinkPreviews(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Improve Link Previews", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.improveLinkPreviews, v) })
+        case let .disableExternalLinkWarning(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Disable External Link Warning", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableExternalLinkWarning, v) })
         case .webviewHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "Webview", sectionId: self.section)
         case let .spoofAndroid(_, value):
@@ -167,6 +172,7 @@ private func ayuGramGeneralEntries(settings: AyuGramSettings, presentationData: 
     entries.append(.showDialogId(presentationData.theme, dialogIdLabel, settings.showDialogId))
     entries.append(.filterZalgo(presentationData.theme, settings.filterZalgo))
     entries.append(.improveLinkPreviews(presentationData.theme, settings.improveLinkPreviews))
+    entries.append(.disableExternalLinkWarning(presentationData.theme, settings.disableExternalLinkWarning))
     entries.append(.webviewHeader(presentationData.theme))
     entries.append(.spoofAndroid(presentationData.theme, settings.spoofWebviewAsAndroid))
     entries.append(.increaseWebview(presentationData.theme, settings.increaseWebviewHeight || settings.increaseWebviewWidth))

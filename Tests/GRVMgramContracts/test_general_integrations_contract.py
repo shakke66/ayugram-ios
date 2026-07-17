@@ -14,10 +14,36 @@ ENGINE = (
 CHAT_TRANSLATION = ROOT / "submodules/TranslateUI/Sources/ChatTranslation.swift"
 FEATURE_MANAGER = ROOT / "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
 GENERAL = ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramGeneralController.swift"
+SETTINGS = ROOT / "submodules/AyuGramLib/Sources/AyuGramSettings.swift"
+CHAT_CONTROLLER = ROOT / "submodules/TelegramUI/Sources/ChatController.swift"
+CHAT_QUERIES = (
+    ROOT / "submodules/TelegramUI/Sources/ChatInterfaceStateContextQueries.swift"
+)
+LINK_REWRITE = ROOT / "submodules/TelegramUI/Sources/GRVMLinkPreviewRewrite.swift"
+WEBPAGE_BUBBLE = (
+    ROOT
+    / "submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift"
+)
 
 
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def swift_block(source: str, signature: str) -> str:
+    start = source.find(signature)
+    if start == -1:
+        raise AssertionError(f"Missing Swift block: {signature}")
+    opening_brace = source.index("{", start)
+    depth = 0
+    for index in range(opening_brace, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1]
+    raise AssertionError(f"Unterminated Swift block: {signature}")
 
 
 class GeneralTranslationContractTests(unittest.TestCase):
@@ -138,6 +164,89 @@ class GeneralTranslationContractTests(unittest.TestCase):
         self.assertIn("(value + 1) % 3", self.general)
         self.assertNotIn('"Native"', self.general)
         self.assertIn("updateGRVMSettings(accountId: context.account.peerId", self.general)
+
+
+class GeneralLinkContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.settings = read(SETTINGS)
+        cls.feature_manager = read(FEATURE_MANAGER)
+        cls.general = read(GENERAL)
+        cls.chat_controller = read(CHAT_CONTROLLER)
+        cls.chat_queries = read(CHAT_QUERIES)
+        cls.link_rewrite = read(LINK_REWRITE)
+        cls.webpage_bubble = read(WEBPAGE_BUBBLE)
+
+    def test_external_link_warning_is_off_by_default_and_account_scoped(self) -> None:
+        self.assertIn("disableExternalLinkWarning: false", self.settings)
+        self.assertIn(
+            'decodeIfPresent(Bool.self, forKey: "disableExternalLinkWarning") ?? false',
+            self.settings,
+        )
+        warning_hook = swift_block(
+            self.feature_manager,
+            "AyuGramHooks.shouldDisableExternalLinkWarning =",
+        )
+        self.assertIn("accountPeerId", warning_hook)
+        self.assertIn("settings(accountPeerId: accountPeerId)", warning_hook)
+        self.assertIn("disableExternalLinkWarning ?? false", warning_hook)
+        self.assertIn("case disableExternalLinkWarning(PresentationTheme, Bool)", self.general)
+        self.assertIn('title: "Disable External Link Warning"', self.general)
+        self.assertIn("arguments.updateBool(\\.disableExternalLinkWarning, v)", self.general)
+
+        open_url_start = self.chat_controller.index("func openUrl(")
+        open_url_end = self.chat_controller.index("func openUrlIn(", open_url_start)
+        open_url = self.chat_controller[open_url_start:open_url_end]
+        for token in (
+            "let effectiveSkipConcealedAlert = skipConcealedAlert",
+            "AyuGramHooks.shouldDisableExternalLinkWarning?(",
+            "self.context.account.peerId",
+            "skipConcealedAlert: effectiveSkipConcealedAlert",
+        ):
+            self.assertIn(token, open_url)
+        self.assertEqual(open_url.count("effectiveSkipConcealedAlert"), 2)
+
+    def test_preview_rewrite_is_http_only_and_uses_exact_supported_hosts(self) -> None:
+        for token in (
+            "URLComponents(string: url)",
+            'scheme == "http" || scheme == "https"',
+            'case "twitter.com", "www.twitter.com", "x.com", "www.x.com":',
+            'previewHost = "fixupx.com"',
+            'case "tiktok.com", "www.tiktok.com":',
+            'previewHost = "kktiktok.com"',
+            'host.hasSuffix(".tiktok.com")',
+            'previewHost = "\\(subdomain).kktiktok.com"',
+            'case "reddit.com", "www.reddit.com":',
+            'previewHost = "vxreddit.com"',
+            'case "instagram.com", "www.instagram.com":',
+            'previewHost = "kkclip.com"',
+            'case "pixiv.net", "www.pixiv.net":',
+            'previewHost = "phixiv.net"',
+            "components.host = previewHost",
+            "return components.string ?? url",
+        ):
+            self.assertIn(token, self.link_rewrite)
+        self.assertNotIn("host.contains(", self.link_rewrite)
+        self.assertNotIn("url.replacingOccurrences", self.link_rewrite)
+
+    def test_preview_state_keeps_original_urls_and_rewrites_only_request(self) -> None:
+        preview = swift_block(self.chat_queries, "func urlPreviewStateForInputText(")
+        for token in (
+            "let detectedUrls = detectUrls(inputText)",
+            "UrlPreviewState(detectedUrls: detectedUrls)",
+            "AyuGramHooks.shouldImproveLinkPreviews?(context.account.peerId) == true",
+            "detectedUrls.map(grvmRewrittenLinkPreviewUrl)",
+            "webpagePreview(account: context.account, urls: previewUrls, forPeerId: forPeerId)",
+        ):
+            self.assertIn(token, preview)
+        self.assertNotIn("UrlPreviewState(detectedUrls: previewUrls)", preview)
+
+    def test_rendered_preview_hint_uses_the_exact_account(self) -> None:
+        self.assertIn(
+            "AyuGramHooks.shouldImproveLinkPreviews?(item.context.account.peerId)",
+            self.webpage_bubble,
+        )
+        self.assertNotIn("AyuGramHooks.shouldImproveLinkPreviews?()", self.webpage_bubble)
 
 
 if __name__ == "__main__":
