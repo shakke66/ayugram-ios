@@ -63,11 +63,6 @@ public final class AyuGramHooks {
 
     // MARK: - Chats
     public static var shouldShowOnlyAddedStickers: (() -> Bool)?
-    public static var shouldShowAttachButton: (() -> Bool)?
-    public static var shouldShowCommandsButton: (() -> Bool)?
-    public static var shouldShowTTLButton: (() -> Bool)?
-    public static var shouldShowEmojiButton: (() -> Bool)?
-    public static var shouldShowVoiceButton: (() -> Bool)?
 
     // MARK: - Sending
     public static var shouldUseScheduledMessages: ((PeerId) -> Bool)?
@@ -96,8 +91,6 @@ public final class AyuGramHooks {
     public static var contextMenuRepeat: (() -> Int32)?
 
     // MARK: - 6.7.8 features (W0)
-    public static var shouldShowGiftButton: (() -> Bool)?
-    public static var shouldShowAiEditorButton: (() -> Bool)?
     public static var shouldSuggestGhostForStories: ((PeerId) -> Bool)?
     public static var shouldFilterZalgo: ((PeerId) -> Bool)?
     public static var shouldImproveLinkPreviews: ((PeerId) -> Bool)?

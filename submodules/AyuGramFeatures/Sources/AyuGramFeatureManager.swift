@@ -248,21 +248,6 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.shouldShowOnlyAddedStickers = { [weak self] in
             return self?.currentSettings.showOnlyAddedStickers ?? false
         }
-        AyuGramHooks.shouldShowAttachButton = { [weak self] in
-            return self?.currentSettings.showAttachButton ?? true
-        }
-        AyuGramHooks.shouldShowCommandsButton = { [weak self] in
-            return self?.currentSettings.showCommandsButton ?? true
-        }
-        AyuGramHooks.shouldShowTTLButton = { [weak self] in
-            return self?.currentSettings.showTTLButton ?? true
-        }
-        AyuGramHooks.shouldShowEmojiButton = { [weak self] in
-            return self?.currentSettings.showEmojiButton ?? true
-        }
-        AyuGramHooks.shouldShowVoiceButton = { [weak self] in
-            return self?.currentSettings.showVoiceButton ?? true
-        }
 
         // MARK: - Sending
         AyuGramHooks.shouldUseScheduledMessages = { [weak self] accountPeerId in
@@ -295,8 +280,6 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.contextMenuDetails = { [weak self] in self?.currentSettings.showMessageDetailsInContextMenu ?? 1 }
         AyuGramHooks.contextMenuRepeat = { [weak self] in self?.currentSettings.showRepeatMessageInContextMenu ?? 1 }
 
-        AyuGramHooks.shouldShowGiftButton = { [weak self] in self?.currentSettings.showGiftButton ?? true }
-        AyuGramHooks.shouldShowAiEditorButton = { [weak self] in self?.currentSettings.showAiEditorButton ?? true }
         AyuGramHooks.shouldSuggestGhostForStories = { [weak self] accountPeerId in
             return self?.settings(accountPeerId: accountPeerId)?.suggestGhostForStories ?? false
         }

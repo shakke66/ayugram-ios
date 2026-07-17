@@ -64,9 +64,11 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
     case showRepeatMessage(PresentationTheme, String, Int32)
     case messageFieldHeader(PresentationTheme)
     case showAttach(PresentationTheme, Bool)
+    case showAttachPopup(PresentationTheme, Bool)
     case showCommands(PresentationTheme, Bool)
     case showTTL(PresentationTheme, Bool)
     case showEmoji(PresentationTheme, Bool)
+    case showEmojiPopup(PresentationTheme, Bool)
     case showVoice(PresentationTheme, Bool)
     case showGift(PresentationTheme, Bool)
     case showAiEditor(PresentationTheme, Bool)
@@ -77,7 +79,7 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         case .channelsHeader, .quickAdmin, .messageShot, .channelBottomButton: return AyuGramChatsSection.channels.rawValue
         case .messagesHeader, .showDeletedMark, .showEditedMark, .deletedMark, .editedMark, .replaceWithIcons, .hideFastShare, .disableColoredReplies, .messageWidth, .semiTransparentDeleted: return AyuGramChatsSection.messages.rawValue
         case .contextMenuHeader, .showReactionsPanel, .showViewsPanel, .showHideMessage, .showUserMessages, .showMessageDetails, .showRepeatMessage: return AyuGramChatsSection.contextMenu.rawValue
-        case .messageFieldHeader, .showAttach, .showCommands, .showTTL, .showEmoji, .showVoice, .showGift, .showAiEditor: return AyuGramChatsSection.messageField.rawValue
+        case .messageFieldHeader, .showAttach, .showAttachPopup, .showCommands, .showTTL, .showEmoji, .showEmojiPopup, .showVoice, .showGift, .showAiEditor: return AyuGramChatsSection.messageField.rawValue
         }
     }
 
@@ -111,12 +113,14 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         case .showRepeatMessage: return 25
         case .messageFieldHeader: return 26
         case .showAttach: return 27
-        case .showCommands: return 28
-        case .showTTL: return 29
-        case .showEmoji: return 30
-        case .showVoice: return 31
-        case .showGift: return 32
-        case .showAiEditor: return 33
+        case .showAttachPopup: return 28
+        case .showCommands: return 29
+        case .showTTL: return 30
+        case .showEmoji: return 31
+        case .showEmojiPopup: return 32
+        case .showVoice: return 33
+        case .showGift: return 34
+        case .showAiEditor: return 35
         }
     }
 
@@ -143,9 +147,11 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         case let (.showMessageDetails(_, _, lv), .showMessageDetails(_, _, rv)): return lv == rv
         case let (.showRepeatMessage(_, _, lv), .showRepeatMessage(_, _, rv)): return lv == rv
         case let (.showAttach(_, lv), .showAttach(_, rv)): return lv == rv
+        case let (.showAttachPopup(_, lv), .showAttachPopup(_, rv)): return lv == rv
         case let (.showCommands(_, lv), .showCommands(_, rv)): return lv == rv
         case let (.showTTL(_, lv), .showTTL(_, rv)): return lv == rv
         case let (.showEmoji(_, lv), .showEmoji(_, rv)): return lv == rv
+        case let (.showEmojiPopup(_, lv), .showEmojiPopup(_, rv)): return lv == rv
         case let (.showVoice(_, lv), .showVoice(_, rv)): return lv == rv
         case let (.showGift(_, lv), .showGift(_, rv)): return lv == rv
         case let (.showAiEditor(_, lv), .showAiEditor(_, rv)): return lv == rv
@@ -258,12 +264,16 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "Message Field Elements", sectionId: self.section)
         case let .showAttach(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Attachment", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAttachButton, v) })
+        case let .showAttachPopup(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Attachment Popup", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAttachPopup, v) })
         case let .showCommands(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Commands", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showCommandsButton, v) })
         case let .showTTL(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "TTL", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showTTLButton, v) })
         case let .showEmoji(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Emoji & Stickers", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEmojiButton, v) })
+        case let .showEmojiPopup(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Emoji & Stickers Popup", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEmojiPopup, v) })
         case let .showVoice(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Voice Recording", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showVoiceButton, v) })
         case let .showGift(_, value):
@@ -318,9 +328,11 @@ private func ayuGramChatsEntries(settings: AyuGramSettings, presentationData: Pr
     entries.append(.showRepeatMessage(presentationData.theme, repeatMessageLabel, settings.showRepeatMessageInContextMenu))
     entries.append(.messageFieldHeader(presentationData.theme))
     entries.append(.showAttach(presentationData.theme, settings.showAttachButton))
+    entries.append(.showAttachPopup(presentationData.theme, settings.showAttachPopup))
     entries.append(.showCommands(presentationData.theme, settings.showCommandsButton))
     entries.append(.showTTL(presentationData.theme, settings.showTTLButton))
     entries.append(.showEmoji(presentationData.theme, settings.showEmojiButton))
+    entries.append(.showEmojiPopup(presentationData.theme, settings.showEmojiPopup))
     entries.append(.showVoice(presentationData.theme, settings.showVoiceButton))
     entries.append(.showGift(presentationData.theme, settings.showGiftButton))
     entries.append(.showAiEditor(presentationData.theme, settings.showAiEditorButton))

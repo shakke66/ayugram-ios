@@ -144,6 +144,15 @@ class ChatControlsContractTests(unittest.TestCase):
         "submodules/ChatMessageBackground/Sources/ChatMessageBackground.swift"
     )
     hooks_path = "submodules/TelegramCore/Sources/AyuGramHooks.swift"
+    input_contexts_path = "submodules/TelegramUI/Sources/ChatInterfaceInputContexts.swift"
+    input_panel_path = (
+        "submodules/TelegramUI/Components/Chat/"
+        "ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift"
+    )
+    panel_interaction_path = (
+        "submodules/ChatPresentationInterfaceState/Sources/"
+        "ChatPanelInterfaceInteraction.swift"
+    )
 
     def test_exact_account_snapshots_replace_migrated_hooks(self) -> None:
         keyboard = source(self.keyboard_path)
@@ -561,6 +570,123 @@ class ChatControlsContractTests(unittest.TestCase):
             with self.subTest(legacy=legacy):
                 self.assertNotIn(legacy, hooks)
                 self.assertNotIn(f"AyuGramHooks.{legacy} =", manager)
+
+    def test_compose_accessories_use_one_exact_account_snapshot(self) -> None:
+        input_contexts = source(self.input_contexts_path)
+        panel_state = input_contexts
+        exact_snapshot = (
+            "let compose = AyuGramHooks.chatAppearance("
+            "accountPeerId: context.account.peerId).compose"
+        )
+        self.assertEqual(panel_state.count(exact_snapshot), 1)
+
+        for token in [
+            "if compose.showTTLButton {",
+            "if compose.showGiftButton {",
+            "if compose.showCommandsButton {",
+            "if compose.showEmojiButton {",
+            "if let _ = chatPresentationInterfaceState.interfaceState.editMessage {",
+            "accessoryItems.append(.input(isEnabled: true, inputMode: .emoji))",
+            "accessoryItems.append(.botInput(isEnabled: true, inputMode: .bot))",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), normalized(panel_state))
+
+        hooks = source(self.hooks_path)
+        manager = source(self.feature_manager_path)
+        for legacy in [
+            "shouldShowAttachButton",
+            "shouldShowCommandsButton",
+            "shouldShowTTLButton",
+            "shouldShowEmojiButton",
+            "shouldShowVoiceButton",
+            "shouldShowGiftButton",
+            "shouldShowAiEditorButton",
+        ]:
+            with self.subTest(legacy=legacy):
+                self.assertNotIn(legacy, input_contexts)
+                self.assertNotIn(legacy, source(self.input_panel_path))
+                self.assertNotIn(legacy, hooks)
+                self.assertNotIn(f"AyuGramHooks.{legacy} =", manager)
+
+    def test_compose_panel_uses_exact_policy_and_native_popup_routes(self) -> None:
+        panel = source(self.input_panel_path)
+        calculate_metrics = swift_block(panel, "private func calculateTextFieldMetrics(")
+        update_layout = swift_block(panel, "override public func updateLayout(")
+
+        exact_snapshot = (
+            "let compose = AyuGramHooks.chatAppearance("
+            "accountPeerId: interfaceState.accountPeerId).compose"
+        )
+        self.assertIn(normalized(exact_snapshot), normalized(calculate_metrics))
+        self.assertIn(normalized(exact_snapshot), normalized(update_layout))
+        self.assertIn("compose.showAiEditorButton", calculate_metrics)
+        self.assertIn("if self.isAIEnabled && compose.showAiEditorButton", update_layout)
+        self.assertIn("let aiButton", update_layout)
+        self.assertIn("let inlineAiButton", update_layout)
+
+        for token in [
+            "let showAttachmentButton = displayMediaButton && compose.showAttachButton",
+            "self.attachmentButton.isEnabled = showAttachmentButton && isMediaEnabled && !isRecording",
+            "self.attachmentButton.isUserInteractionEnabled = showAttachmentButton",
+            "self.attachmentButtonDisabledNode.isHidden = !showAttachmentButton || !isSlowmodeActive || isMediaEnabled",
+            "let showMenuButton = hasMenuButton && interfaceState.interfaceState.mediaDraftState == nil && compose.showCommandsButton",
+            "self.menuButton.isUserInteractionEnabled = showMenuButton",
+            "compose.showVoiceButton",
+            "private let attachmentButtonContextGesture: ContextGesture",
+            "self.attachmentButton.addGestureRecognizer(self.attachmentButtonContextGesture)",
+            "self.attachmentButtonContextGesture.shouldBegin = { [weak self] _ in",
+            "compose.showAttachButton && compose.showAttachPopup",
+            "self.attachmentButtonContextGesture.activated = { [weak self] _, _ in",
+            "self.displayAttachmentMenu()",
+            "private var emojiButtonContextGesture: ContextGesture?",
+            "button.addGestureRecognizer(emojiButtonContextGesture)",
+            "compose.showEmojiButton && compose.showEmojiPopup",
+            "return (.media(mode: .other, expanded: nil, focused: false), state.keyboardButtonsMessage?.id)",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), normalized(panel))
+
+        self.assertEqual(panel.count("ContextGesture(target: nil, action: nil)"), 2)
+        self.assertNotIn("UILongPressGestureRecognizer", panel)
+        self.assertNotIn(
+            "showAttachPopup",
+            source(self.panel_interaction_path),
+        )
+
+    def test_popup_settings_are_account_scoped_and_follow_related_controls(
+        self,
+    ) -> None:
+        settings = source(self.chats_settings_path)
+        entries = swift_block(settings, "private func ayuGramChatsEntries(")
+
+        for token in [
+            "case showAttachPopup(PresentationTheme, Bool)",
+            "case showEmojiPopup(PresentationTheme, Bool)",
+            "case .showAttachPopup:",
+            "case .showEmojiPopup:",
+            "case let (.showAttachPopup(_, lv), .showAttachPopup(_, rv)): return lv == rv",
+            "case let (.showEmojiPopup(_, lv), .showEmojiPopup(_, rv)): return lv == rv",
+            "arguments.updateBool(\\.showAttachPopup, v)",
+            "arguments.updateBool(\\.showEmojiPopup, v)",
+            ".showAttachPopup(presentationData.theme, settings.showAttachPopup)",
+            ".showEmojiPopup(presentationData.theme, settings.showEmojiPopup)",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), normalized(settings))
+
+        assert_ordered_tokens(
+            self,
+            entries,
+            [
+                ".showAttach(presentationData.theme, settings.showAttachButton)",
+                ".showAttachPopup(presentationData.theme, settings.showAttachPopup)",
+                ".showCommands(presentationData.theme, settings.showCommandsButton)",
+                ".showEmoji(presentationData.theme, settings.showEmojiButton)",
+                ".showEmojiPopup(presentationData.theme, settings.showEmojiPopup)",
+                ".showVoice(presentationData.theme, settings.showVoiceButton)",
+            ],
+        )
 
     def test_channel_bottom_mode_is_typed_and_routes_real_discussion(self) -> None:
         subscriber = source(self.subscriber_path)
