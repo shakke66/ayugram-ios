@@ -49,10 +49,53 @@ private struct MessageContextMenuData {
     let messageActions: ChatAvailableMessageActions
 }
 
-private enum GRVMContextMenuPlacement {
+private enum GRVMContextMenuPlacement: Equatable {
     case hidden
     case topLevel
     case more
+}
+
+private struct GRVMContextStatsRoute {
+    let placement: GRVMContextMenuPlacement
+    let includeReadReports: Bool
+    let includeReactions: Bool
+}
+
+private func grvmContextStatsRoutes(
+    viewsPlacement: GRVMContextMenuPlacement,
+    reactionsPlacement: GRVMContextMenuPlacement,
+    hasReadReports: Bool,
+    reactionCount: Int
+) -> [GRVMContextStatsRoute] {
+    var result: [GRVMContextStatsRoute] = []
+    let placements: [GRVMContextMenuPlacement] = [.topLevel, .more]
+    for placement in placements {
+        let includeReadReports = hasReadReports && viewsPlacement == placement
+        let includeReactions = reactionCount != 0 && reactionsPlacement == placement
+        if includeReadReports || includeReactions {
+            result.append(GRVMContextStatsRoute(
+                placement: placement,
+                includeReadReports: includeReadReports,
+                includeReactions: includeReactions
+            ))
+        }
+    }
+    return result
+}
+
+private func grvmFilteredReadStats(
+    _ stats: MessageReadStats?,
+    includeReadReports: Bool,
+    includeReactions: Bool
+) -> MessageReadStats? {
+    guard let stats else {
+        return nil
+    }
+    return MessageReadStats(
+        reactionCount: includeReactions ? stats.reactionCount : 0,
+        peers: includeReadReports ? stats.peers : [],
+        readTimestamps: includeReadReports ? stats.readTimestamps : [:]
+    )
 }
 
 private func grvmContextMenuPlacement(
@@ -2143,35 +2186,52 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 reactionCount = 0
             }
 
-            if hasReadReports || reactionCount != 0 {
-                if !actions.isEmpty {
-                    actions.insert(.separator, at: 0)
-                }
-                
-                var readStats = readStats
-                if !(hasReadReports || reactionCount != 0) {
-                    readStats = MessageReadStats(reactionCount: 0, peers: [], readTimestamps: [:])
-                }
-
-                actions.insert(.custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: hasReadReports, isEdit: false, stats: readStats, action: { c, f, stats, customReactionEmojiPacks, firstCustomEmojiReaction in
-                    if message.id.peerId.namespace == Namespaces.Peer.CloudUser {
+            let statsRoutes = grvmContextStatsRoutes(
+                viewsPlacement: viewsPlacement,
+                reactionsPlacement: reactionsPlacement,
+                hasReadReports: hasReadReports,
+                reactionCount: reactionCount
+            )
+            if statsRoutes.contains(where: { $0.placement == .topLevel }), !actions.isEmpty {
+                actions.insert(.separator, at: 0)
+            }
+            for route in statsRoutes {
+                let routeReactionCount = route.includeReactions ? reactionCount : 0
+                let routeMessage = route.includeReactions ? message : message.withUpdatedAttributes(
+                    message.attributes.filter { !($0 is ReactionsMessageAttribute) }
+                )
+                let routeStats = grvmFilteredReadStats(
+                    readStats,
+                    includeReadReports: route.includeReadReports,
+                    includeReactions: route.includeReactions
+                )
+                let statsItem: ContextMenuItem = .custom(ChatReadReportContextItem(
+                    context: context,
+                    message: routeMessage,
+                    hasReadReports: route.includeReadReports,
+                    includeReadReports: route.includeReadReports,
+                    includeReactions: route.includeReactions,
+                    isEdit: false,
+                    stats: routeStats,
+                    action: { c, f, stats, customReactionEmojiPacks, firstCustomEmojiReaction in
+                    if route.includeReadReports, message.id.peerId.namespace == Namespaces.Peer.CloudUser {
                         if let stats, stats.peers.isEmpty {
                             c.dismiss(completion: {
                                 let controller = context.sharedContext.makePremiumPrivacyControllerController(context: context, subject: .readTime, peerId: peer.id)
                                 controllerInteraction.navigationController()?.pushViewController(controller)
                             })
                         }
-                    } else if reactionCount == 0, let stats = stats, stats.peers.count == 1, !"".isEmpty {
+                    } else if routeReactionCount == 0, let stats = stats, stats.peers.count == 1, !"".isEmpty {
                         c.dismiss(completion: {
                             controllerInteraction.openPeer(stats.peers[0], .default, nil, .default)
                         })
-                    } else if (stats != nil && !stats!.peers.isEmpty) || reactionCount != 0 {
+                    } else if (stats != nil && !stats!.peers.isEmpty) || routeReactionCount != 0 {
                         var tip: ContextController.Tip?
                         
                         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
                         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
                         
-                        if !premiumConfiguration.isPremiumDisabled {
+                        if route.includeReactions, !premiumConfiguration.isPremiumDisabled {
                             if customReactionEmojiPacks.count == 1, let firstCustomEmojiReaction = firstCustomEmojiReaction {
                                 tip = .animatedEmoji(
                                     text: presentationData.strings.ChatContextMenu_ReactionEmojiSetSingle(customReactionEmojiPacks[0].title).string,
@@ -2195,27 +2255,32 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                         }
                         
                         var displayReadTimestamps = false
-                        if let stats, !stats.readTimestamps.isEmpty {
+                        if route.includeReadReports, let stats, !stats.readTimestamps.isEmpty {
                             displayReadTimestamps = true
                         }
-                        let tempState = EngineMessageReactionListContext.State(accountPeerId: context.account.peerId, message: EngineMessage(message), readStats: stats, reaction: nil)
+                        let tempState: EngineMessageReactionListContext.State
+                        if route.includeReactions {
+                            tempState = EngineMessageReactionListContext.State(accountPeerId: context.account.peerId, message: EngineMessage(message), readStats: stats, reaction: nil)
+                        } else {
+                            tempState = EngineMessageReactionListContext.State(accountPeerId: context.account.peerId, message: EngineMessage(routeMessage), readStats: stats, reaction: nil)
+                        }
                         var allItemsHaveTimestamp = true
                         for item in tempState.items {
                             if item.timestamp == nil {
                                 allItemsHaveTimestamp = false
                             }
                         }
-                        if allItemsHaveTimestamp {
+                        if route.includeReadReports, allItemsHaveTimestamp {
                             displayReadTimestamps = true
                         }
                         
                         c.pushItems(items: .single(ContextController.Items(content: .custom(ReactionListContextMenuContent(
                             context: context,
                             displayReadTimestamps: displayReadTimestamps,
-                            availableReactions: availableReactions,
+                            availableReactions: route.includeReactions ? availableReactions : nil,
                             animationCache: controllerInteraction.presentationContext.animationCache,
                             animationRenderer: controllerInteraction.presentationContext.animationRenderer,
-                            message: EngineMessage(message),
+                            message: EngineMessage(routeMessage),
                             reaction: nil,
                             readStats: stats,
                             back: { [weak c] in
@@ -2230,7 +2295,15 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     } else {
                         f(.default)
                     }
-                }), false), at: 0)
+                }), false)
+                switch route.placement {
+                case .hidden:
+                    break
+                case .topLevel:
+                    actions.insert(statsItem, at: 0)
+                case .more:
+                    contextMoreActions.append(statsItem)
+                }
             }
         }
         
@@ -2238,7 +2311,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             if !actions.isEmpty {
                 actions.insert(.separator, at: 0)
             }
-            actions.insert(.custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: false, isEdit: true, stats: MessageReadStats(reactionCount: 0, peers: [], readTimestamps: [:]), action: nil), false), at: 0)
+            actions.insert(.custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: false, includeReadReports: false, includeReactions: false, isEdit: true, stats: MessageReadStats(reactionCount: 0, peers: [], readTimestamps: [:]), action: nil), false), at: 0)
         }
 
         func grvmRouteContextMenuItem(_ item: ContextMenuItem, visibility: GRVMContextMenuVisibility) {
@@ -3290,14 +3363,18 @@ final class ChatReadReportContextItem: ContextMenuCustomItem {
     fileprivate let context: AccountContext
     fileprivate let message: Message
     fileprivate let hasReadReports: Bool
+    fileprivate let includeReadReports: Bool
+    fileprivate let includeReactions: Bool
     fileprivate let isEdit: Bool
     fileprivate let stats: MessageReadStats?
     fileprivate let action: ((ContextControllerProtocol, @escaping (ContextMenuActionResult) -> Void, MessageReadStats?, [StickerPackCollectionInfo], TelegramMediaFile?) -> Void)?
 
-    init(context: AccountContext, message: Message, hasReadReports: Bool, isEdit: Bool, stats: MessageReadStats?, action: ((ContextControllerProtocol, @escaping (ContextMenuActionResult) -> Void, MessageReadStats?, [StickerPackCollectionInfo], TelegramMediaFile?) -> Void)?) {
+    init(context: AccountContext, message: Message, hasReadReports: Bool, includeReadReports: Bool, includeReactions: Bool, isEdit: Bool, stats: MessageReadStats?, action: ((ContextControllerProtocol, @escaping (ContextMenuActionResult) -> Void, MessageReadStats?, [StickerPackCollectionInfo], TelegramMediaFile?) -> Void)?) {
         self.context = context
         self.message = message
         self.hasReadReports = hasReadReports
+        self.includeReadReports = includeReadReports
+        self.includeReactions = includeReactions
         self.isEdit = isEdit
         self.stats = stats
         self.action = action
@@ -3344,7 +3421,11 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
         self.presentationData = presentationData
         self.getController = getController
         self.actionSelected = actionSelected
-        self.currentStats = item.stats
+        self.currentStats = grvmFilteredReadStats(
+            item.stats,
+            includeReadReports: item.includeReadReports,
+            includeReactions: item.includeReactions
+        )
 
         let textFont = Font.regular(presentationData.listsFontSize.baseDisplaySize)
 
@@ -3402,12 +3483,21 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
         
         var reactionCount = 0
         var customEmojiFiles = Set<Int64>()
-        for reaction in mergedMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: nil, message: self.item.message).reactions {
-            reactionCount += Int(reaction.count)
-            
-            if case let .custom(fileId) = reaction.value {
-                customEmojiFiles.insert(fileId)
+        if self.item.includeReactions {
+            for reaction in mergedMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: nil, message: self.item.message).reactions {
+                reactionCount += Int(reaction.count)
+
+                if case let .custom(fileId) = reaction.value {
+                    customEmojiFiles.insert(fileId)
+                }
             }
+        }
+        if self.currentStats == nil, !self.item.includeReadReports {
+            self.currentStats = MessageReadStats(
+                reactionCount: self.item.includeReactions ? reactionCount : 0,
+                peers: [],
+                readTimestamps: [:]
+            )
         }
         
         if !customEmojiFiles.isEmpty {
@@ -3461,25 +3551,27 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
 
         if let currentStats = self.currentStats {
             if self.item.message.id.peerId.namespace == Namespaces.Peer.CloudUser {
-                self.buttonNode.isUserInteractionEnabled = item.action != nil && currentStats.peers.isEmpty
+                self.buttonNode.isUserInteractionEnabled = item.action != nil && item.includeReadReports && currentStats.peers.isEmpty
             } else {
-                self.buttonNode.isUserInteractionEnabled = item.action != nil && (!currentStats.peers.isEmpty || reactionCount != 0)
+                self.buttonNode.isUserInteractionEnabled = item.action != nil && ((item.includeReadReports && !currentStats.peers.isEmpty) || (item.includeReactions && reactionCount != 0))
             }
         } else {
-            self.buttonNode.isUserInteractionEnabled = item.action != nil && reactionCount != 0
+            self.buttonNode.isUserInteractionEnabled = item.action != nil && item.includeReactions && reactionCount != 0
 
-            self.disposable = (item.context.engine.messages.messageReadStats(id: item.message.id)
-            |> deliverOnMainQueue).startStrict(next: { [weak self] value in
-                guard let strongSelf = self else {
-                    return
-                }
-                if let value = value {
-                    strongSelf.updateStats(stats: value, transition: .animated(duration: 0.2, curve: .easeInOut))
-                }
-            })
+            if self.item.includeReadReports {
+                self.disposable = (item.context.engine.messages.messageReadStats(id: item.message.id)
+                |> deliverOnMainQueue).startStrict(next: { [weak self] value in
+                    guard let strongSelf = self else {
+                        return
+                    }
+                    if let value = value {
+                        strongSelf.updateStats(stats: value, transition: .animated(duration: 0.2, curve: .easeInOut))
+                    }
+                })
+            }
         }
         
-        if !self.item.isEdit {
+        if !self.item.isEdit, self.item.includeReactions {
             item.context.account.viewTracker.updateReactionsForMessageIds(messageIds: [item.message.id], force: true)
         }
     }
@@ -3500,10 +3592,17 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
     private var validLayout: (calculatedWidth: CGFloat, size: CGSize)?
 
     func updateStats(stats: MessageReadStats, transition: ContainedViewLayoutTransition) {
+        guard let stats = grvmFilteredReadStats(
+            stats,
+            includeReadReports: self.item.includeReadReports,
+            includeReactions: self.item.includeReactions
+        ) else {
+            return
+        }
         if self.item.message.id.peerId.namespace == Namespaces.Peer.CloudUser {
-            self.buttonNode.isUserInteractionEnabled = self.item.action != nil && stats.peers.isEmpty
+            self.buttonNode.isUserInteractionEnabled = self.item.action != nil && self.item.includeReadReports && stats.peers.isEmpty
         } else {
-            self.buttonNode.isUserInteractionEnabled = self.item.action != nil && (!stats.peers.isEmpty || stats.reactionCount != 0)
+            self.buttonNode.isUserInteractionEnabled = self.item.action != nil && ((self.item.includeReadReports && !stats.peers.isEmpty) || (self.item.includeReactions && stats.reactionCount != 0))
         }
 
         guard let (calculatedWidth, size) = self.validLayout else {
@@ -3536,8 +3635,10 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
         let textFont = Font.regular(self.presentationData.listsFontSize.baseDisplaySize)
         
         var reactionCount = 0
-        for reaction in mergedMessageReactionsAndPeers(accountPeerId: self.item.context.account.peerId, accountPeer: nil, message: self.item.message).reactions {
-            reactionCount += Int(reaction.count)
+        if self.item.includeReactions {
+            for reaction in mergedMessageReactionsAndPeers(accountPeerId: self.item.context.account.peerId, accountPeer: nil, message: self.item.message).reactions {
+                reactionCount += Int(reaction.count)
+            }
         }
         
         var showReadBadge = false
@@ -3818,9 +3919,14 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
         guard let controller = self.getController() else {
             return
         }
+        let stats = grvmFilteredReadStats(
+            self.currentStats,
+            includeReadReports: self.item.includeReadReports,
+            includeReactions: self.item.includeReactions
+        )
         self.item.action?(controller, { [weak self] result in
             self?.actionSelected(result)
-        }, self.currentStats, self.customEmojiPacks, self.firstCustomEmojiReaction)
+        }, stats, self.item.includeReactions ? self.customEmojiPacks : [], self.item.includeReactions ? self.firstCustomEmojiReaction : nil)
     }
 
     var isActionEnabled: Bool {
@@ -3831,17 +3937,23 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
             return false
         }
         if self.item.message.id.peerId.namespace == Namespaces.Peer.CloudUser {
-            if let stats = self.currentStats, stats.peers.isEmpty {
+            if self.item.includeReadReports, let stats = self.currentStats, stats.peers.isEmpty {
+                return true
             } else {
                 return false
             }
         }
         var reactionCount = 0
-        for reaction in mergedMessageReactionsAndPeers(accountPeerId: self.item.context.account.peerId, accountPeer: nil, message: self.item.message).reactions {
-            reactionCount += Int(reaction.count)
+        if self.item.includeReactions {
+            for reaction in mergedMessageReactionsAndPeers(accountPeerId: self.item.context.account.peerId, accountPeer: nil, message: self.item.message).reactions {
+                reactionCount += Int(reaction.count)
+            }
         }
-        if reactionCount >= 0 {
+        if self.item.includeReactions, reactionCount > 0 {
             return true
+        }
+        guard self.item.includeReadReports else {
+            return false
         }
         guard let currentStats = self.currentStats else {
             return false

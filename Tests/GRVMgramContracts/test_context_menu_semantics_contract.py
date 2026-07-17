@@ -241,6 +241,76 @@ class ContextMenuSemanticsContractTests(unittest.TestCase):
         ):
             self.assertNotIn(f"AyuGramHooks.{hook}", legacy)
 
+    def test_views_and_reactions_follow_independent_placement_truth_table(self) -> None:
+        def routes(views: str, reactions: str) -> list[tuple[str, bool, bool]]:
+            result = []
+            for placement in ("topLevel", "more"):
+                include_views = views == placement
+                include_reactions = reactions == placement
+                if include_views or include_reactions:
+                    result.append((placement, include_views, include_reactions))
+            return result
+
+        cases = (
+            ("hidden", "hidden", []),
+            ("topLevel", "hidden", [("topLevel", True, False)]),
+            ("more", "hidden", [("more", True, False)]),
+            ("hidden", "topLevel", [("topLevel", False, True)]),
+            ("hidden", "more", [("more", False, True)]),
+            ("topLevel", "topLevel", [("topLevel", True, True)]),
+            ("more", "more", [("more", True, True)]),
+            (
+                "topLevel",
+                "more",
+                [("topLevel", True, False), ("more", False, True)],
+            ),
+            (
+                "more",
+                "topLevel",
+                [("topLevel", False, True), ("more", True, False)],
+            ),
+        )
+        for views, reactions, expected in cases:
+            with self.subTest(views=views, reactions=reactions):
+                self.assertEqual(routes(views, reactions), expected)
+
+        route = swift_block(self.context_menu, "func grvmContextStatsRoutes(")
+        for token in (
+            "viewsPlacement == placement",
+            "reactionsPlacement == placement",
+            "includeReadReports",
+            "includeReactions",
+            "[.topLevel, .more]",
+        ):
+            self.assertIn(token, route)
+
+        filtered = swift_block(self.context_menu, "func grvmFilteredReadStats(")
+        self.assertIn("includeReactions ? stats.reactionCount : 0", filtered)
+        self.assertIn("includeReadReports ? stats.peers : []", filtered)
+        self.assertIn("includeReadReports ? stats.readTimestamps : [:]", filtered)
+
+        menu = swift_block(
+            self.context_menu, "func contextMenuForChatPresentationInterfaceState("
+        )
+        self.assertIn("grvmContextStatsRoutes(", menu)
+        self.assertIn("case .topLevel", menu)
+        self.assertIn("actions.insert(statsItem", menu)
+        self.assertIn("case .more", menu)
+        self.assertIn("contextMoreActions.append(statsItem)", menu)
+        self.assertIn("includeReadReports: route.includeReadReports", menu)
+        self.assertIn("includeReactions: route.includeReactions", menu)
+        self.assertIn("message.attributes.filter { !($0 is ReactionsMessageAttribute) }", menu)
+
+        item = swift_block(self.context_menu, "final class ChatReadReportContextItem")
+        self.assertIn("fileprivate let includeReadReports: Bool", item)
+        self.assertIn("fileprivate let includeReactions: Bool", item)
+
+        node = swift_block(self.context_menu, "private final class ChatReadReportContextItemNode")
+        self.assertIn("if self.item.includeReactions", node)
+        self.assertIn("if self.item.includeReadReports", node)
+        self.assertIn("grvmFilteredReadStats(", node)
+        self.assertIn("self.item.includeReactions ? self.customEmojiPacks : []", node)
+
     def test_stock_delete_send_now_and_history_remain_independent(self) -> None:
         menu = swift_block(
             self.context_menu, "func contextMenuForChatPresentationInterfaceState("

@@ -56,3 +56,28 @@ Implemented real GRVMgram context-menu actions on `codex/grvmgram-full-parity` f
 ## Concerns / Limitations
 
 - The Windows workspace cannot compile or run the iOS target. Swift API consistency was checked against the repository's actual declarations and call-site patterns, and all 258 GRVMgram contract tests passed.
+
+## Reviewer Fix: Independent Stats Placement
+
+- Root cause: Views and Reactions placements were calculated independently, but their shared `ChatReadReportContextItem` was always inserted into the top-level action list and carried unfiltered read/reaction state.
+- RED:
+  - Added a focused truth-table contract covering hidden/top-level/more combinations, combined routes, and split routes.
+  - Command: `python -m unittest Tests.GRVMgramContracts.test_context_menu_semantics_contract -v`
+  - Result: `Ran 9 tests`, `FAILED (failures=1)` because `grvmContextStatsRoutes` did not exist.
+- Implementation:
+  - Added per-placement routes with independent `includeReadReports` and `includeReactions` flags. Matching placements share one item; differing placements produce separate items.
+  - Filtered `MessageReadStats` so views-only carries peers/timestamps with zero reactions, while reactions-only carries reaction count with empty peers/timestamps.
+  - Views-only items remove `ReactionsMessageAttribute`; reaction calculation, custom-pack resolution, reaction refresh, and reaction action payloads are disabled when reactions are excluded.
+  - Reactions-only items do not fetch read stats and receive an immediate local reaction-count state.
+- GREEN:
+  - Focused contract: `Ran 9 tests`, `OK`.
+  - Focused contract plus the affected account-scoped reaction-row regression: `Ran 10 tests`, `OK`.
+- Full post-fix suite:
+  - The first run exposed the existing account-scoped reaction-state anchor after the implementation used a generic route variable: `Ran 259 tests`, `FAILED (failures=1)`.
+  - Root cause was corrected by using the original `message` explicitly for reaction routes and the stripped message only for views-only routes.
+  - Final command: `python -m unittest discover -s Tests/GRVMgramContracts -p "test_*.py" -v`
+  - Final result: `Ran 259 tests`, `OK`.
+- Fix files:
+  - `submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift`
+  - `Tests/GRVMgramContracts/test_context_menu_semantics_contract.py`
+  - `.superpowers/sdd/chat-task-7-report.md`
