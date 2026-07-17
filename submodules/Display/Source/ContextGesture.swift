@@ -76,6 +76,7 @@ public final class ContextGesture: UIGestureRecognizer, UIGestureRecognizerDeleg
     
     public var beginDelay: Double = 0.12
     public var activateOnTap: Bool = false
+    public private(set) var grvmModifierPressed: Bool = false
     private var currentProgress: CGFloat = 0.0
     private var delayTimer: Timer?
     private var animator: DisplayLinkAnimator?
@@ -98,6 +99,7 @@ public final class ContextGesture: UIGestureRecognizer, UIGestureRecognizerDeleg
     
     override public func reset() {
         super.reset()
+        self.grvmModifierPressed = false
         
         self.endPressedAppearance()
         
@@ -114,6 +116,11 @@ public final class ContextGesture: UIGestureRecognizer, UIGestureRecognizerDeleg
     
     override public func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         super.touchesBegan(touches, with: event)
+        if #available(iOS 13.4, *) {
+            self.grvmModifierPressed = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.control)
+        } else {
+            self.grvmModifierPressed = false
+        }
         
         guard let touch = touches.first else {
             return

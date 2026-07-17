@@ -31,6 +31,7 @@ extension ChatControllerImpl {
         
         let recognizer: TapLongTapOrDoubleTapGestureRecognizer? = anyRecognizer as? TapLongTapOrDoubleTapGestureRecognizer
         let gesture: ContextGesture? = anyRecognizer as? ContextGesture
+        let modifierPressed = recognizer?.grvmModifierPressed ?? gesture?.grvmModifierPressed ?? false
         if let messages = self.chatDisplayNode.historyNode.messageGroupInCurrentHistoryView(message.id) {
             (self.view.window as? WindowHost)?.cancelInteractiveKeyboardGestures()
             self.chatDisplayNode.cancelInteractiveKeyboardGestures()
@@ -49,7 +50,7 @@ extension ChatControllerImpl {
             
             let _ = combineLatest(queue: .mainQueue(),
                 self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: self.context.account.peerId)),
-                contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: self.presentationInterfaceState, context: self.context, messages: updatedMessages, controllerInteraction: self.controllerInteraction, selectAll: selectAll, interfaceInteraction: self.interfaceInteraction, messageNode: node as? ChatMessageItemView),
+                contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: self.presentationInterfaceState, context: self.context, messages: updatedMessages, controllerInteraction: self.controllerInteraction, selectAll: selectAll, interfaceInteraction: self.interfaceInteraction, messageNode: node as? ChatMessageItemView, modifierPressed: modifierPressed),
                 peerMessageAllowedReactions(context: self.context, message: topMessage),
                 peerMessageSelectedReactions(context: self.context, message: topMessage),
                 topMessageReactions(context: self.context, message: topMessage, subPeerId: self.chatLocation.threadId.flatMap(EnginePeer.Id.init)),
@@ -78,7 +79,8 @@ extension ChatControllerImpl {
                 if case var .list(itemList) = actions.content {
                     let grvmItems = self.grvmMessageFilterContextMenuItems(
                         message: message,
-                        shadowBanPeerIds: Set(settings.shadowBanIds.map(PeerId.init))
+                        shadowBanPeerIds: Set(settings.shadowBanIds.map(PeerId.init)),
+                        includeAddFilter: false
                     )
                     if !grvmItems.isEmpty {
                         itemList.append(.separator)

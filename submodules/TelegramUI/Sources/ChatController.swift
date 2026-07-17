@@ -8384,12 +8384,14 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             
     func grvmMessageFilterContextMenuItems(
         message: Message,
-        shadowBanPeerIds: Set<PeerId>
+        shadowBanPeerIds: Set<PeerId>,
+        includeAddFilter: Bool = true,
+        includeOtherItems: Bool = true
     ) -> [ContextMenuItem] {
         var items: [ContextMenuItem] = []
         let matchingIds = AyuGramHooks.matchingMessageFilterIds?(self.context.account.peerId, message) ?? []
         let matchingFilterIds = Set(matchingIds.compactMap { UUID(uuidString: $0) })
-        if !matchingFilterIds.isEmpty {
+        if includeOtherItems, !matchingFilterIds.isEmpty {
             items.append(.action(ContextMenuActionItem(text: "View Filters", icon: { theme in
                 return generateTintedImage(
                     image: UIImage(bundleImageName: "Chat/Context Menu/Search"),
@@ -8404,24 +8406,28 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             })))
         }
 
-        items.append(.action(ContextMenuActionItem(text: "Add Filter", icon: { theme in
-            return generateTintedImage(
-                image: UIImage(bundleImageName: "Chat/Context Menu/Add"),
-                color: theme.actionSheet.primaryTextColor
-            )
-        }, action: { [weak self] _, completion in
-            completion(.dismissWithoutContent)
-            guard let self else {
-                return
-            }
-            self.push(ayuGramFilterEditorController(
-                context: self.context,
-                initialExpression: message.text,
-                initialPeerId: message.id.peerId
-            ))
-        })))
+        if includeAddFilter {
+            items.append(.action(ContextMenuActionItem(text: "Add Filter", icon: { theme in
+                return generateTintedImage(
+                    image: UIImage(bundleImageName: "Chat/Context Menu/Add"),
+                    color: theme.actionSheet.primaryTextColor
+                )
+            }, action: { [weak self] _, completion in
+                completion(.dismissWithoutContent)
+                guard let self else {
+                    return
+                }
+                self.push(ayuGramFilterEditorController(
+                    context: self.context,
+                    initialExpression: message.text,
+                    initialPeerId: message.id.peerId
+                ))
+            })))
+        }
 
-        items.append(contentsOf: self.grvmFilteredVisibilityContextMenuItems(peerId: message.id.peerId))
+        if includeOtherItems {
+            items.append(contentsOf: self.grvmFilteredVisibilityContextMenuItems(peerId: message.id.peerId))
+        }
 
         var authors: [(peerId: PeerId, label: String)] = []
         if let authorId = message.author?.id {
@@ -8431,7 +8437,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
            !authors.contains(where: { $0.peerId == forwardedAuthorId }) {
             authors.append((forwardedAuthorId, "Forwarded Author"))
         }
-        for author in authors {
+        for author in authors where includeOtherItems {
             let isBanned = shadowBanPeerIds.contains(author.peerId)
             let action = isBanned ? "Unshadow Ban" : "Shadow Ban"
             let title = authors.count == 1 ? action : "\(action) \(author.label)"

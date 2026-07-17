@@ -408,6 +408,64 @@ public func enqueueMessages(account: Account, peerId: PeerId, messages: [Enqueue
     }
 }
 
+public func enqueueGRVMRepeatedMessage(account: Account, messageId: MessageId) -> Signal<Bool, NoError> {
+    return account.postbox.transaction { transaction -> EnqueueMessage? in
+        guard let message = transaction.getMessage(messageId) else {
+            return nil
+        }
+        guard message.id.peerId.namespace != Namespaces.Peer.SecretChat, !message.containsSecretMedia else {
+            return nil
+        }
+
+        var attributes: [MessageAttribute] = []
+        if let textEntities = message.attributes.first(where: { $0 is TextEntitiesMessageAttribute }) as? TextEntitiesMessageAttribute {
+            attributes.append(TextEntitiesMessageAttribute(entities: textEntities.entities))
+        }
+
+        var mediaReference: AnyMediaReference?
+        for media in message.media {
+            if let image = media as? TelegramMediaImage {
+                guard mediaReference == nil else {
+                    return nil
+                }
+                mediaReference = .message(message: MessageReference(message), media: image)
+            } else if let file = media as? TelegramMediaFile {
+                guard mediaReference == nil else {
+                    return nil
+                }
+                mediaReference = .message(message: MessageReference(message), media: file)
+            } else {
+                return nil
+            }
+        }
+
+        guard !message.text.isEmpty || mediaReference != nil else {
+            return nil
+        }
+        return .message(
+            text: message.text,
+            attributes: attributes,
+            inlineStickers: [:],
+            mediaReference: mediaReference,
+            threadId: message.threadId,
+            replyToMessageId: nil,
+            replyToStoryId: nil,
+            localGroupingKey: nil,
+            correlationId: nil,
+            bubbleUpEmojiOrStickersets: []
+        )
+    }
+    |> mapToSignal { repeatedMessage -> Signal<Bool, NoError> in
+        guard let repeatedMessage else {
+            return .single(false)
+        }
+        return enqueueMessages(account: account, peerId: messageId.peerId, messages: [repeatedMessage])
+        |> map { messageIds in
+            return messageIds.contains(where: { $0 != nil })
+        }
+    }
+}
+
 public func enqueueMessagesToMultiplePeers(account: Account, peerIds: [PeerId], threadIds: [PeerId: Int64], messages: [EnqueueMessage]) -> Signal<[MessageId], NoError> {
     let signal: Signal<[(Bool, EnqueueMessage)], NoError>
     if let transformOutgoingMessageMedia = account.transformOutgoingMessageMedia {

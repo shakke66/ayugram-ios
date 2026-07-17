@@ -49,6 +49,56 @@ private struct MessageContextMenuData {
     let messageActions: ChatAvailableMessageActions
 }
 
+private enum GRVMContextMenuPlacement {
+    case hidden
+    case topLevel
+    case more
+}
+
+private func grvmContextMenuPlacement(
+    _ visibility: GRVMContextMenuVisibility,
+    modifierPressed: Bool
+) -> GRVMContextMenuPlacement {
+    switch visibility {
+    case .hidden:
+        return .hidden
+    case .visible:
+        return .topLevel
+    case .visibleWithModifier:
+        return modifierPressed ? .topLevel : .more
+    }
+}
+
+private func grvmLocalHideMessage(context: AccountContext, messageId: MessageId) {
+    let _ = context.account.postbox.transaction { transaction -> Void in
+        guard let message = transaction.getMessage(messageId) else {
+            return
+        }
+        guard !isLocallyDeletedMessage(message.attributes) else {
+            return
+        }
+        _internal_applyMessageDeletion(
+            accountPeerId: context.account.peerId,
+            transaction: transaction,
+            mediaBox: context.account.postbox.mediaBox,
+            ids: [messageId],
+            mode: .server(.localAction)
+        )
+    }.startStandalone()
+}
+
+private func grvmMessageAuthors(message: Message) -> [Peer] {
+    var seen = Set<PeerId>()
+    var result: [Peer] = []
+    if let author = message.author, seen.insert(author.id).inserted {
+        result.append(author)
+    }
+    if let author = message.forwardInfo?.author, seen.insert(author.id).inserted {
+        result.append(author)
+    }
+    return result
+}
+
 func canEditMessage(context: AccountContext, limitsConfiguration: EngineConfiguration.Limits, message: Message) -> Bool {
     return canEditMessage(accountPeerId: context.account.peerId, limitsConfiguration: limitsConfiguration, message: message)
 }
@@ -481,7 +531,7 @@ func updatedChatEditInterfaceMessageState(context: AccountContext, state: ChatPr
     )
 }
 
-func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, messages: [Message], controllerInteraction: ChatControllerInteraction?, selectAll: Bool, interfaceInteraction: ChatPanelInterfaceInteraction?, readStats: MessageReadStats? = nil, messageNode: ChatMessageItemView? = nil) -> Signal<ContextController.Items, NoError> {
+func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, messages: [Message], controllerInteraction: ChatControllerInteraction?, selectAll: Bool, interfaceInteraction: ChatPanelInterfaceInteraction?, readStats: MessageReadStats? = nil, messageNode: ChatMessageItemView? = nil, modifierPressed: Bool = false) -> Signal<ContextController.Items, NoError> {
     guard let interfaceInteraction = interfaceInteraction, let controllerInteraction = controllerInteraction else {
         return .single(ContextController.Items(content: .list([])))
     }
@@ -940,13 +990,8 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         let isPremium = accountPeer?.isPremium ?? false
 
         var actions: [ContextMenuItem] = []
-
-        // AyuGram: context-menu visibility hooks. Each hook returns Int32:
-        // 0 = Hidden, 1 = Visible, 2 = VisibleWithModifier. iOS long-press has no
-        // modifier, so VisibleWithModifier is treated the same as Visible for now.
-        func ayuVisible(_ v: Int32) -> Bool {
-            return v == 1 || v == 2
-        }
+        var contextMoreActions: [ContextMenuItem] = []
+        let contextMenuSettings = AyuGramHooks.chatAppearance(accountPeerId: context.account.peerId).contextMenu
 
         var isPinnedMessages = false
         if case .pinnedMessages = chatPresentationInterfaceState.subject {
@@ -1183,7 +1228,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             })))
         }
         
-        if data.messageActions.options.contains(.sendScheduledNow), ayuVisible(AyuGramHooks.contextMenuRepeat?() ?? 1) {
+        if data.messageActions.options.contains(.sendScheduledNow) {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.ScheduledMessages_SendNow, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Resend"), color: theme.actionSheet.primaryTextColor)
             }, action: { c, _ in
@@ -1936,7 +1981,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             })))
         }
 
-        if !isReplyThreadHead, (!data.messageActions.options.intersection([.deleteLocally, .deleteGlobally]).isEmpty || clearCacheAsDelete), ayuVisible(AyuGramHooks.contextMenuHide?() ?? 1) {
+        if !isReplyThreadHead, (!data.messageActions.options.intersection([.deleteLocally, .deleteGlobally]).isEmpty || clearCacheAsDelete) {
             var autoremoveDeadline: Int32?
             for attribute in message.attributes {
                 if let attribute = attribute as? AutoremoveTimeoutMessageAttribute {
@@ -2051,16 +2096,12 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
 
-        // AyuGram: gate the read-report context item. The views/"seen by" portion is
-        // driven by canViewStats (contextMenuViewsPanel) and the reaction-count portion
-        // by reactionCount (contextMenuReactionsPanel). Default 1 (Visible) reproduces
-        // stock behaviour: these are normally-shown stock items, and the AyuGram model
-        // default of 0 (Hidden) would otherwise hide stock UI, so we keep them visible
-        // unless the user explicitly chose Hidden.
-        if !ayuVisible(AyuGramHooks.contextMenuViewsPanel?() ?? 1) {
+        let viewsPlacement = grvmContextMenuPlacement(contextMenuSettings.views, modifierPressed: modifierPressed)
+        let reactionsPlacement = grvmContextMenuPlacement(contextMenuSettings.reactions, modifierPressed: modifierPressed)
+        if case .hidden = viewsPlacement {
             canViewStats = false
         }
-        if !ayuVisible(AyuGramHooks.contextMenuReactionsPanel?() ?? 1) {
+        if case .hidden = reactionsPlacement {
             reactionCount = 0
         }
 
@@ -2071,10 +2112,10 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             return false
         })
 
-        if canViewAuthor, ayuVisible(AyuGramHooks.contextMenuUserMessages?() ?? 1) {
-            actions.insert(.custom(ChatMessageAuthorContextItem(context: context, message: message, action: { c, f, peer in
+        if canViewAuthor {
+            actions.insert(.custom(ChatMessageAuthorContextItem(context: context, message: message, action: { c, f, authorPeer in
                 c.dismiss(completion: {
-                    controllerInteraction.openPeer(peer, .default, nil, .default)
+                    controllerInteraction.openPeer(authorPeer, .default, nil, .default)
                 })
             }), false), at: 0)
         }
@@ -2180,9 +2221,9 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                             back: { [weak c] in
                                 c?.popItems()
                             },
-                            openPeer: { [weak c] peer, hasReaction in
+                            openPeer: { [weak c] reactionPeer, hasReaction in
                                 c?.dismiss(completion: {
-                                    controllerInteraction.openPeer(peer, .default, MessageReference(message), hasReaction ? .reaction : .default)
+                                    controllerInteraction.openPeer(reactionPeer, .default, MessageReference(message), hasReaction ? .reaction : .default)
                                 })
                             }
                         )), tip: tip)))
@@ -2193,11 +2234,146 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if isEdited, ayuVisible(AyuGramHooks.contextMenuDetails?() ?? 1) {
+        if isEdited {
             if !actions.isEmpty {
                 actions.insert(.separator, at: 0)
             }
             actions.insert(.custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: false, isEdit: true, stats: MessageReadStats(reactionCount: 0, peers: [], readTimestamps: [:]), action: nil), false), at: 0)
+        }
+
+        func grvmRouteContextMenuItem(_ item: ContextMenuItem, visibility: GRVMContextMenuVisibility) {
+            switch grvmContextMenuPlacement(visibility, modifierPressed: modifierPressed) {
+            case .hidden:
+                break
+            case .topLevel:
+                actions.insert(item, at: 0)
+            case .more:
+                contextMoreActions.append(item)
+            }
+        }
+
+        func grvmRepeatContextMenuItem() -> ContextMenuItem {
+            return .action(ContextMenuActionItem(
+                text: "Repeat",
+                icon: { theme in
+                    return generateTintedImage(
+                        image: UIImage(bundleImageName: "Chat/Context Menu/Resend"),
+                        color: theme.contextMenu.primaryColor
+                    )
+                },
+                action: { c, _ in
+                    c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                    let _ = (enqueueGRVMRepeatedMessage(account: context.account, messageId: message.id)
+                    |> deliverOnMainQueue).startStandalone(next: { success in
+                        if !success {
+                            controllerInteraction.displayUndo(.info(
+                                title: nil,
+                                text: "This message cannot be repeated.",
+                                timeout: nil,
+                                customUndoText: nil
+                            ))
+                        }
+                    })
+                }
+            ))
+        }
+
+        if messages.count == 1 {
+            if !isReplyThreadHead, !isLocallyDeletedMessage(message.attributes) {
+                grvmRouteContextMenuItem(.action(ContextMenuActionItem(
+                    text: "Hide Locally",
+                    icon: { theme in
+                        return generateTintedImage(
+                            image: UIImage(bundleImageName: "Chat/Context Menu/Clear"),
+                            color: theme.contextMenu.primaryColor
+                        )
+                    },
+                    action: { c, _ in
+                        c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                        grvmLocalHideMessage(context: context, messageId: message.id)
+                    }
+                )), visibility: contextMenuSettings.hide)
+            }
+
+            for peer in grvmMessageAuthors(message: message) {
+                grvmRouteContextMenuItem(.action(ContextMenuActionItem(
+                    text: "User Messages: \(peer.debugDisplayTitle)",
+                    icon: { theme in
+                        return generateTintedImage(
+                            image: UIImage(bundleImageName: "Chat/Context Menu/Search"),
+                            color: theme.contextMenu.primaryColor
+                        )
+                    },
+                    action: { c, _ in
+                        c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                        interfaceInteraction.beginMessageSearch(.member(peer), "")
+                    }
+                )), visibility: contextMenuSettings.userMessages)
+            }
+
+            grvmRouteContextMenuItem(.action(ContextMenuActionItem(
+                text: "Details",
+                icon: { theme in
+                    return generateTintedImage(
+                        image: UIImage(bundleImageName: "Chat/Context Menu/Info"),
+                        color: theme.contextMenu.primaryColor
+                    )
+                },
+                action: { c, _ in
+                    c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                    controllerInteraction.navigationController()?.pushViewController(
+                        grvmMessageDetailsController(context: context, message: message)
+                    )
+                }
+            )), visibility: contextMenuSettings.details)
+
+            let isCopyProtected = chatPresentationInterfaceState.copyProtectionEnabled || message.isCopyProtected()
+            if canSendMessagesToChat(chatPresentationInterfaceState), !isCopyProtected {
+                grvmRouteContextMenuItem(grvmRepeatContextMenuItem(), visibility: contextMenuSettings.repeatMessage)
+            }
+
+            if let chatController = interfaceInteraction.chatController() as? ChatControllerImpl,
+               let addFilterItem = chatController.grvmMessageFilterContextMenuItems(
+                    message: message,
+                    shadowBanPeerIds: [],
+                    includeAddFilter: true,
+                    includeOtherItems: false
+               ).first {
+                grvmRouteContextMenuItem(addFilterItem, visibility: contextMenuSettings.addFilter)
+            }
+        }
+
+        if !contextMoreActions.isEmpty {
+            actions.insert(.action(ContextMenuActionItem(
+                text: "GRVMgram Actions",
+                icon: { theme in
+                    return generateTintedImage(
+                        image: UIImage(bundleImageName: "Chat/Context Menu/More"),
+                        color: theme.contextMenu.primaryColor
+                    )
+                },
+                action: { c, _ in
+                    var submenuItems: [ContextMenuItem] = [
+                        .action(ContextMenuActionItem(
+                            text: chatPresentationInterfaceState.strings.Common_Back,
+                            icon: { theme in
+                                return generateTintedImage(
+                                    image: UIImage(bundleImageName: "Chat/Context Menu/Back"),
+                                    color: theme.contextMenu.primaryColor
+                                )
+                            },
+                            iconSource: nil,
+                            iconPosition: .left,
+                            action: { c, _ in
+                                c?.popItems()
+                            }
+                        )),
+                        .separator
+                    ]
+                    submenuItems.append(contentsOf: contextMoreActions)
+                    c?.pushItems(items: .single(ContextController.Items(content: .list(submenuItems))))
+                }
+            )), at: 0)
         }
 
         if messages.count == 1,
