@@ -315,6 +315,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     let chatBackgroundNode: WallpaperBackgroundNode
     public private(set) var controllerInteraction: ChatControllerInteraction?
     var interfaceInteraction: ChatPanelInterfaceInteraction?
+    private var bypassNextStickerConfirmation = false
+    private var bypassNextGIFConfirmation = false
     
     let messageContextDisposable = MetaDisposable()
     let controllerNavigationDisposable = MetaDisposable()
@@ -2252,11 +2254,20 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 return false
             }
 
-            if AyuGramHooks.shouldConfirmStickers?(strongSelf.context.account.peerId) == true {
+            let bypassConfirmation = strongSelf.bypassNextStickerConfirmation
+            strongSelf.bypassNextStickerConfirmation = false
+            if !bypassConfirmation && AyuGramHooks.shouldConfirmStickers?(strongSelf.context.account.peerId) == true {
                 let alertController = textAlertController(context: strongSelf.context, title: nil, text: "Send sticker?", actions: [
                     TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
                     TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: { [weak self] in
-                        let _ = self?.controllerInteraction?.sendSticker(fileReference, silentPosting, schedule, query, clearInput, sourceView, sourceRect, sourceLayer, bubbleUpEmojiOrStickersets)
+                        guard let strongSelf = self else {
+                            return
+                        }
+                        strongSelf.bypassNextStickerConfirmation = true
+                        defer {
+                            strongSelf.bypassNextStickerConfirmation = false
+                        }
+                        let _ = strongSelf.controllerInteraction?.sendSticker(fileReference, silentPosting, schedule, query, clearInput, sourceView, sourceRect, sourceLayer, bubbleUpEmojiOrStickersets)
                     })
                 ])
                 strongSelf.present(alertController, in: .window(.root))
@@ -2422,11 +2433,20 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
         }, sendGif: { [weak self] fileReference, sourceView, sourceRect, silentPosting, schedule in
             if let strongSelf = self {
-                if AyuGramHooks.shouldConfirmGIF?(strongSelf.context.account.peerId) == true {
+                let bypassConfirmation = strongSelf.bypassNextGIFConfirmation
+                strongSelf.bypassNextGIFConfirmation = false
+                if !bypassConfirmation && AyuGramHooks.shouldConfirmGIF?(strongSelf.context.account.peerId) == true {
                     let alertController = textAlertController(context: strongSelf.context, title: nil, text: "Send GIF?", actions: [
                         TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
                         TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: { [weak self] in
-                            let _ = self?.controllerInteraction?.sendGif(fileReference, sourceView, sourceRect, silentPosting, schedule)
+                            guard let strongSelf = self else {
+                                return
+                            }
+                            strongSelf.bypassNextGIFConfirmation = true
+                            defer {
+                                strongSelf.bypassNextGIFConfirmation = false
+                            }
+                            let _ = strongSelf.controllerInteraction?.sendGif(fileReference, sourceView, sourceRect, silentPosting, schedule)
                         })
                     ])
                     strongSelf.present(alertController, in: .window(.root))

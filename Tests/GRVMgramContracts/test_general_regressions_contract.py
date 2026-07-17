@@ -97,6 +97,57 @@ class GeneralRegressionContractTests(unittest.TestCase):
         self.assertIn("shouldConfirmGIF?(strongSelf.context.account.peerId)", chat)
         self.assertIn("shouldConfirmVoice?(self.context.account.peerId)", media)
 
+    def test_sticker_and_gif_confirmation_bypasses_are_one_shot(self) -> None:
+        chat = source("submodules/TelegramUI/Sources/ChatController.swift")
+        cases = (
+            (
+                "sendSticker: {",
+                "bypassNextStickerConfirmation",
+                "shouldConfirmStickers",
+                "controllerInteraction?.sendSticker(",
+            ),
+            (
+                "sendGif: {",
+                "bypassNextGIFConfirmation",
+                "shouldConfirmGIF",
+                "controllerInteraction?.sendGif(",
+            ),
+        )
+        for signature, flag, hook, recursive_send in cases:
+            with self.subTest(hook=hook):
+                self.assertIn(f"private var {flag} = false", chat)
+                send = swift_block(chat, signature)
+                read_bypass = f"let bypassConfirmation = strongSelf.{flag}"
+                clear_bypass = f"strongSelf.{flag} = false"
+                gate = (
+                    f"if !bypassConfirmation && AyuGramHooks.{hook}?"
+                    "(strongSelf.context.account.peerId) == true"
+                )
+                self.assertIn(read_bypass, send)
+                self.assertIn(clear_bypass, send)
+                self.assertIn(gate, send)
+                self.assertLess(send.index(read_bypass), send.index(clear_bypass))
+                self.assertLess(send.index(clear_bypass), send.index(gate))
+
+                ok_action = swift_block(
+                    send, "TextAlertAction(type: .defaultAction"
+                )
+                for token in (
+                    f"strongSelf.{flag} = true",
+                    f"strongSelf.{flag} = false",
+                    "defer {",
+                    recursive_send,
+                ):
+                    self.assertIn(token, ok_action)
+                self.assertLess(
+                    ok_action.index(f"strongSelf.{flag} = true"),
+                    ok_action.index("defer {"),
+                )
+                self.assertLess(
+                    ok_action.index("defer {"), ok_action.index(recursive_send)
+                )
+                self.assertNotIn("async", ok_action)
+
     def test_android_spoof_remains_an_independent_account_toggle(self) -> None:
         self.assert_hook("shouldSpoofWebviewAsAndroid", "spoofWebviewAsAndroid")
         webview = source("submodules/WebUI/Sources/WebAppWebView.swift")
