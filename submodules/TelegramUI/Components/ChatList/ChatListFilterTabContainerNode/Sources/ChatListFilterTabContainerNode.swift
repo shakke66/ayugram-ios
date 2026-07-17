@@ -986,9 +986,9 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
             
             if focusOnSelectedFilter && self.reorderingItem == nil {
                 let updatedBounds: CGRect
-                if transitionFraction.isZero && selectedFilter == visibleFilters.first?.id {
+                if transitionFraction.isZero && resolvedSelectedFilter == visibleFilters.first?.id {
                     updatedBounds = CGRect(origin: CGPoint(), size: self.scrollNode.bounds.size)
-                } else if transitionFraction.isZero && selectedFilter == visibleFilters.last?.id {
+                } else if transitionFraction.isZero && resolvedSelectedFilter == visibleFilters.last?.id {
                     updatedBounds = CGRect(origin: CGPoint(x: max(0.0, self.scrollNode.view.contentSize.width - self.scrollNode.bounds.width), y: 0.0), size: self.scrollNode.bounds.size)
                 } else {
                     let contentOffsetX = max(0.0, min(self.scrollNode.view.contentSize.width - self.scrollNode.bounds.width, floor(selectedFrame.midX - self.scrollNode.bounds.width / 2.0)))

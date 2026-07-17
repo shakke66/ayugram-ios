@@ -129,13 +129,15 @@ class AppearanceConsumerContractTests(unittest.TestCase):
             "for filter in visibleFilters",
             "visibleFilters.firstIndex(where:",
             "currentIndex != visibleFilters.count - 1",
-            "visibleFilters.first?.id",
-            "visibleFilters.last?.id",
+            "resolvedSelectedFilter == visibleFilters.first?.id",
+            "resolvedSelectedFilter == visibleFilters.last?.id",
         ]:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, text)
         self.assertNotIn("shouldHideFolderCounters?()", text)
         self.assertNotIn("shouldHideAllChatsFolder?()", text)
+        self.assertNotIn("selectedFilter == visibleFilters.first?.id", text)
+        self.assertNotIn("selectedFilter == visibleFilters.last?.id", text)
 
 
 if __name__ == "__main__":
