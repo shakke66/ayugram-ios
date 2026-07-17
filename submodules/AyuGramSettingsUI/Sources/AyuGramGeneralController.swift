@@ -15,13 +15,11 @@ private final class AyuGramGeneralArguments {
     let context: AccountContext
     let updateBool: (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void
     let updateInt32: (WritableKeyPath<AyuGramSettings, Int32>, Int32) -> Void
-    let updateWebviewSize: (Bool) -> Void
 
-    init(context: AccountContext, updateBool: @escaping (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void, updateInt32: @escaping (WritableKeyPath<AyuGramSettings, Int32>, Int32) -> Void, updateWebviewSize: @escaping (Bool) -> Void) {
+    init(context: AccountContext, updateBool: @escaping (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void, updateInt32: @escaping (WritableKeyPath<AyuGramSettings, Int32>, Int32) -> Void) {
         self.context = context
         self.updateBool = updateBool
         self.updateInt32 = updateInt32
-        self.updateWebviewSize = updateWebviewSize
     }
 }
 
@@ -46,7 +44,8 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
     case disableExternalLinkWarning(PresentationTheme, Bool)
     case webviewHeader(PresentationTheme)
     case spoofAndroid(PresentationTheme, Bool)
-    case increaseWebview(PresentationTheme, Bool)
+    case increaseWebviewHeight(PresentationTheme, Bool)
+    case increaseWebviewWidth(PresentationTheme, Bool)
     case confirmHeader(PresentationTheme)
     case confirmSticker(PresentationTheme, Bool)
     case confirmGIF(PresentationTheme, Bool)
@@ -56,7 +55,7 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
         switch self {
         case .translationHeader, .translationProvider: return AyuGramGeneralSection.translation.rawValue
         case .generalHeader, .hideStories, .disableSimilarChannels, .disableNotificationDelay, .showSeconds, .showDialogId, .filterZalgo, .improveLinkPreviews, .disableExternalLinkWarning: return AyuGramGeneralSection.general.rawValue
-        case .webviewHeader, .spoofAndroid, .increaseWebview: return AyuGramGeneralSection.webview.rawValue
+        case .webviewHeader, .spoofAndroid, .increaseWebviewHeight, .increaseWebviewWidth: return AyuGramGeneralSection.webview.rawValue
         case .confirmHeader, .confirmSticker, .confirmGIF, .confirmVoice: return AyuGramGeneralSection.confirmations.rawValue
         }
     }
@@ -76,11 +75,12 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
         case .disableExternalLinkWarning: return 10
         case .webviewHeader: return 11
         case .spoofAndroid: return 12
-        case .increaseWebview: return 13
-        case .confirmHeader: return 14
-        case .confirmSticker: return 15
-        case .confirmGIF: return 16
-        case .confirmVoice: return 17
+        case .increaseWebviewHeight: return 13
+        case .increaseWebviewWidth: return 14
+        case .confirmHeader: return 15
+        case .confirmSticker: return 16
+        case .confirmGIF: return 17
+        case .confirmVoice: return 18
         }
     }
 
@@ -91,7 +91,8 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
         case let (.disableNotificationDelay(_, lv), .disableNotificationDelay(_, rv)): return lv == rv
         case let (.showSeconds(_, lv), .showSeconds(_, rv)): return lv == rv
         case let (.spoofAndroid(_, lv), .spoofAndroid(_, rv)): return lv == rv
-        case let (.increaseWebview(_, lv), .increaseWebview(_, rv)): return lv == rv
+        case let (.increaseWebviewHeight(_, lv), .increaseWebviewHeight(_, rv)): return lv == rv
+        case let (.increaseWebviewWidth(_, lv), .increaseWebviewWidth(_, rv)): return lv == rv
         case let (.confirmSticker(_, lv), .confirmSticker(_, rv)): return lv == rv
         case let (.confirmGIF(_, lv), .confirmGIF(_, rv)): return lv == rv
         case let (.confirmVoice(_, lv), .confirmVoice(_, rv)): return lv == rv
@@ -141,8 +142,10 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "Webview", sectionId: self.section)
         case let .spoofAndroid(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Spoof Platform as Android", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.spoofWebviewAsAndroid, v) })
-        case let .increaseWebview(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Increase Window Size", value: value, sectionId: self.section, style: .blocks, updated: { value in arguments.updateWebviewSize(value) })
+        case let .increaseWebviewHeight(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Increase Webview Height", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.increaseWebviewHeight, v) })
+        case let .increaseWebviewWidth(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Increase Webview Width", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.increaseWebviewWidth, v) })
         case .confirmHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "Confirmations", sectionId: self.section)
         case let .confirmSticker(_, value):
@@ -175,7 +178,8 @@ private func ayuGramGeneralEntries(settings: AyuGramSettings, presentationData: 
     entries.append(.disableExternalLinkWarning(presentationData.theme, settings.disableExternalLinkWarning))
     entries.append(.webviewHeader(presentationData.theme))
     entries.append(.spoofAndroid(presentationData.theme, settings.spoofWebviewAsAndroid))
-    entries.append(.increaseWebview(presentationData.theme, settings.increaseWebviewHeight || settings.increaseWebviewWidth))
+    entries.append(.increaseWebviewHeight(presentationData.theme, settings.increaseWebviewHeight))
+    entries.append(.increaseWebviewWidth(presentationData.theme, settings.increaseWebviewWidth))
     entries.append(.confirmHeader(presentationData.theme))
     entries.append(.confirmSticker(presentationData.theme, settings.confirmSendSticker))
     entries.append(.confirmGIF(presentationData.theme, settings.confirmSendGIF))
@@ -191,14 +195,6 @@ public func ayuGramGeneralController(context: AccountContext) -> ViewController 
         },
         updateInt32: { keyPath, value in
             let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in var s = s; s[keyPath: keyPath] = value; return s }.startStandalone()
-        },
-        updateWebviewSize: { value in
-            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { settings in
-                var settings = settings
-                settings.increaseWebviewHeight = value
-                settings.increaseWebviewWidth = value
-                return settings
-            }.startStandalone()
         }
     )
 

@@ -24,6 +24,7 @@ WEBPAGE_BUBBLE = (
     ROOT
     / "submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift"
 )
+WEBVIEW = ROOT / "submodules/WebUI/Sources/WebAppWebView.swift"
 
 
 def read(path: Path) -> str:
@@ -247,6 +248,68 @@ class GeneralLinkContractTests(unittest.TestCase):
             self.webpage_bubble,
         )
         self.assertNotIn("AyuGramHooks.shouldImproveLinkPreviews?()", self.webpage_bubble)
+
+
+class GeneralWebviewContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.webview = read(WEBVIEW)
+        cls.general = read(GENERAL)
+
+    def test_dimensions_are_retained_from_exact_account_lookups(self) -> None:
+        for token in (
+            "private let shouldIncreaseWebviewHeight: Bool",
+            "private let shouldIncreaseWebviewWidth: Bool",
+            "self.shouldIncreaseWebviewHeight = AyuGramHooks.shouldIncreaseWebviewHeight?(account.peerId) == true",
+            "self.shouldIncreaseWebviewWidth = AyuGramHooks.shouldIncreaseWebviewWidth?(account.peerId) == true",
+        ):
+            self.assertIn(token, self.webview)
+        self.assertEqual(self.webview.count("AyuGramHooks.shouldIncreaseWebviewHeight?"), 1)
+        self.assertEqual(self.webview.count("AyuGramHooks.shouldIncreaseWebviewWidth?"), 1)
+        self.assertNotIn("shouldIncreaseWebviewSize", self.webview)
+
+    def test_width_alone_controls_the_named_viewport_scale(self) -> None:
+        self.assertIn("private let webviewViewportScale: CGFloat = 0.85", self.webview)
+        width_block = swift_block(self.webview, "if self.shouldIncreaseWebviewWidth {")
+        self.assertIn(r"initial-scale=\(webviewViewportScale)", width_block)
+        self.assertNotIn("shouldIncreaseWebviewHeight", width_block)
+        self.assertNotIn("shouldIncreaseWebviewHeight || shouldIncreaseWebviewWidth", self.webview)
+        self.assertNotIn("min-height", self.webview)
+
+    def test_height_alone_changes_reported_metrics_with_safe_fallback(self) -> None:
+        metrics = swift_block(self.webview, "func updateMetrics(")
+        for token in (
+            "if self.shouldIncreaseWebviewHeight && height.isFinite && height > 0.0",
+            "let increasedHeight = height / webviewViewportScale",
+            "viewportHeight = increasedHeight.isFinite && increasedHeight > 0.0 ? increasedHeight : height",
+            r'let viewportData = "{height:\(viewportHeight)',
+            r'let safeInsetsData = "{top:\(self.customInsets.top)',
+        ):
+            self.assertIn(token, metrics)
+        self.assertNotIn("self.frame", metrics)
+        self.assertNotIn("scrollView", metrics)
+
+    def test_general_ui_exposes_independent_height_and_width_rows(self) -> None:
+        for token in (
+            "case increaseWebviewHeight(PresentationTheme, Bool)",
+            "case increaseWebviewWidth(PresentationTheme, Bool)",
+            'title: "Increase Webview Height"',
+            'title: "Increase Webview Width"',
+            r"arguments.updateBool(\.increaseWebviewHeight, v)",
+            r"arguments.updateBool(\.increaseWebviewWidth, v)",
+            "entries.append(.increaseWebviewHeight(presentationData.theme, settings.increaseWebviewHeight))",
+            "entries.append(.increaseWebviewWidth(presentationData.theme, settings.increaseWebviewWidth))",
+            "updateGRVMSettings(accountId: context.account.peerId",
+        ):
+            self.assertIn(token, self.general)
+        for forbidden in (
+            "case increaseWebview(PresentationTheme, Bool)",
+            'title: "Increase Window Size"',
+            "updateWebviewSize",
+            "settings.increaseWebviewHeight || settings.increaseWebviewWidth",
+            '"Native"',
+        ):
+            self.assertNotIn(forbidden, self.general)
 
 
 if __name__ == "__main__":

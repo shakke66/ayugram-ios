@@ -219,18 +219,25 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
             "submodules/AyuGramSettingsUI/Sources/AyuGramGeneralController.swift"
         )
         self.assertIn(
-            "settings.increaseWebviewHeight || settings.increaseWebviewWidth",
+            "entries.append(.increaseWebviewHeight(presentationData.theme, settings.increaseWebviewHeight))",
             general,
         )
-        self.assertIn("settings.increaseWebviewHeight = value", general)
-        self.assertIn("settings.increaseWebviewWidth = value", general)
+        self.assertIn(
+            "entries.append(.increaseWebviewWidth(presentationData.theme, settings.increaseWebviewWidth))",
+            general,
+        )
+        self.assertIn(r"arguments.updateBool(\.increaseWebviewHeight, v)", general)
+        self.assertIn(r"arguments.updateBool(\.increaseWebviewWidth, v)", general)
+        self.assertNotIn("updateWebviewSize", general)
         chat = source("submodules/TelegramUI/Sources/ChatController.swift")
         self.assertIn(
             "sendWithoutSoundMode?(self.context.account.peerId)",
             chat,
         )
         webview = source("submodules/WebUI/Sources/WebAppWebView.swift")
-        self.assertIn(
+        self.assertIn("if self.shouldIncreaseWebviewWidth {", webview)
+        self.assertIn("if self.shouldIncreaseWebviewHeight &&", webview)
+        self.assertNotIn(
             "shouldIncreaseWebviewHeight || shouldIncreaseWebviewWidth",
             webview,
         )
