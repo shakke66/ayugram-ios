@@ -559,6 +559,15 @@ class MessageShotRendererContractTests(unittest.TestCase):
             ],
         )
 
+    def test_custom_reaction_placeholder_is_drawn_after_its_pill(self) -> None:
+        renderer = source(RENDERER)
+        draw_reactions = swift_block(renderer, "private func drawReactions(")
+        pill_fill = "UIBezierPath(roundedRect: pillFrame, cornerRadius: 12.0).fill()"
+        placeholder = "self.drawCustomReactionPlaceholder("
+        text = "self.drawText(value, in: pillFrame"
+        self.assertLess(draw_reactions.index(pill_fill), draw_reactions.index(placeholder))
+        self.assertLess(draw_reactions.index(placeholder), draw_reactions.index(text))
+
     def test_palette_and_sender_colors_never_use_randomized_hashes(self) -> None:
         renderer = source(RENDERER)
         palettes = swift_block(renderer, "public struct GRVMMessageShotPalette")

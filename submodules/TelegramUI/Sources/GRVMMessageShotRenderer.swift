@@ -447,13 +447,15 @@ public final class GRVMMessageShotRenderer {
             let value: String
             switch kind {
             case .custom:
-                self.drawCustomReactionPlaceholder(frame: CGRect(x: pillFrame.minX + 6.0, y: pillFrame.minY + 4.0, width: 16.0, height: 16.0), palette: palette)
                 value = "  \(reaction.count)"
             case .builtin:
                 value = "\(reaction.value) \(reaction.count)"
             }
             (reaction.isSelected ? palette.separator.withAlphaComponent(0.9) : palette.separator.withAlphaComponent(0.5)).setFill()
             UIBezierPath(roundedRect: pillFrame, cornerRadius: 12.0).fill()
+            if kind == .custom {
+                self.drawCustomReactionPlaceholder(frame: CGRect(x: pillFrame.minX + 6.0, y: pillFrame.minY + 4.0, width: 16.0, height: 16.0), palette: palette)
+            }
             self.drawText(value, in: pillFrame, font: UIFont.systemFont(ofSize: 13.0), color: textColor, alignment: .center)
         }
     }
