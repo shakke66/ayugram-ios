@@ -78,6 +78,7 @@ public struct AyuGramSettings: Codable, Equatable {
     public var hideAllChatsFolder: Bool
     public var showGhostToggleInDrawer: Bool
     public var showStreamerToggleInDrawer: Bool
+    public var streamerModeEnabled: Bool
 
     // MARK: - Chats
     public var showOnlyAddedStickers: Bool
@@ -230,6 +231,7 @@ public struct AyuGramSettings: Codable, Equatable {
             hideAllChatsFolder: false,
             showGhostToggleInDrawer: true,
             showStreamerToggleInDrawer: false,
+            streamerModeEnabled: false,
             showOnlyAddedStickers: false,
             showPrivateReactions: true,
             hideReactions: 0,
@@ -344,6 +346,7 @@ public struct AyuGramSettings: Codable, Equatable {
         hideAllChatsFolder: Bool,
         showGhostToggleInDrawer: Bool,
         showStreamerToggleInDrawer: Bool,
+        streamerModeEnabled: Bool,
         showOnlyAddedStickers: Bool,
         showPrivateReactions: Bool,
         hideReactions: Int32,
@@ -455,6 +458,7 @@ public struct AyuGramSettings: Codable, Equatable {
         self.hideAllChatsFolder = hideAllChatsFolder
         self.showGhostToggleInDrawer = showGhostToggleInDrawer
         self.showStreamerToggleInDrawer = showStreamerToggleInDrawer
+        self.streamerModeEnabled = streamerModeEnabled
         self.showOnlyAddedStickers = showOnlyAddedStickers
         self.showPrivateReactions = showPrivateReactions
         self.hideReactions = hideReactions
@@ -576,6 +580,7 @@ public struct AyuGramSettings: Codable, Equatable {
         self.hideAllChatsFolder = try container.decodeIfPresent(Bool.self, forKey: "hideAllChatsFolder") ?? false
         self.showGhostToggleInDrawer = try container.decodeIfPresent(Bool.self, forKey: "showGhostToggleInDrawer") ?? true
         self.showStreamerToggleInDrawer = try container.decodeIfPresent(Bool.self, forKey: "showStreamerToggleInDrawer") ?? false
+        self.streamerModeEnabled = try container.decodeIfPresent(Bool.self, forKey: "streamerModeEnabled") ?? false
 
         self.showOnlyAddedStickers = try container.decodeIfPresent(Bool.self, forKey: "showOnlyAddedStickers") ?? false
         self.showPrivateReactions = try container.decodeIfPresent(Bool.self, forKey: "showPrivateReactions") ?? true
@@ -714,6 +719,7 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.hideAllChatsFolder, forKey: "hideAllChatsFolder")
         try container.encode(self.showGhostToggleInDrawer, forKey: "showGhostToggleInDrawer")
         try container.encode(self.showStreamerToggleInDrawer, forKey: "showStreamerToggleInDrawer")
+        try container.encode(self.streamerModeEnabled, forKey: "streamerModeEnabled")
 
         try container.encode(self.showOnlyAddedStickers, forKey: "showOnlyAddedStickers")
         try container.encode(self.showPrivateReactions, forKey: "showPrivateReactions")

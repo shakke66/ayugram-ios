@@ -101,14 +101,13 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
     case hideAllChats(PresentationTheme, Bool)
     case drawerHeader(PresentationTheme)
     case ghostInDrawer(PresentationTheme, Bool)
-    case streamerInDrawer(PresentationTheme, Bool)
 
     var section: ItemListSectionId {
         switch self {
         case .appIconHeader, .appIcon, .hideNotificationBadge, .hideNotificationCounters: return AyuGramAppearanceSection.appIcon.rawValue
         case .appearanceHeader, .md3Switches, .removeBubbleTail, .disableCustomBg, .codeFont, .avatarCorners, .messageBubbleRadius, .singleCornerRadius, .hidePremiumStatuses: return AyuGramAppearanceSection.appearance.rawValue
         case .foldersHeader, .hideFolderCounters, .hideAllChats: return AyuGramAppearanceSection.folders.rawValue
-        case .drawerHeader, .ghostInDrawer, .streamerInDrawer: return AyuGramAppearanceSection.drawer.rawValue
+        case .drawerHeader, .ghostInDrawer: return AyuGramAppearanceSection.drawer.rawValue
         }
     }
 
@@ -132,7 +131,6 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
         case .hideAllChats: return 15
         case .drawerHeader: return 16
         case .ghostInDrawer: return 17
-        case .streamerInDrawer: return 18
         }
     }
 
@@ -147,7 +145,6 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
         case let (.hideFolderCounters(_, lv), .hideFolderCounters(_, rv)): return lv == rv
         case let (.hideAllChats(_, lv), .hideAllChats(_, rv)): return lv == rv
         case let (.ghostInDrawer(_, lv), .ghostInDrawer(_, rv)): return lv == rv
-        case let (.streamerInDrawer(_, lv), .streamerInDrawer(_, rv)): return lv == rv
         case let (.codeFont(_, lv), .codeFont(_, rv)): return lv == rv
         case let (.avatarCorners(_, _, lv), .avatarCorners(_, _, rv)): return lv == rv
         case let (.messageBubbleRadius(_, _, lv), .messageBubbleRadius(_, _, rv)): return lv == rv
@@ -214,8 +211,6 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "Drawer", sectionId: self.section)
         case let .ghostInDrawer(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Ghost Mode Toggle", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showGhostToggleInDrawer, v) })
-        case let .streamerInDrawer(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Streamer Mode Toggle", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showStreamerToggleInDrawer, v) })
         }
     }
 }
@@ -240,7 +235,6 @@ private func ayuGramAppearanceEntries(settings: AyuGramSettings, presentationDat
     entries.append(.hideAllChats(presentationData.theme, settings.hideAllChatsFolder))
     entries.append(.drawerHeader(presentationData.theme))
     entries.append(.ghostInDrawer(presentationData.theme, settings.showGhostToggleInDrawer))
-    entries.append(.streamerInDrawer(presentationData.theme, settings.showStreamerToggleInDrawer))
     return entries
 }
 

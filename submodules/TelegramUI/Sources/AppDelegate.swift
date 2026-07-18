@@ -239,6 +239,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     private var grvmAccountFeatureRegistry: GRVMAccountFeatureRegistry?
     private let grvmActiveAccountsDisposable = MetaDisposable()
     private let grvmAppIconDisposable = MetaDisposable()
+    private var grvmScreenCapturePrivacyController: GRVMScreenCapturePrivacyController?
     
     private var contextValue: AuthorizedApplicationContext?
     private let context = Promise<AuthorizedApplicationContext?>()
@@ -323,6 +324,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     
     private let voipDeviceToken = Promise<Data?>(nil)
     private let regularDeviceToken = Promise<Data?>(nil)
+
+    deinit {
+        self.grvmScreenCapturePrivacyController?.dispose()
+        self.grvmScreenCapturePrivacyController = nil
+    }
     
     private var recaptchaClientsBySiteKey: [String: Promise<RecaptchaClient>] = [:]
         
@@ -416,6 +422,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         } else {
             hostView.containerView.backgroundColor = UIColor.white
         }
+        self.grvmScreenCapturePrivacyController?.dispose()
+        self.grvmScreenCapturePrivacyController = GRVMScreenCapturePrivacyController(window: window, enabled: .single(false))
         self.window = window
         self.nativeWindow = window
         
@@ -1130,6 +1138,19 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     }
                 }
             }, appDelegate: self, testingEnvironment: isUITest)
+
+            self.grvmScreenCapturePrivacyController?.setEnabledSignal(
+                sharedContext.activeAccountContexts
+                |> mapToSignal { primary, _, _ -> Signal<Bool, NoError> in
+                    guard let primary else {
+                        return .single(false)
+                    }
+                    return grvmSettings(accountId: primary.account.peerId, accountManager: accountManager)
+                    |> map { $0.streamerModeEnabled }
+                }
+                |> distinctUntilChanged
+                |> deliverOnMainQueue
+            )
 
             let grvmActiveAccounts = sharedContext.activeAccountContexts
             |> mapToSignal { primary, accounts, _ -> Signal<(AccountContext?, [(AccountRecordId, AccountContext, Int32)], [(PeerId, AyuGramSettings)]), NoError> in
@@ -1995,6 +2016,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
+        self.grvmScreenCapturePrivacyController?.refreshCaptureState()
         self.isActiveValue = false
         self.isActivePromise.set(false)
         self.clearNotificationsManager?.commitNow()
@@ -2069,6 +2091,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {
+        self.grvmScreenCapturePrivacyController?.refreshCaptureState()
         if self.isActiveValue {
             self.isInForegroundValue = true
             self.isInForegroundPromise.set(true)
@@ -2130,6 +2153,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func applicationWillTerminate(_ application: UIApplication) {
+        self.grvmScreenCapturePrivacyController?.dispose()
+        self.grvmScreenCapturePrivacyController = nil
         Logger.shared.log("App \(self.episodeId)", "terminating")
     }
     

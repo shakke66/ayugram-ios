@@ -42,6 +42,8 @@ private enum AyuGramOtherEntry: ItemListNodeEntry {
     case tron(PresentationTheme)
     case supportInfo(PresentationTheme)
     case otherHeader(PresentationTheme)
+    case streamerMode(PresentationTheme, Bool)
+    case streamerModeInfo(PresentationTheme)
     case crashReporting(PresentationTheme, Bool)
     case crashReportingInfo(PresentationTheme)
     case associateLinks(PresentationTheme, Bool)
@@ -51,7 +53,7 @@ private enum AyuGramOtherEntry: ItemListNodeEntry {
         switch self {
         case .supportHeader, .boosty, .ton, .bitcoin, .ethereum, .solana, .tron, .supportInfo:
             return AyuGramOtherSection.support.rawValue
-        case .otherHeader, .crashReporting, .crashReportingInfo, .associateLinks, .resetSettings:
+        case .otherHeader, .streamerMode, .streamerModeInfo, .crashReporting, .crashReportingInfo, .associateLinks, .resetSettings:
             return AyuGramOtherSection.other.rawValue
         }
     }
@@ -67,15 +69,18 @@ private enum AyuGramOtherEntry: ItemListNodeEntry {
         case .tron: return 6
         case .supportInfo: return 7
         case .otherHeader: return 8
-        case .crashReporting: return 9
-        case .crashReportingInfo: return 10
-        case .associateLinks: return 11
-        case .resetSettings: return 12
+        case .streamerMode: return 9
+        case .streamerModeInfo: return 10
+        case .crashReporting: return 11
+        case .crashReportingInfo: return 12
+        case .associateLinks: return 13
+        case .resetSettings: return 14
         }
     }
 
     static func ==(lhs: AyuGramOtherEntry, rhs: AyuGramOtherEntry) -> Bool {
         switch (lhs, rhs) {
+        case let (.streamerMode(_, lv), .streamerMode(_, rv)): return lv == rv
         case let (.crashReporting(_, lv), .crashReporting(_, rv)): return lv == rv
         case let (.associateLinks(_, lv), .associateLinks(_, rv)): return lv == rv
         default: return lhs.stableId == rhs.stableId
@@ -105,6 +110,10 @@ private enum AyuGramOtherEntry: ItemListNodeEntry {
             return ItemListTextItem(presentationData: presentationData, text: .plain("Support the developers and get a unique badge!"), sectionId: self.section)
         case .otherHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "Other", sectionId: self.section)
+        case let .streamerMode(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Streamer Mode", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.streamerModeEnabled, v) })
+        case .streamerModeInfo:
+            return ItemListTextItem(presentationData: presentationData, text: .plain("Hides app content while iOS reports screen recording, AirPlay, or screen sharing. It does not hide ordinary screenshots."), sectionId: self.section)
         case let .crashReporting(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Crash Reporting", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.crashReportingEnabled, v) })
         case .crashReportingInfo:
@@ -128,6 +137,8 @@ private func ayuGramOtherEntries(settings: AyuGramSettings, presentationData: Pr
     entries.append(.tron(presentationData.theme))
     entries.append(.supportInfo(presentationData.theme))
     entries.append(.otherHeader(presentationData.theme))
+    entries.append(.streamerMode(presentationData.theme, settings.streamerModeEnabled))
+    entries.append(.streamerModeInfo(presentationData.theme))
     entries.append(.crashReporting(presentationData.theme, settings.crashReportingEnabled))
     entries.append(.crashReportingInfo(presentationData.theme))
     entries.append(.associateLinks(presentationData.theme, settings.associateLinks))
