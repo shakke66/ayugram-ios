@@ -238,17 +238,17 @@ public func stringForUserPresence(strings: PresentationStrings, day: RelativeTim
     return dayString
 }
 
-private func humanReadableStringForTimestamp(strings: PresentationStrings, day: RelativeTimestampFormatDay, dateTimeFormat: PresentationDateTimeFormat, hours: Int32, minutes: Int32, format: HumanReadableStringFormat? = nil) -> PresentationStrings.FormattedString {
+private func humanReadableStringForTimestamp(strings: PresentationStrings, day: RelativeTimestampFormatDay, dateTimeFormat: PresentationDateTimeFormat, hours: Int32, minutes: Int32, seconds: Int32? = nil, format: HumanReadableStringFormat? = nil) -> PresentationStrings.FormattedString {
     let result: PresentationStrings.FormattedString
     switch day {
     case .today:
-        let string = stringForShortTimestamp(hours: hours, minutes: minutes, dateTimeFormat: dateTimeFormat)
+        let string = stringForShortTimestamp(hours: hours, minutes: minutes, seconds: seconds, dateTimeFormat: dateTimeFormat)
         result = format?.todayFormatString(string) ?? strings.Time_TodayAt(string)
     case .yesterday:
-        let string = stringForShortTimestamp(hours: hours, minutes: minutes, dateTimeFormat: dateTimeFormat)
+        let string = stringForShortTimestamp(hours: hours, minutes: minutes, seconds: seconds, dateTimeFormat: dateTimeFormat)
         result = format?.yesterdayFormatString(string) ?? strings.Time_YesterdayAt(string)
     case .tomorrow:
-        let string = stringForShortTimestamp(hours: hours, minutes: minutes, dateTimeFormat: dateTimeFormat)
+        let string = stringForShortTimestamp(hours: hours, minutes: minutes, seconds: seconds, dateTimeFormat: dateTimeFormat)
         result = format?.tomorrowFormatString(string) ?? strings.Time_TomorrowAt(string)
         
     }
@@ -277,7 +277,7 @@ public struct HumanReadableStringFormat {
     }
 }
 
-public func humanReadableStringForTimestamp(strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, timestamp: Int32, alwaysShowTime: Bool = false, allowYesterday: Bool = true, format: HumanReadableStringFormat? = nil) -> PresentationStrings.FormattedString {
+public func humanReadableStringForTimestamp(strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, timestamp: Int32, alwaysShowTime: Bool = false, allowYesterday: Bool = true, format: HumanReadableStringFormat? = nil, withSeconds: Bool = false) -> PresentationStrings.FormattedString {
     var t: time_t = time_t(timestamp)
     var timeinfo: tm = tm()
     localtime_r(&t, &timeinfo)
@@ -290,7 +290,7 @@ public func humanReadableStringForTimestamp(strings: PresentationStrings, dateTi
     if timeinfo.tm_year != timeinfoNow.tm_year {
         let string: String
         if alwaysShowTime {
-            string = stringForMediumDate(timestamp: timestamp, strings: strings, dateTimeFormat: dateTimeFormat)
+            string = stringForMediumDate(timestamp: timestamp, strings: strings, dateTimeFormat: dateTimeFormat, withSeconds: withSeconds)
         } else {
             string = stringForTimestamp(day: timeinfo.tm_mday, month: timeinfo.tm_mon + 1, year: timeinfo.tm_year, dateTimeFormat: dateTimeFormat)
         }
@@ -307,13 +307,13 @@ public func humanReadableStringForTimestamp(strings: PresentationStrings, dateTi
         } else {
             day = .tomorrow
         }
-        return humanReadableStringForTimestamp(strings: strings, day: day, dateTimeFormat: dateTimeFormat, hours: timeinfo.tm_hour, minutes: timeinfo.tm_min, format: format)
+        return humanReadableStringForTimestamp(strings: strings, day: day, dateTimeFormat: dateTimeFormat, hours: timeinfo.tm_hour, minutes: timeinfo.tm_min, seconds: withSeconds ? Int32(timeinfo.tm_sec) : nil, format: format)
     } else if dayDifference < 7, let daysFormatString = format?.daysFormatString {
         return daysFormatString(Int(dayDifference))
     } else {
         let string: String
         if alwaysShowTime {
-            string = stringForMediumDate(timestamp: timestamp, strings: strings, dateTimeFormat: dateTimeFormat)
+            string = stringForMediumDate(timestamp: timestamp, strings: strings, dateTimeFormat: dateTimeFormat, withSeconds: withSeconds)
         } else {
             string = stringForTimestamp(day: timeinfo.tm_mday, month: timeinfo.tm_mon + 1, year: timeinfo.tm_year, dateTimeFormat: dateTimeFormat)
         }

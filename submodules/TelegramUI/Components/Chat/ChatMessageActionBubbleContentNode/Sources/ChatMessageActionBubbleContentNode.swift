@@ -44,6 +44,9 @@ public class ChatMessageActionBubbleContentNode: ChatMessageBubbleContentNode {
     private var buyStarsTitle: TextNode?
     private var buyStarsButton: HighlightTrackingButton?
     private var buttonStarsNode: PremiumStarsNode?
+
+    private var timeNode: TextNode?
+    private let timeBackgroundNode: ASDisplayNode
     
     private let mediaBackgroundNode: ASImageNode
     fileprivate var imageNode: TransformImageNode?
@@ -86,6 +89,9 @@ public class ChatMessageActionBubbleContentNode: ChatMessageBubbleContentNode {
 
         self.backgroundColorNode = ASDisplayNode()
         self.backgroundMaskNode = ASImageNode()
+
+        self.timeBackgroundNode = ASDisplayNode()
+        self.timeBackgroundNode.isUserInteractionEnabled = false
         
         self.mediaBackgroundNode = ASImageNode()
         self.mediaBackgroundNode.displaysAsynchronously = false
@@ -94,6 +100,7 @@ public class ChatMessageActionBubbleContentNode: ChatMessageBubbleContentNode {
         super.init()
 
         self.addSubnode(self.labelNode.textNode)
+        self.insertSubnode(self.timeBackgroundNode, belowSubnode: self.labelNode.textNode)
     }
     
     required public init?(coder aDecoder: NSCoder) {
@@ -177,6 +184,7 @@ public class ChatMessageActionBubbleContentNode: ChatMessageBubbleContentNode {
         let makeTitleLayout = TextNode.asyncLayout(self.titleNode)
         let makeLabelLayout = TextNodeWithEntities.asyncLayout(self.labelNode)
         let makeBuyStarsTitleLayout = TextNode.asyncLayout(self.buyStarsTitle)
+        let makeTimeLayout = TextNode.asyncLayout(self.timeNode)
 
         let cachedMaskBackgroundImage = self.cachedMaskBackgroundImage
         
@@ -511,6 +519,20 @@ public class ChatMessageActionBubbleContentNode: ChatMessageBubbleContentNode {
                     backgroundSize.width = max(backgroundSize.width, buyStarsButtonSizeValue.width + 8.0 * 2.0)
                     backgroundSize.height += 15.0 + buyStarsButtonSizeValue.height
                 }
+
+                let actionBodySize = backgroundSize
+                let showTime = AyuGramHooks.shouldShowSeconds?(item.context.account.peerId) == true && image == nil && suggestedPost == nil
+                var timeLayoutAndApply: (TextNodeLayout, () -> TextNode)?
+                var timeSize = CGSize()
+                if showTime {
+                    let serviceColor = serviceMessageColorComponents(theme: item.presentationData.theme.theme, wallpaper: item.presentationData.theme.wallpaper)
+                    let timeText = stringForMessageTimestamp(timestamp: item.message.timestamp, dateTimeFormat: item.presentationData.dateTimeFormat, withSeconds: true)
+                    let value = makeTimeLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: timeText, font: Font.regular(11.0), textColor: serviceColor.primaryText), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: constrainedSize, alignment: .center, cutout: nil, insets: UIEdgeInsets()))
+                    timeLayoutAndApply = value
+                    timeSize = CGSize(width: value.0.size.width + 10.0, height: 18.0)
+                    backgroundSize.width = max(backgroundSize.width, timeSize.width)
+                    backgroundSize.height += timeSize.height
+                }
                 
                 return (backgroundSize.width, { boundingWidth in
                     return (CGSize(width: boundingWidth, height: backgroundSize.height + contentOuterInsets.top + contentOuterInsets.bottom), { [weak self] animation, synchronousLoads, _ in
@@ -603,7 +625,7 @@ public class ChatMessageActionBubbleContentNode: ChatMessageBubbleContentNode {
                             let contentFrame: CGRect
                             
                             if let (titleLayout, titleApply) = titleLayoutAndApply {
-                                contentFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((boundingWidth - backgroundSize.width) * 0.5), y: contentOuterInsets.top), size: backgroundSize)
+                                contentFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((boundingWidth - actionBodySize.width) * 0.5), y: contentOuterInsets.top), size: actionBodySize)
                                 
                                 let titleFrame = CGRect(origin: CGPoint(x: contentFrame.minX + floor((contentFrame.width - titleLayout.size.width) * 0.5), y: contentFrame.minY + contentInsets.top), size: titleLayout.size)
                                 labelFrame = CGRect(origin: CGPoint(x: contentFrame.minX + contentInsets.left, y: titleFrame.maxY + titleSpacing), size: labelLayout.size)
@@ -624,8 +646,30 @@ public class ChatMessageActionBubbleContentNode: ChatMessageBubbleContentNode {
                                     titleNode.bounds = CGRect(origin: CGPoint(), size: titleFrame.size)
                                 }
                             } else {
-                                labelFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((boundingWidth - labelLayout.size.width) / 2.0) - 1.0, y: image != nil ? 2.0 : floorToScreenPixels((backgroundSize.height - labelLayout.size.height) / 2.0) - 1.0), size: labelLayout.size)
+                                labelFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((boundingWidth - labelLayout.size.width) / 2.0) - 1.0, y: image != nil ? 2.0 : floorToScreenPixels((actionBodySize.height - labelLayout.size.height) / 2.0) - 1.0), size: labelLayout.size)
                                 contentFrame = labelFrame
+                            }
+
+                            strongSelf.timeBackgroundNode.isHidden = !showTime
+                            strongSelf.timeNode?.isHidden = !showTime
+                            if showTime, let (timeLayout, timeApply) = timeLayoutAndApply {
+                                let timeFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((boundingWidth + backgroundSize.width) * 0.5 - timeSize.width), y: contentOuterInsets.top + actionBodySize.height), size: timeSize)
+                                strongSelf.timeBackgroundNode.frame = timeFrame
+                                strongSelf.timeBackgroundNode.cornerRadius = timeFrame.height * 0.5
+                                strongSelf.timeBackgroundNode.backgroundColor = selectDateFillStaticColor(theme: item.presentationData.theme.theme, wallpaper: item.presentationData.theme.wallpaper)
+
+                                let timeNode = timeApply()
+                                timeNode.isUserInteractionEnabled = false
+                                timeNode.isHidden = false
+                                if strongSelf.timeNode !== timeNode {
+                                    strongSelf.timeNode?.removeFromSupernode()
+                                    strongSelf.timeNode = timeNode
+                                    strongSelf.addSubnode(timeNode)
+                                }
+                                timeNode.frame = CGRect(origin: CGPoint(x: timeFrame.minX + floor((timeFrame.width - timeLayout.size.width) * 0.5), y: timeFrame.minY + floor((timeFrame.height - timeLayout.size.height) * 0.5)), size: timeLayout.size)
+                            } else {
+                                strongSelf.timeBackgroundNode.frame = .zero
+                                strongSelf.timeNode?.frame = .zero
                             }
                             
                             if hasBuyStarsButton, let (buyStarsTitleLayout, buyStarsTitleApply) = buyStarsTitleLayoutAndApply, let buyStarsButtonSize {
@@ -979,7 +1023,7 @@ public class ChatMessageActionBubbleContentNode: ChatMessageBubbleContentNode {
             return ChatMessageBubbleContentTapAction(content: .ignore)
         }
         
-        if let backgroundNode = self.backgroundNode, backgroundNode.frame.contains(point) {
+        if (!self.timeBackgroundNode.isHidden && self.timeBackgroundNode.frame.contains(point)) || (self.backgroundNode?.frame.contains(point) == true) {
             if let item = self.item, item.message.media.contains(where: { $0 is TelegramMediaStory }) {
                 return ChatMessageBubbleContentTapAction(content: .none)
             } else {

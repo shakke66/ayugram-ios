@@ -642,7 +642,7 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                         yesterdayFormatString: { value in
                             return PresentationStrings.FormattedString(string: presentationData.strings.Chat_MessageSeenTimestamp_YesterdayAt(value).string, ranges: [])
                         }
-                    )).string
+                    ), withSeconds: true).string
                     text = dateText
                 }
                 

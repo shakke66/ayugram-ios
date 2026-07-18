@@ -36,7 +36,7 @@ public func stringForMediumCompactDate(timestamp: Int32, strings: PresentationSt
     return dateString
 }
 
-public func stringForMediumDate(timestamp: Int32, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, withTime: Bool = true) -> String {
+public func stringForMediumDate(timestamp: Int32, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, withTime: Bool = true, withSeconds: Bool = false) -> String {
     var t: time_t = Int(timestamp)
     var timeinfo = tm()
     localtime_r(&t, &timeinfo);
@@ -57,7 +57,7 @@ public func stringForMediumDate(timestamp: Int32, strings: PresentationStrings, 
     }
     
     if withTime {
-        let timeString = stringForShortTimestamp(hours: Int32(timeinfo.tm_hour), minutes: Int32(timeinfo.tm_min), dateTimeFormat: dateTimeFormat)
+        let timeString = stringForShortTimestamp(hours: Int32(timeinfo.tm_hour), minutes: Int32(timeinfo.tm_min), seconds: withSeconds ? Int32(timeinfo.tm_sec) : nil, dateTimeFormat: dateTimeFormat)
         return strings.Time_MediumDate(dateString, timeString).string
     } else {
         return dateString
