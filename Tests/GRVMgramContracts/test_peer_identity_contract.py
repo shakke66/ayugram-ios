@@ -70,6 +70,23 @@ def mirror_candidates(query: str) -> list[tuple[str, int]]:
     if not digits or any(byte < 0x30 or byte > 0x39 for byte in digits.encode("utf-8")):
         return []
 
+    if explicit and negative:
+        return []
+
+    if negative and digits.startswith("100"):
+        remainder_digits = digits[3:]
+        if not remainder_digits:
+            return []
+        remainder = 0
+        for byte in remainder_digits.encode("ascii"):
+            digit = byte - 0x30
+            if remainder > (MAX_PEER_ID - digit) // 10:
+                return []
+            remainder = remainder * 10 + digit
+        if remainder == 0:
+            return []
+        return [("channel", remainder)]
+
     magnitude = 0
     for byte in digits.encode("ascii"):
         digit = byte - 0x30
@@ -80,14 +97,6 @@ def mirror_candidates(query: str) -> list[tuple[str, int]]:
         return []
 
     if negative:
-        if digits.startswith("100"):
-            remainder_digits = digits[3:]
-            if not remainder_digits:
-                return []
-            remainder = int(remainder_digits)
-            if remainder == 0 or remainder > MAX_PEER_ID:
-                return []
-            return [("channel", remainder)]
         if magnitude > MAX_PEER_ID:
             return []
         return [("group", magnitude)]
@@ -115,6 +124,8 @@ class NumericPeerLookupTruthTableTests(unittest.TestCase):
             "id::12345": [],
             "id: 12345": [],
             "id  12345": [],
+            "id:-12345": [],
+            "ID -10012345": [],
             "-10012345": [("channel", 12345)],
             "-10000001": [("channel", 1)],
             "-10012345678901234": [("channel", 12345678901234)],
@@ -147,7 +158,8 @@ class NumericPeerLookupTruthTableTests(unittest.TestCase):
             str(2**63 - 1): [],
             str(2**63): [],
             str(-(2**63)): [],
-            f"-100{MAX_PEER_ID}": [],
+            f"-100{MAX_PEER_ID}": [("channel", MAX_PEER_ID)],
+            f"-100{MAX_PEER_ID + 1}": [],
         }
         for query, expected in cases.items():
             with self.subTest(query=query):
@@ -187,6 +199,15 @@ class PeerIdentitySourceContractTests(unittest.TestCase):
         self.assertIn("magnitude > (maximum - digit) / 10", overflow_parser)
         for forbidden in ("Int64(", "abs(", "PeerId.Id.max", ".wholeNumberValue"):
             self.assertNotIn(forbidden, parser)
+
+    def test_channel_form_parses_only_the_peer_payload_remainder(self) -> None:
+        parser = swift_block(self.peer_id, "public static func candidates(for query: String)")
+        self.assertIn("parseMagnitude(remainderDigits, maximum: maximumPeerId)", parser)
+        self.assertNotIn("parseMagnitude(digits, maximum: Int64.max)", parser)
+
+    def test_explicit_prefix_is_limited_to_positive_form(self) -> None:
+        parser = swift_block(self.peer_id, "public static func candidates(for query: String)")
+        self.assertIn("guard !isExplicit else", parser)
 
     def test_common_formatter_composes_bot_api_ids_without_arithmetic_negation(self) -> None:
         formatter = swift_block(self.peer_id, "public func grvmFormatPeerId(")

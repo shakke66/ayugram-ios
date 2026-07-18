@@ -32,12 +32,11 @@ public enum GRVMNumericPeerLookup {
             return []
         }
 
-        guard let parsedMagnitude = parseMagnitude(digits, maximum: Int64.max), parsedMagnitude != 0 else {
-            return []
-        }
-
         var namespacesAndIds: [(Int32, Int64)] = []
         if isNegative {
+            guard !isExplicit else {
+                return []
+            }
             if digits.starts(with: [0x31, 0x30, 0x30]) {
                 let remainderDigits = Array(digits.dropFirst(3))
                 guard !remainderDigits.isEmpty,
@@ -47,21 +46,21 @@ public enum GRVMNumericPeerLookup {
                 }
                 namespacesAndIds.append((Namespaces.Peer.CloudChannel, remainder))
             } else {
-                guard parsedMagnitude <= maximumPeerId else {
+                guard let magnitude = parseMagnitude(digits, maximum: maximumPeerId), magnitude != 0 else {
                     return []
                 }
-                namespacesAndIds.append((Namespaces.Peer.CloudGroup, parsedMagnitude))
+                namespacesAndIds.append((Namespaces.Peer.CloudGroup, magnitude))
             }
         } else {
-            guard parsedMagnitude <= maximumPeerId else {
+            guard let magnitude = parseMagnitude(digits, maximum: maximumPeerId), magnitude != 0 else {
                 return []
             }
             if isExplicit {
-                namespacesAndIds.append((Namespaces.Peer.CloudUser, parsedMagnitude))
-                namespacesAndIds.append((Namespaces.Peer.CloudGroup, parsedMagnitude))
-                namespacesAndIds.append((Namespaces.Peer.CloudChannel, parsedMagnitude))
+                namespacesAndIds.append((Namespaces.Peer.CloudUser, magnitude))
+                namespacesAndIds.append((Namespaces.Peer.CloudGroup, magnitude))
+                namespacesAndIds.append((Namespaces.Peer.CloudChannel, magnitude))
             } else if digits.count >= 5 {
-                namespacesAndIds.append((Namespaces.Peer.CloudUser, parsedMagnitude))
+                namespacesAndIds.append((Namespaces.Peer.CloudUser, magnitude))
             }
         }
 
