@@ -10,6 +10,42 @@ import ChatMessageSelectionInputPanelNode
 import ChatControllerInteraction
 import ChatTextInputPanelNode
 
+private func grvmMessageShotRequested(
+    context: AccountContext,
+    chatPresentationInterfaceState: ChatPresentationInterfaceState,
+    interfaceInteraction: ChatPanelInterfaceInteraction?
+) -> ((Set<MessageId>) -> Void)? {
+    let messageShotEnabled = AyuGramHooks.chatAppearance(
+        accountPeerId: context.account.peerId
+    ).chats.messageShotFeature
+    guard messageShotEnabled,
+          let peerId = chatPresentationInterfaceState.chatLocation.peerId else {
+        return nil
+    }
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    return { [weak interfaceInteraction] selectedIds in
+        guard !selectedIds.isEmpty else {
+            return
+        }
+        let controller = GRVMMessageShotController(
+            context: context,
+            peerId: peerId,
+            threadId: chatPresentationInterfaceState.chatLocation.threadId,
+            selectedIds: selectedIds,
+            presentationData: presentationData,
+            chatTheme: chatPresentationInterfaceState.theme,
+            chatWallpaper: chatPresentationInterfaceState.chatWallpaper,
+            strings: chatPresentationInterfaceState.strings,
+            dateTimeFormat: chatPresentationInterfaceState.dateTimeFormat,
+            nameDisplayOrder: chatPresentationInterfaceState.nameDisplayOrder,
+            completion: { [weak interfaceInteraction] in
+                interfaceInteraction?.cancelMessageSelection(.animated(duration: 0.4, curve: .spring))
+            }
+        )
+        interfaceInteraction?.presentController(controller, nil)
+    }
+}
+
 func inputPanelForChatPresentationIntefaceState(_ chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, currentPanel: ChatInputPanelNode?, currentSecondaryPanel: ChatInputPanelNode?, textInputPanelNode: ChatTextInputPanelNode?, chatControllerInteraction: ChatControllerInteraction?, interfaceInteraction: ChatPanelInterfaceInteraction?) -> (primary: ChatInputPanelNode?, secondary: ChatInputPanelNode?) {
     if let renderedPeer = chatPresentationInterfaceState.renderedPeer, renderedPeer.peer?.restrictionText(platform: "ios", contentSettings: context.currentContentSettings.with { $0 }) != nil {
         return (nil, nil)
@@ -55,6 +91,7 @@ func inputPanelForChatPresentationIntefaceState(_ chatPresentationInterfaceState
                 currentPanel.selectedMessages = selectionState.selectedIds
                 currentPanel.chatControllerInteraction = chatControllerInteraction
                 currentPanel.interfaceInteraction = interfaceInteraction
+                currentPanel.messageShotRequested = grvmMessageShotRequested(context: context, chatPresentationInterfaceState: chatPresentationInterfaceState, interfaceInteraction: interfaceInteraction)
                 currentPanel.updateTheme(theme: chatPresentationInterfaceState.theme)
                 selectionPanel = currentPanel
             } else {
@@ -63,6 +100,7 @@ func inputPanelForChatPresentationIntefaceState(_ chatPresentationInterfaceState
                 panel.selectedMessages = selectionState.selectedIds
                 panel.chatControllerInteraction = chatControllerInteraction
                 panel.interfaceInteraction = interfaceInteraction
+                panel.messageShotRequested = grvmMessageShotRequested(context: context, chatPresentationInterfaceState: chatPresentationInterfaceState, interfaceInteraction: interfaceInteraction)
                 selectionPanel = panel
             }
         }
@@ -110,6 +148,7 @@ func inputPanelForChatPresentationIntefaceState(_ chatPresentationInterfaceState
                 currentPanel.selectedMessages = selectionState.selectedIds
                 currentPanel.chatControllerInteraction = chatControllerInteraction
                 currentPanel.interfaceInteraction = interfaceInteraction
+                currentPanel.messageShotRequested = grvmMessageShotRequested(context: context, chatPresentationInterfaceState: chatPresentationInterfaceState, interfaceInteraction: interfaceInteraction)
                 currentPanel.updateTheme(theme: chatPresentationInterfaceState.theme)
                 return (currentPanel, nil)
             } else {
@@ -118,6 +157,7 @@ func inputPanelForChatPresentationIntefaceState(_ chatPresentationInterfaceState
                 panel.selectedMessages = selectionState.selectedIds
                 panel.chatControllerInteraction = chatControllerInteraction
                 panel.interfaceInteraction = interfaceInteraction
+                panel.messageShotRequested = grvmMessageShotRequested(context: context, chatPresentationInterfaceState: chatPresentationInterfaceState, interfaceInteraction: interfaceInteraction)
                 return (panel, nil)
             }
         }

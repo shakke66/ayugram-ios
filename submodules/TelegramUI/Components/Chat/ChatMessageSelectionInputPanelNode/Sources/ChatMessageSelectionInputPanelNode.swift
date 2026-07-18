@@ -197,6 +197,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     private let reportButton: GlassButtonView
     private let forwardButton: GlassButtonView
     private let shareButton: GlassButtonView
+    private let messageShotButton: GlassButtonView
     private let tagButton: GlassButtonView
     private let tagEditButton: GlassButtonView
     
@@ -214,6 +215,14 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     public var selectedMessages = Set<MessageId>() {
         didSet {
             if oldValue != self.selectedMessages {
+                self.updateActions()
+            }
+        }
+    }
+
+    public var messageShotRequested: ((Set<MessageId>) -> Void)? {
+        didSet {
+            if (oldValue == nil) != (self.messageShotRequested == nil) {
                 self.updateActions()
             }
         }
@@ -244,6 +253,12 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.shareButton.icon = "Chat/Input/Accessory Panels/MessageSelectionAction"
         self.shareButton.isAccessibilityElement = true
         self.shareButton.accessibilityLabel = strings.VoiceOver_MessageContextShare
+
+        self.messageShotButton = GlassButtonView()
+        self.messageShotButton.icon = "Chat/Input/Accessory Panels/MessageSelectionAction"
+        self.messageShotButton.isEnabled = false
+        self.messageShotButton.isAccessibilityElement = true
+        self.messageShotButton.accessibilityLabel = "Message Shot"
         
         self.tagButton = GlassButtonView()
         self.tagButton.icon = "Chat/Input/Accessory Panels/TagIcon"
@@ -263,6 +278,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.view.addSubview(self.reportButton)
         self.view.addSubview(self.forwardButton)
         self.view.addSubview(self.shareButton)
+        self.view.addSubview(self.messageShotButton)
         self.view.addSubview(self.tagButton)
         self.view.addSubview(self.tagEditButton)
         
@@ -275,6 +291,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.reportButton.button.addTarget(self, action: #selector(self.reportButtonPressed), for: .touchUpInside)
         self.forwardButton.button.addTarget(self, action: #selector(self.forwardButtonPressed), for: .touchUpInside)
         self.shareButton.button.addTarget(self, action: #selector(self.shareButtonPressed), for: .touchUpInside)
+        self.messageShotButton.button.addTarget(self, action: #selector(self.messageShotButtonPressed), for: .touchUpInside)
         self.tagButton.button.addTarget(self, action: #selector(self.tagButtonPressed), for: .touchUpInside)
         self.tagEditButton.button.addTarget(self, action: #selector(self.tagButtonPressed), for: .touchUpInside)
     }
@@ -285,6 +302,10 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     
     private func updateActions() {
         self.forwardButton.isEnabled = self.selectedMessages.count != 0
+        let canRequestMessageShot = !self.selectedMessages.isEmpty
+            && self.messageShotRequested != nil
+            && self.actions != nil
+        self.messageShotButton.isEnabled = canRequestMessageShot
         
         if self.selectedMessages.isEmpty {
             self.actions = nil
@@ -297,6 +318,9 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             |> deliverOnMainQueue).startStrict(next: { [weak self] actions in
                 if let strongSelf = self {
                     strongSelf.actions = actions
+                    let canRequestMessageShot = !strongSelf.selectedMessages.isEmpty
+                        && strongSelf.messageShotRequested != nil
+                    strongSelf.messageShotButton.isEnabled = canRequestMessageShot
                     if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight: maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded) = strongSelf.validLayout, let interfaceState = strongSelf.presentationInterfaceState {
                         let _ = strongSelf.updateLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, transition: .immediate, interfaceState: interfaceState, metrics: metrics, isMediaInputExpanded: isMediaInputExpanded)
                     }
@@ -339,6 +363,18 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         } else if !self.shareButton.isImplicitlyDisabled {
             self.interfaceInteraction?.shareSelectedMessages()
         }
+    }
+
+    @objc private func messageShotButtonPressed() {
+        guard !self.selectedMessages.isEmpty,
+              let messageShotRequested = self.messageShotRequested else {
+            return
+        }
+        if let actions = self.actions, actions.isCopyProtected {
+            self.interfaceInteraction?.displayCopyProtectionTip(self.messageShotButton, true)
+            return
+        }
+        messageShotRequested(self.selectedMessages)
     }
     
     @objc private func tagButtonPressed() {
@@ -521,6 +557,8 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.tagButton.isHidden = true
             self.tagEditButton.isHidden = true
         }
+
+        self.messageShotButton.isHidden = self.peerMedia || self.messageShotRequested == nil || self.selectedMessages.isEmpty
         
         if self.reportButton.isHidden || (self.peerMedia && self.deleteButton.isHidden && self.reportButton.isHidden) {
             if let peer = interfaceState.renderedPeer?.peer as? TelegramChannel, case .broadcast = peer.info {
@@ -542,7 +580,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             tagButton = self.tagEditButton
         }
         
-        let buttons: [GlassButtonView]
+        var buttons: [GlassButtonView]
         if self.reportButton.isHidden {
             if let tagButton {
                 buttons = [
@@ -592,6 +630,9 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
                     self.forwardButton
                 ]
             }
+        }
+        if !self.messageShotButton.isHidden {
+            buttons.insert(self.messageShotButton, at: max(0, buttons.count - 2))
         }
         
         let buttonSize = CGSize(width: 40.0, height: 40.0)
