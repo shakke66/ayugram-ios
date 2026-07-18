@@ -46,6 +46,10 @@ class SendAsStickerContractTests(unittest.TestCase):
             "image.images == nil",
         ):
             self.assertIn(token, self.picker)
+        self.assertIn(
+            "editingContext.isForceLivePhotoEnabled()",
+            self._static_eligibility_method(),
+        )
 
     def test_extraction_uses_real_legacy_apis_and_guarded_fallbacks(self) -> None:
         for token in (
@@ -86,6 +90,13 @@ class SendAsStickerContractTests(unittest.TestCase):
     def _sticker_methods(self) -> str:
         start = self.picker.find("private func sendSelectedImageAsSticker")
         end = self.picker.find("fileprivate func defaultTransitionView", start)
+        self.assertGreaterEqual(start, 0)
+        self.assertGreater(end, start)
+        return self.picker[start:end]
+
+    def _static_eligibility_method(self) -> str:
+        start = self.picker.find("private func isStaticStickerItem")
+        end = self.picker.find("private func sendSelectedImageAsSticker", start)
         self.assertGreaterEqual(start, 0)
         self.assertGreater(end, start)
         return self.picker[start:end]

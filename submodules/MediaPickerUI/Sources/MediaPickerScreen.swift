@@ -3247,7 +3247,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
             }
             if asset.subtypes.rawValue & TGMediaAssetSubtypePhotoLive.rawValue != 0 {
                 let livePhotoMode = editingContext.livePhotoMode(for: asset)?.uintValue ?? TGMediaLivePhotoModeOff.rawValue
-                if livePhotoMode != TGMediaLivePhotoModeOff.rawValue {
+                if livePhotoMode != TGMediaLivePhotoModeOff.rawValue || editingContext.isForceLivePhotoEnabled() {
                     return false
                 }
             }
