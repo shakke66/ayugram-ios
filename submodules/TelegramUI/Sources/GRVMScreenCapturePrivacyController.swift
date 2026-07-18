@@ -1,7 +1,7 @@
 import UIKit
 import SwiftSignalKit
 
-final class GRVMScreenCapturePrivacyController {
+public final class GRVMScreenCapturePrivacyController {
     private weak var window: UIWindow?
     private let settingsDisposable = MetaDisposable()
     private var notificationToken: NSObjectProtocol?
@@ -9,7 +9,7 @@ final class GRVMScreenCapturePrivacyController {
     private var isEnabled = false
     private var isDisposed = false
 
-    init(window: UIWindow, enabled: Signal<Bool, NoError>) {
+    public init(window: UIWindow, enabled: Signal<Bool, NoError>) {
         self.window = window
         self.setEnabledSignal(enabled)
 
@@ -112,7 +112,7 @@ final class GRVMScreenCapturePrivacyController {
         }
     }
 
-    func dispose() {
+    public func dispose() {
         guard !self.isDisposed else {
             return
         }

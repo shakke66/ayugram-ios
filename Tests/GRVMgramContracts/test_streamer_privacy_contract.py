@@ -43,6 +43,9 @@ class StreamerPrivacyContractTests(unittest.TestCase):
 
     def test_public_per_window_capture_state_and_exact_predicate(self) -> None:
         source = CONTROLLER_PATH.read_text(encoding="utf-8")
+        self.assertIn("public final class GRVMScreenCapturePrivacyController", source)
+        self.assertIn("public init(window: UIWindow, enabled: Signal<Bool, NoError>)", source)
+        self.assertIn("public func dispose()", source)
         self.assertIn("UIScreen.capturedDidChangeNotification", source)
         self.assertIn("queue: .main", source)
         self.assertIn("window.screen.isCaptured", source)
