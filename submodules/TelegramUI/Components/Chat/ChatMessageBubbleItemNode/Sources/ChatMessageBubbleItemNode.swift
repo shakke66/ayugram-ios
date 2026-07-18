@@ -112,6 +112,32 @@ private final class ChatMessageBubbleClippingNode: ASDisplayNode {
     }
 }
 
+private let channelAuthorBadgeSize = CGSize(width: 16.0, height: 16.0)
+private let channelAuthorBadgeSpacing: CGFloat = 3.0
+
+private func shouldDisplayChannelAuthorBadge(
+    item: ChatMessageItem,
+    incoming: Bool,
+    displayHeader: Bool,
+    effectiveAuthor: Peer?
+) -> Bool {
+    guard incoming,
+          displayHeader,
+          !item.presentationData.isPreview,
+          !item.associatedData.isRecentActions,
+          effectiveAuthor is TelegramChannel else {
+        return false
+    }
+    if case .customChatContents = item.chatLocation {
+        return false
+    }
+    guard let containingChannel = item.message.peers[item.message.id.peerId] as? TelegramChannel,
+          case .group = containingChannel.info else {
+        return false
+    }
+    return true
+}
+
 private func grvmDeletedMessageContentAlpha(
     item: ChatMessageItem
 ) -> CGFloat {
@@ -721,6 +747,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
     private var credibilityIconContent: EmojiStatusComponent.Content?
     private var credibilityButtonNode: HighlightTrackingButtonNode?
     private var credibilityHighlightNode: ASImageNode?
+    private var channelAuthorBadgeNode: ASImageNode?
+    private var channelAuthorBadgeColor: UIColor?
     
     private var boostBadgeNode: TextNode?
     private var boostIconNode: UIImageView?
@@ -2466,6 +2494,12 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 displayHeader = true
             }
         }
+        let displayChannelAuthorBadge = shouldDisplayChannelAuthorBadge(
+            item: item,
+            incoming: incoming,
+            displayHeader: displayHeader,
+            effectiveAuthor: effectiveAuthor
+        )
         
         let firstNodeTopPosition: ChatMessageBubbleRelativePosition
         if displayHeader {
@@ -2712,6 +2746,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                         credibilityIconWidth += 20.0
                     }
                 }
+                let channelAuthorBadgeWidth: CGFloat = displayChannelAuthorBadge ? channelAuthorBadgeSpacing + channelAuthorBadgeSize.width : 0.0
                 
                 let rankBadgeSizeAndApply = rankBadgeLayout(TextNodeLayoutArguments(attributedString: rankBadgeString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: max(0, maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right), height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
                 if rankBadgeSizeAndApply.0.size.width > 0.0 {
@@ -2746,13 +2781,13 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 
                 let closeButtonWidth: CGFloat = item.message.adAttribute != nil ? 18.0 : 0.0
                 
-                let sizeAndApply = authorNameLayout(TextNodeLayoutArguments(attributedString: attributedString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: max(0, maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right - credibilityIconWidth - rankBadgeSizeAndApply.0.size.width - closeButtonWidth), height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+                let sizeAndApply = authorNameLayout(TextNodeLayoutArguments(attributedString: attributedString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: max(0, maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right - credibilityIconWidth - channelAuthorBadgeWidth - rankBadgeSizeAndApply.0.size.width - closeButtonWidth), height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
                 nameNodeSizeApply = (sizeAndApply.0.size, {
                     return sizeAndApply.1()
                 })
 
                 if let viaSuffix {
-                    let (viaLayout, _) = viaMeasureLayout(TextNodeLayoutArguments(attributedString: viaSuffix, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: max(0, maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right - credibilityIconWidth - rankBadgeSizeAndApply.0.size.width - closeButtonWidth), height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+                    let (viaLayout, _) = viaMeasureLayout(TextNodeLayoutArguments(attributedString: viaSuffix, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: max(0, maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right - credibilityIconWidth - channelAuthorBadgeWidth - rankBadgeSizeAndApply.0.size.width - closeButtonWidth), height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
                     viaWidth = viaLayout.size.width + 3.0
                 }
                 
@@ -2771,7 +2806,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     nameNodeOriginY += 5.0
                 }
                 
-                var headerSizeWidth = nameAvatarSpaceWidth + nameNodeSizeApply.0.width + 8.0 + credibilityIconWidth + boostBadgeWidth + closeButtonWidth + bubbleWidthInsets
+                var headerSizeWidth = nameAvatarSpaceWidth + nameNodeSizeApply.0.width + 8.0 + credibilityIconWidth + channelAuthorBadgeWidth + boostBadgeWidth + closeButtonWidth + bubbleWidthInsets
                 if hasTitleTopicNavigation {
                 } else if rankBadgeSizeAndApply.0.size.width > 0.0 {
                     headerSizeWidth += rankBadgeSizeAndApply.0.size.width + 3.0
@@ -3686,6 +3721,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 hasTitleTopicNavigation: hasTitleTopicNavigation,
                 authorNameColor: authorNameColor,
                 layoutConstants: layoutConstants,
+                displayChannelAuthorBadge: displayChannelAuthorBadge,
                 currentCredibilityIcon: currentCredibilityIcon,
                 rankBadgeNodeSizeApply: rankBadgeNodeSizeApply,
                 boostNodeSizeApply: boostNodeSizeApply,
@@ -3755,6 +3791,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         hasTitleTopicNavigation: Bool,
         authorNameColor: UIColor?,
         layoutConstants: ChatMessageItemLayoutConstants,
+        displayChannelAuthorBadge: Bool,
         currentCredibilityIcon: (EmojiStatusComponent.Content, UIColor?)?,
         rankBadgeNodeSizeApply: (CGSize, () -> TextNode?, UIColor?),
         boostNodeSizeApply: (CGSize, () -> TextNode?),
@@ -4104,6 +4141,40 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             if themeUpdated {
                 nameHighlightNode.image = generateFilledRoundedRectImage(size: CGSize(width: 8.0, height: 8.0), cornerRadius: 4.0, color: nameColor.withAlphaComponent(0.1))?.stretchableImage(withLeftCapWidth: 4, topCapHeight: 4)
             }
+
+            var channelAuthorBadgeFrame: CGRect?
+            if displayChannelAuthorBadge {
+                let channelAuthorBadgeNode: ASImageNode
+                if let current = strongSelf.channelAuthorBadgeNode {
+                    channelAuthorBadgeNode = current
+                } else {
+                    channelAuthorBadgeNode = ASImageNode()
+                    channelAuthorBadgeNode.displaysAsynchronously = false
+                    channelAuthorBadgeNode.isUserInteractionEnabled = false
+                    strongSelf.channelAuthorBadgeNode = channelAuthorBadgeNode
+                    strongSelf.clippingNode.addSubnode(channelAuthorBadgeNode)
+                    if animation.isAnimated {
+                        channelAuthorBadgeNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
+                    }
+                }
+                if strongSelf.channelAuthorBadgeColor != nameColor || channelAuthorBadgeNode.image == nil {
+                    strongSelf.channelAuthorBadgeColor = nameColor
+                    channelAuthorBadgeNode.image = generateTintedImage(image: UIImage(bundleImageName: "Chat List/Search/Channel"), color: nameColor)
+                }
+                let badgeFrame = CGRect(
+                    origin: CGPoint(
+                        x: nameNode.frame.maxX + channelAuthorBadgeSpacing,
+                        y: nameNode.frame.minY + floor((nameNode.bounds.height - channelAuthorBadgeSize.height) / 2.0)
+                    ),
+                    size: channelAuthorBadgeSize
+                )
+                channelAuthorBadgeFrame = badgeFrame
+                animation.animator.updateFrame(layer: channelAuthorBadgeNode.layer, frame: badgeFrame, completion: nil)
+            } else if let channelAuthorBadgeNode = strongSelf.channelAuthorBadgeNode {
+                strongSelf.channelAuthorBadgeNode = nil
+                strongSelf.channelAuthorBadgeColor = nil
+                channelAuthorBadgeNode.removeFromSupernode()
+            }
             
             if let (currentCredibilityIcon, currentParticleColor) = currentCredibilityIcon {
                 let credibilityIconView: ComponentHostView<Empty>
@@ -4141,7 +4212,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     containerSize: CGSize(width: 20.0, height: 20.0)
                 )
                 
-                let credibilityIconFrame = CGRect(origin: CGPoint(x: nameNode.frame.maxX + 3.0, y: nameNode.frame.minY + floor((nameNode.bounds.height - credibilityIconSize.height) / 2.0)), size: credibilityIconSize)
+                let credibilityIconX = channelAuthorBadgeFrame?.maxX ?? nameNode.frame.maxX
+                let credibilityIconFrame = CGRect(origin: CGPoint(x: credibilityIconX + 3.0, y: nameNode.frame.minY + floor((nameNode.bounds.height - credibilityIconSize.height) / 2.0)), size: credibilityIconSize)
                 if !animateCredibilityIconFrame {
                     credibilityIconView.frame = CGRect(origin: CGPoint(x: previousNameNodeFrame.maxX + 3.0, y: previousNameNodeFrame.minY + floor((previousNameNodeFrame.height - credibilityIconSize.height) / 2.0)), size: credibilityIconSize)
                 }
@@ -4464,6 +4536,13 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                         credibilityIconView?.removeFromSuperview()
                     })
                 }
+                if let channelAuthorBadgeNode = strongSelf.channelAuthorBadgeNode {
+                    strongSelf.channelAuthorBadgeNode = nil
+                    strongSelf.channelAuthorBadgeColor = nil
+                    channelAuthorBadgeNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.1, removeOnCompletion: false, completion: { [weak channelAuthorBadgeNode] _ in
+                        channelAuthorBadgeNode?.removeFromSupernode()
+                    })
+                }
                 if let boostBadgeNode = strongSelf.boostBadgeNode {
                     strongSelf.boostBadgeNode = nil
                     boostBadgeNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.1, removeOnCompletion: false, completion: { [weak boostBadgeNode] _ in
@@ -4489,6 +4568,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 strongSelf.rankBadgeNode = nil
                 strongSelf.credibilityIconView?.removeFromSuperview()
                 strongSelf.credibilityIconView = nil
+                strongSelf.channelAuthorBadgeNode?.removeFromSupernode()
+                strongSelf.channelAuthorBadgeNode = nil
+                strongSelf.channelAuthorBadgeColor = nil
                 strongSelf.boostBadgeNode?.removeFromSupernode()
                 strongSelf.boostBadgeNode = nil
                 strongSelf.boostIconNode?.removeFromSuperview()
