@@ -17,25 +17,11 @@ import WebUI
 import AvatarNode
 import PeerNameColorItem
 import BoostLevelIconComponent
+import ContextUI
+import AyuGramLib
 
 private let enabledPublicBioEntities: EnabledEntityTypes = [.allUrl, .mention, .hashtag]
 private let enabledPrivateBioEntities: EnabledEntityTypes = [.internalUrl, .mention, .hashtag]
-
-// AyuGram: format a peer id according to the selected display mode.
-// mode: 1 = raw Telegram-API id, 2 = Bot-API id (users positive, groups -id, channels -100…).
-private func ayuFormatPeerId(_ peerId: PeerId, mode: Int32) -> String {
-    let raw = peerId.id._internalGetInt64Value()
-    if mode == 2 {
-        if peerId.namespace == Namespaces.Peer.CloudChannel {
-            return "-100\(raw)"
-        } else if peerId.namespace == Namespaces.Peer.CloudGroup {
-            return "-\(raw)"
-        } else {
-            return "\(raw)"
-        }
-    }
-    return "\(raw)"
-}
 
 enum InfoSection: Int, CaseIterable {
     case unofficial
@@ -81,6 +67,65 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
     }
     let birthdayContextAction: (ASDisplayNode, ContextGesture?, CGPoint?) -> Void = { node, gesture, _ in
         interaction.openBirthdayContextMenu(node, gesture)
+    }
+
+    let makePeerIdItem: (AnyHashable, PeerId) -> PeerInfoScreenLabeledValueItem = { itemId, peerId in
+        let displayFormat: GRVMPeerIdFormat
+        switch AyuGramHooks.peerIdDisplayMode?(context.account.peerId) ?? 1 {
+        case 2:
+            displayFormat = .botAPI
+        default:
+            displayFormat = .telegram
+        }
+        let idString = grvmFormatPeerId(peerId, format: displayFormat)
+
+        let openContextMenu: (ASDisplayNode, ContextGesture?) -> Void = { sourceNode, gesture in
+            guard let controller = interaction.getController() else {
+                return
+            }
+            let source: ContextContentSource
+            if let sourceNode = sourceNode as? ContextExtractedContentContainingNode {
+                source = .extracted(PeerInfoContextExtractedContentSource(sourceNode: sourceNode))
+            } else {
+                source = .reference(PeerInfoContextReferenceContentSource(controller: controller, sourceNode: sourceNode))
+            }
+            let copyAction: (GRVMPeerIdFormat) -> Void = { format in
+                UIPasteboard.general.string = grvmFormatPeerId(peerId, format: format)
+            }
+            let items: [ContextMenuItem] = [
+                .action(ContextMenuActionItem(text: "Copy Telegram ID", icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.contextMenu.primaryColor)
+                }, action: { controller, _ in
+                    controller?.dismiss {
+                        copyAction(.telegram)
+                    }
+                })),
+                .action(ContextMenuActionItem(text: "Copy Bot API ID", icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.contextMenu.primaryColor)
+                }, action: { controller, _ in
+                    controller?.dismiss {
+                        copyAction(.botAPI)
+                    }
+                }))
+            ]
+            let contextController = makeContextController(
+                presentationData: presentationData,
+                source: source,
+                items: .single(ContextController.Items(content: .list(items))),
+                gesture: gesture
+            )
+            controller.present(contextController, in: .window(.root))
+        }
+
+        return PeerInfoScreenLabeledValueItem(id: itemId, label: "ID", text: idString, textColor: .primary, action: { _, _ in
+            UIPasteboard.general.string = idString
+        }, longTapAction: { sourceNode in
+            openContextMenu(sourceNode, nil)
+        }, contextAction: { sourceNode, gesture, _ in
+            openContextMenu(sourceNode, gesture)
+        }, requestLayout: { animated in
+            interaction.requestLayout(animated)
+        })
     }
     
     if let user = data.peer as? TelegramUser {
@@ -195,13 +240,7 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
         }
 
         if AyuGramHooks.shouldShowDialogID?(context.account.peerId) == true {
-            let peerId = user.id
-            let idString = ayuFormatPeerId(peerId, mode: AyuGramHooks.peerIdDisplayMode?(context.account.peerId) ?? 1)
-            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemDialogId, label: "ID", text: idString, textColor: .primary, action: { _, _ in
-                UIPasteboard.general.string = idString
-            }, requestLayout: { animated in
-                interaction.requestLayout(animated)
-            }))
+            items[currentPeerInfoSection]!.append(makePeerIdItem(ItemDialogId, user.id))
         }
 
         if let cachedData = data.cachedData as? CachedUserData {
@@ -567,6 +606,7 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
         let ItemEdit = 10
         let ItemPeerPersonalChannel = 11
         let ItemDialogId = 12
+        let ItemPeerDate = 13
         
         if let _ = data.threadData {
             let mainUsername: String
@@ -665,17 +705,23 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
                     )
                 )
             }
-            if let cachedData = data.cachedData as? CachedChannelData {
-                if AyuGramHooks.shouldShowDialogID?(context.account.peerId) == true {
-                    let peerId = channel.id
-                    let idString = ayuFormatPeerId(peerId, mode: AyuGramHooks.peerIdDisplayMode?(context.account.peerId) ?? 1)
-                    items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemDialogId, label: "ID", text: idString, textColor: .primary, action: { _, _ in
-                        UIPasteboard.general.string = idString
-                    }, requestLayout: { animated in
-                        interaction.requestLayout(animated)
-                    }))
-                }
+            if AyuGramHooks.shouldShowDialogID?(context.account.peerId) == true {
+                items[currentPeerInfoSection]!.append(makePeerIdItem(ItemDialogId, channel.id))
+            }
 
+            var peerDate: (label: String, timestamp: Int32)?
+            if let cachedData = data.cachedData as? CachedChannelData, let invitedOn = cachedData.invitedOn, invitedOn > 0 {
+                peerDate = ("Joined", invitedOn)
+            } else if channel.creationDate > 0 {
+                peerDate = ("Created", channel.creationDate)
+            }
+            if let peerDate {
+                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemPeerDate, label: peerDate.label, text: stringForFullDate(timestamp: peerDate.timestamp, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat), textColor: .primary, action: nil, requestLayout: { animated in
+                    interaction.requestLayout(animated)
+                }))
+            }
+
+            if let cachedData = data.cachedData as? CachedChannelData {
                 let aboutText: String?
                 if channel.isFake {
                     if case .broadcast = channel.info {
@@ -832,6 +878,18 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
             }
         }
     } else if let group = data.peer as? TelegramGroup {
+        let ItemDialogId = 1
+        let ItemCreationDate = 2
+
+        if AyuGramHooks.shouldShowDialogID?(context.account.peerId) == true {
+            items[currentPeerInfoSection]!.append(makePeerIdItem(ItemDialogId, group.id))
+        }
+        if group.creationDate > 0 {
+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemCreationDate, label: "Created", text: stringForFullDate(timestamp: group.creationDate, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat), textColor: .primary, action: nil, requestLayout: { animated in
+                interaction.requestLayout(animated)
+            }))
+        }
+
         if let cachedData = data.cachedData as? CachedGroupData {
             let aboutText: String?
             if group.isFake {

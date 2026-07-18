@@ -39,6 +39,7 @@ import ButtonComponent
 import BundleIconComponent
 import AnimatedTextComponent
 import TextFormat
+import AyuGramLib
 
 private enum ChatListRecentEntryStableId: Hashable {
     case topPeers
@@ -2264,7 +2265,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                         }
                     }
                     
-                    let updatedLocalPeers = predicate |> mapToSignal { predicate in
+                    let localPeers = predicate |> mapToSignal { predicate in
                         return context.engine.contacts.searchLocalPeers(query: query.lowercased(), predicate: predicate)
                     }
                     |> mapToSignal { peers -> Signal<[EngineRenderedPeer], NoError> in
@@ -2285,12 +2286,16 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                             }
                         }
                     }
-                    
+
+                    let numericPeerIds = GRVMNumericPeerLookup.candidates(for: query)
+                    let numericPeers = context.engine.contacts.localPeers(ids: numericPeerIds)
+
                     foundLocalPeers = combineLatest(
-                        updatedLocalPeers,
-                        fixedOrRemovedRecentlySearchedPeers
+                        numericPeers,
+                        fixedOrRemovedRecentlySearchedPeers,
+                        localPeers
                     )
-                    |> mapToSignal { local, allRecentlySearched -> Signal<([EnginePeer.Id: Optional<EnginePeer.NotificationSettings>], [EnginePeer.Id: TelegramEngine.EngineData.Item.Messages.PeerUnreadState.Result], [EngineRenderedPeer], Set<EnginePeer.Id>, EngineGlobalNotificationSettings), NoError> in
+                    |> mapToSignal { numericPeers, allRecentlySearched, localPeers -> Signal<([EnginePeer.Id: Optional<EnginePeer.NotificationSettings>], [EnginePeer.Id: TelegramEngine.EngineData.Item.Messages.PeerUnreadState.Result], [EngineRenderedPeer], Set<EnginePeer.Id>, EngineGlobalNotificationSettings), NoError> in
                         let recentlySearched = allRecentlySearched.filter { peer in
                             guard let peer = peer.peer.peer else {
                                 return false
@@ -2298,30 +2303,33 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                             return peer.indexName.matchesByTokens(query)
                         }
                         
-                        var peerIds = Set<EnginePeer.Id>()
-                        
+                        var existingPeerIds = Set<EnginePeer.Id>()
+
                         var peers: [EngineRenderedPeer] = []
+                        for peer in numericPeers {
+                            if existingPeerIds.insert(peer.peerId).inserted {
+                                peers.append(peer)
+                            }
+                        }
                         for peer in recentlySearched {
-                            if !peerIds.contains(peer.peer.peerId) {
-                                peerIds.insert(peer.peer.peerId)
+                            if existingPeerIds.insert(peer.peer.peerId).inserted {
                                 peers.append(EngineRenderedPeer(peer.peer))
                             }
                         }
-                        for peer in local {
-                            if !peerIds.contains(peer.peerId) {
-                                peerIds.insert(peer.peerId)
+                        for peer in localPeers {
+                            if existingPeerIds.insert(peer.peerId).inserted {
                                 peers.append(peer)
                             }
                         }
                         
                         return context.engine.data.subscribe(
                             EngineDataMap(
-                                peerIds.map { peerId -> TelegramEngine.EngineData.Item.Peer.NotificationSettings in
+                                existingPeerIds.map { peerId -> TelegramEngine.EngineData.Item.Peer.NotificationSettings in
                                     return TelegramEngine.EngineData.Item.Peer.NotificationSettings(id: peerId)
                                 }
                             ),
                             EngineDataMap(
-                                peerIds.map { peerId -> TelegramEngine.EngineData.Item.Messages.PeerUnreadState in
+                                existingPeerIds.map { peerId -> TelegramEngine.EngineData.Item.Messages.PeerUnreadState in
                                     return TelegramEngine.EngineData.Item.Messages.PeerUnreadState(id: peerId)
                                 }
                             ),

@@ -96,6 +96,18 @@ public extension TelegramEngine {
             }
         }
 
+        public func localPeers(ids: [PeerId]) -> Signal<[EngineRenderedPeer], NoError> {
+            return self.account.postbox.transaction { transaction -> [EngineRenderedPeer] in
+                var result: [EngineRenderedPeer] = []
+                for id in ids {
+                    if let peer = transaction.getPeer(id) {
+                        result.append(EngineRenderedPeer(peer: EnginePeer(peer)))
+                    }
+                }
+                return result
+            }
+        }
+
         public func searchContacts(query: String) -> Signal<([EnginePeer], [EnginePeer.Id: EnginePeer.Presence]), NoError> {
             return self.account.postbox.searchContacts(query: query)
             |> map { peers, presences in
