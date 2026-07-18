@@ -1513,7 +1513,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                 videoNode.removeFromSupernode()
             }
             
-            if isAnimated || disablePlayerControls {
+            if disablePlayerControls {
                 self.footerContentNode.scrubberView = nil
             }
             
@@ -1851,7 +1851,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                     }
                     
                     let footerContent: ChatItemGalleryFooterContent
-                    if isAnimated || disablePlayerControls {
+                    if disablePlayerControls {
                         footerContent = .info
                     } else if isPaused && !strongSelf.ignorePauseStatus && strongSelf.isCentral == true {
                         if hasStarted || strongSelf.didPause {
