@@ -250,6 +250,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
     public weak var webSearchController: WebSearchController?
     
     public var openCamera: ((Any?) -> Void)?
+    public var sendAsSticker: ((UIImage) -> Void)?
     public var presentSchedulePicker: (Bool, @escaping (Int32) -> Void) -> Void = { _, _ in }
     public var presentTimerPicker: (@escaping (Int32) -> Void) -> Void = { _ in }
     public var presentWebSearch: (MediaGroupsScreen, Bool) -> Void = { _, _ in }
@@ -263,6 +264,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
     public var openAvatarEditor: () -> Void = {}
     
     private var completed = false
+    private var sendAsStickerRequestDisposable: Disposable?
     public var legacyCompletion: (_ fromGallery: Bool, _ signals: [Any], _ silently: Bool, _ scheduleTime: Int32?, ChatSendMessageActionSheetController.SendParameters?, @escaping (String) -> UIView?, @escaping () -> Void) -> Void = { _, _, _, _, _, _, _ in }
     
     public var requestAttachmentMenuExpansion: () -> Void = { }
@@ -2403,6 +2405,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
     
     deinit {
         self.presentationDataDisposable?.dispose()
+        self.sendAsStickerRequestDisposable?.dispose()
     }
     
     override public func loadDisplayNode() {
@@ -2948,6 +2951,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                 mediaPicker.getCaptionPanelView = strongSelf.getCaptionPanelView
                 mediaPicker.legacyCompletion = strongSelf.legacyCompletion
                 mediaPicker.customSelection = strongSelf.customSelection
+                mediaPicker.sendAsSticker = strongSelf.sendAsSticker
                 mediaPicker.dismissAll = { [weak self] in
                     self?.dismiss(animated: true, completion: nil)
                 }
@@ -3078,7 +3082,9 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                 var hasSpoilers = false
                 var price: Int64?
                 var hasGeneric = false
+                var selectedItems: [TGMediaSelectableItem] = []
                 if let selectionContext = self.interaction?.selectionState, let editingContext = self.interaction?.editingState {
+                    selectedItems = selectionContext.selectedItems() as? [TGMediaSelectableItem] ?? []
                     for case let item as TGMediaEditableItem in selectionContext.selectedItems() {
                         if price == nil, let itemPrice = editingContext.price(for: item) as? Int64 {
                             price = itemPrice
@@ -3106,6 +3112,14 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                         return ContextController.Items(content: .list([]))
                     }
                     var items: [ContextMenuItem] = []
+                    if selectedItems.count == 1, self.sendAsSticker != nil, price == nil, !hasSpoilers, let selectedItem = selectedItems.first, let editingContext = self.interaction?.editingState, self.isStaticStickerItem(selectedItem, editingContext: editingContext) {
+                        items.append(.action(ContextMenuActionItem(text: Bundle.main.localizedString(forKey: "GRVMgram.Menu.SendAsSticker", value: "Send as Sticker", table: nil), icon: { theme in
+                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Text/AccessoryIconStickers"), color: theme.contextMenu.primaryColor)
+                        }, action: { [weak self] _, f in
+                            f(.default)
+                            self?.sendSelectedImageAsSticker(selectedItem)
+                        })))
+                    }
                     if !hasSpoilers && price == nil {
                         items.append(.action(ContextMenuActionItem(text: selectionCount > 1 ? strings.Attachment_SendAsFiles : strings.Attachment_SendAsFile, icon: { theme in
                             return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/File"), color: theme.contextMenu.primaryColor)
@@ -3221,6 +3235,129 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                 let contextController = makeContextController(presentationData: self.presentationData, source: .reference(MediaPickerContextReferenceContentSource(controller: self, sourceView: view)), items: items, gesture: gesture)
                 self.presentInGlobalOverlay(contextController)
         }
+    }
+
+    private func isStaticStickerItem(_ item: TGMediaSelectableItem, editingContext: TGMediaEditingContext) -> Bool {
+        if item is TGCameraCapturedVideo {
+            return false
+        }
+        if let asset = item as? TGMediaAsset {
+            if asset.type == TGMediaAssetGifType || asset.type != TGMediaAssetPhotoType {
+                return false
+            }
+            if asset.subtypes.rawValue & TGMediaAssetSubtypePhotoLive.rawValue != 0 {
+                let livePhotoMode = editingContext.livePhotoMode(for: asset)?.uintValue ?? TGMediaLivePhotoModeOff.rawValue
+                if livePhotoMode != TGMediaLivePhotoModeOff.rawValue {
+                    return false
+                }
+            }
+        } else if let capturedPhoto = item as? TGCameraCapturedPhoto {
+            if capturedPhoto.existingImage.images != nil {
+                return false
+            }
+        } else if let image = item as? UIImage {
+            if image.images != nil {
+                return false
+            }
+        } else {
+            return false
+        }
+        if let editableItem = item as? TGMediaEditableItem, let adjustments = editingContext.adjustments(for: editableItem), adjustments.sendAsGif {
+            return false
+        }
+        return true
+    }
+
+    private func sendSelectedImageAsSticker(_ selectedItem: TGMediaSelectableItem) {
+        guard let editingContext = self.interaction?.editingState, self.sendAsSticker != nil, self.isStaticStickerItem(selectedItem, editingContext: editingContext) else {
+            self.presentSendAsStickerError()
+            return
+        }
+
+        self.sendAsStickerRequestDisposable?.dispose()
+        let requestDisposable = DisposableSet()
+        self.sendAsStickerRequestDisposable = requestDisposable
+
+        var completed = false
+        let finish: (UIImage?) -> Void = { [weak self] image in
+            guard !completed else {
+                return
+            }
+            completed = true
+            guard let self, let image, image.images == nil, let sendAsSticker = self.sendAsSticker else {
+                self?.presentSendAsStickerError()
+                return
+            }
+            self.dismiss(completion: {
+                sendAsSticker(image)
+            })
+        }
+
+        var fallbackStarted = false
+        let startFallback: () -> Void = { [weak requestDisposable] in
+            guard !fallbackStarted else {
+                return
+            }
+            fallbackStarted = true
+
+            if let capturedPhoto = selectedItem as? TGCameraCapturedPhoto {
+                finish(capturedPhoto.existingImage)
+                return
+            } else if let image = selectedItem as? UIImage {
+                finish(image)
+                return
+            }
+            guard let asset = selectedItem as? TGMediaAsset else {
+                finish(nil)
+                return
+            }
+
+            var producedImage = false
+            let disposable = TGMediaAssetImageSignals.image(for: asset, imageType: TGMediaAssetImageTypeFullSize, size: .zero)
+                .deliver(on: SQueue.main())
+                .start(next: { value in
+                    if let image = value as? UIImage {
+                        producedImage = true
+                        finish(image)
+                    }
+                }, error: { _ in
+                    finish(nil)
+                }, completed: {
+                    if !producedImage {
+                        finish(nil)
+                    }
+                })
+            requestDisposable?.add(ActionDisposable {
+                disposable?.dispose()
+            })
+        }
+
+        var producedEditedImage = false
+        guard let selectedItem = selectedItem as? TGMediaEditableItem, let editedSignal = editingContext.imageSignal(for: selectedItem, withUpdates: false) else {
+            startFallback()
+            return
+        }
+        let disposable = editedSignal
+            .deliver(on: SQueue.main())
+            .start(next: { value in
+                if let image = value as? UIImage {
+                    producedEditedImage = true
+                    finish(image)
+                }
+            }, error: { _ in
+                startFallback()
+            }, completed: {
+                if !producedEditedImage {
+                    startFallback()
+                }
+            })
+        requestDisposable.add(ActionDisposable {
+            disposable?.dispose()
+        })
+    }
+
+    private func presentSendAsStickerError() {
+        self.present(textAlertController(context: self.context, updatedPresentationData: self.updatedPresentationData, title: nil, text: self.presentationData.strings.Login_UnknownError, actions: [TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_OK, action: {})]), in: .window(.root))
     }
     
     fileprivate func defaultTransitionView() -> UIView? {
