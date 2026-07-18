@@ -265,20 +265,12 @@ public final class AyuGramFeatureManager {
                 && !settings.useScheduledMessages
         }
         AyuGramHooks.shouldSaveForBots = { [weak self] in self?.currentSettings.saveForBots ?? false }
-        AyuGramHooks.shouldUseMD3Switches = { [weak self] in self?.currentSettings.md3StyleSwitches ?? false }
         AyuGramHooks.shouldDisableCustomBackgrounds = { [weak self] in self?.currentSettings.disableCustomBackgrounds ?? false }
         AyuGramHooks.codeFontName = { [weak self] in self?.currentSettings.codeFontName ?? "" }
         AyuGramHooks.shouldShowMessageShot = { [weak self] in self?.currentSettings.messageShotFeature ?? false }
         AyuGramHooks.shouldShowChannelReactions = { [weak self] in self?.currentSettings.showChannelReactions ?? true }
         AyuGramHooks.shouldShowGroupReactions = { [weak self] in self?.currentSettings.showGroupReactions ?? true }
         AyuGramHooks.recentStickersLimit = { [weak self] in self?.currentSettings.recentStickersCount ?? 20 }
-
-        AyuGramHooks.contextMenuReactionsPanel = { [weak self] in self?.currentSettings.showReactionsPanelInContextMenu ?? 0 }
-        AyuGramHooks.contextMenuViewsPanel = { [weak self] in self?.currentSettings.showViewsPanelInContextMenu ?? 0 }
-        AyuGramHooks.contextMenuHide = { [weak self] in self?.currentSettings.showHideMessageInContextMenu ?? 1 }
-        AyuGramHooks.contextMenuUserMessages = { [weak self] in self?.currentSettings.showUserMessagesInContextMenu ?? 1 }
-        AyuGramHooks.contextMenuDetails = { [weak self] in self?.currentSettings.showMessageDetailsInContextMenu ?? 1 }
-        AyuGramHooks.contextMenuRepeat = { [weak self] in self?.currentSettings.showRepeatMessageInContextMenu ?? 1 }
 
         AyuGramHooks.shouldSuggestGhostForStories = { [weak self] accountPeerId in
             return self?.settings(accountPeerId: accountPeerId)?.suggestGhostForStories ?? false
@@ -290,8 +282,6 @@ public final class AyuGramFeatureManager {
             return self?.settings(accountPeerId: accountPeerId)?.improveLinkPreviews ?? false
         }
         AyuGramHooks.shouldHidePremiumStatuses = { [weak self] in self?.currentSettings.hidePremiumStatuses ?? false }
-        AyuGramHooks.avatarCornerRadius = { [weak self] in self?.currentSettings.avatarCorners ?? 50 }
-        AyuGramHooks.messageBubbleRadius = { [weak self] in self?.currentSettings.messageBubbleRadius ?? 16 }
         AyuGramHooks.shouldUseSingleCornerRadius = { [weak self] in self?.currentSettings.singleCornerRadius ?? false }
         AyuGramHooks.peerIdDisplayMode = { [weak self] accountPeerId in
             return self?.settings(accountPeerId: accountPeerId)?.showDialogId ?? 0

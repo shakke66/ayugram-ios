@@ -67,6 +67,26 @@ class ChatAppearanceSettingsContractTests(unittest.TestCase):
         self.assertIn("service.settingsSnapshot().grvmChatAppearanceSettings", policy)
         self.assertNotIn("primaryService()", policy)
 
+    def test_legacy_zero_argument_chat_appearance_wiring_is_retired(self) -> None:
+        manager = source(
+            "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
+        )
+        for name in (
+            "shouldUseMD3Switches",
+            "avatarCornerRadius",
+            "messageBubbleRadius",
+            "contextMenuReactionsPanel",
+            "contextMenuViewsPanel",
+            "contextMenuHide",
+            "contextMenuUserMessages",
+            "contextMenuDetails",
+            "contextMenuRepeat",
+        ):
+            with self.subTest(name=name):
+                self.assertNotIn(f"AyuGramHooks.{name} =", manager)
+
+        self.assertIn("installGRVMChatAppearanceHooks(registry: self.registry)", manager)
+
     def test_settings_controllers_use_account_scoped_api(self) -> None:
         for relative_path in [
             "submodules/AyuGramSettingsUI/Sources/AyuGramAppearanceController.swift",
