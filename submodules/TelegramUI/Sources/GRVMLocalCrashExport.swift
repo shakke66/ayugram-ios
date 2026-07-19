@@ -173,17 +173,20 @@ public final class GRVMLocalCrashExport {
             if copiedURLs.count >= maximumFileCount {
                 break
             }
-            let fileSize = candidate.fileSize
+            guard let revalidatedCandidate = self.safeCandidate(path: candidate.url.path) else {
+                continue
+            }
+            let fileSize = revalidatedCandidate.fileSize
             if fileSize > maximumTotalBytes - totalBytes {
                 continue
             }
 
             let destinationURL = stagingDirectory.appendingPathComponent(
-                "\(copiedURLs.count)-\(candidate.url.lastPathComponent)",
+                "\(copiedURLs.count)-\(revalidatedCandidate.url.lastPathComponent)",
                 isDirectory: false
             )
             do {
-                try FileManager.default.copyItem(at: candidate.url, to: destinationURL)
+                try FileManager.default.copyItem(at: revalidatedCandidate.url, to: destinationURL)
                 let copiedValues = try destinationURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
                 guard copiedValues.isRegularFile == true,
                       let copiedFileSize = copiedValues.fileSize,

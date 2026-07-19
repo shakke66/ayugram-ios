@@ -177,7 +177,7 @@ class CrashExportContractTests(unittest.TestCase):
         for fragment in (
             "FileManager.default.temporaryDirectory",
             r'appendingPathComponent("grvm-local-crash-\(UUID().uuidString)"',
-            "copyItem(at: candidate.url, to: destinationURL)",
+            "copyItem(at: revalidatedCandidate.url, to: destinationURL)",
             "let directoryURL: URL",
             "urls: copiedURLs",
             "fileCount: copiedURLs.count",
@@ -192,6 +192,26 @@ class CrashExportContractTests(unittest.TestCase):
             text,
             r"createDirectory\(\s*at: stagingDirectory,",
         )
+
+    def test_source_is_revalidated_immediately_before_copy(self) -> None:
+        text = source(EXPORT_PATH)
+        loop_start = text.find("for candidate in candidates {")
+        loop_end = text.find("if copiedURLs.isEmpty", loop_start)
+        self.assertGreaterEqual(loop_start, 0)
+        self.assertGreater(loop_end, loop_start)
+        copy_loop = text[loop_start:loop_end]
+
+        revalidate_index = copy_loop.find(
+            "self.safeCandidate(path: candidate.url.path)"
+        )
+        size_index = copy_loop.find("let fileSize = revalidatedCandidate.fileSize")
+        copy_index = copy_loop.find(
+            "copyItem(at: revalidatedCandidate.url, to: destinationURL)"
+        )
+        self.assertGreaterEqual(revalidate_index, 0)
+        self.assertGreater(size_index, revalidate_index)
+        self.assertGreater(copy_index, size_index)
+        self.assertNotIn("copyItem(at: candidate.url", copy_loop)
 
 
 class CrashLifecycleContractTests(unittest.TestCase):
@@ -283,13 +303,186 @@ class CrashLifecycleContractTests(unittest.TestCase):
             "completionWithItemsHandler",
             "popoverPresentationController?.sourceView",
             "popoverPresentationController?.sourceRect",
-            "self.grvmLocalCrashExport?.cleanup(bundle)",
+            "owner.finish()",
             "self.grvmCrashExportInFlight = false",
             "Nothing is uploaded automatically.",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, text)
         self.assertIn("unexpectedly", text.lower())
+
+    def test_pending_unexpected_session_retries_after_inactive_staging(self) -> None:
+        state = {
+            "pending": 1001,
+            "offer_handled": False,
+            "in_flight": True,
+            "active": False,
+        }
+
+        # A staged bundle that finishes while inactive is discarded, but the
+        # unexpected-session fact remains pending for the next active event.
+        state["in_flight"] = False
+        self.assertEqual(state["pending"], 1001)
+        self.assertFalse(state["offer_handled"])
+        state["active"] = True
+        if state["pending"] is not None and not state["offer_handled"]:
+            state["in_flight"] = True
+        self.assertTrue(state["in_flight"])
+
+        text = source(APP_PATH)
+        self.assertIn(
+            "private var grvmCrashPendingUnexpectedAccountPeerId: PeerId?",
+            text,
+        )
+        foreground_start = text.find(
+            "private func updateGRVMLocalCrashForegroundSession()"
+        )
+        foreground_end = text.find(
+            "private func markGRVMLocalCrashSessionClean()", foreground_start
+        )
+        foreground = text[foreground_start:foreground_end]
+        pending_index = foreground.find(
+            "self.grvmCrashPendingUnexpectedAccountPeerId = accountPeerId"
+        )
+        stage_index = foreground.find(
+            "self.stageGRVMLocalCrashExport(accountPeerId: accountPeerId, automatic: true)"
+        )
+        self.assertGreaterEqual(pending_index, 0)
+        self.assertGreater(stage_index, pending_index)
+        self.assertNotIn("self.grvmCrashOfferHandled = true", foreground)
+        self.assertIn(
+            "self.grvmCrashPendingUnexpectedAccountPeerId == accountPeerId",
+            foreground,
+        )
+
+        primary_start = text.find("private func updateGRVMLocalCrashPrimaryAccount(")
+        primary_end = text.find(
+            "private func updateGRVMLocalCrashForegroundSession()", primary_start
+        )
+        primary = text[primary_start:primary_end]
+        self.assertGreaterEqual(
+            primary.count("self.clearGRVMLocalCrashPendingUnexpectedSession()"),
+            2,
+        )
+        self.assertIn(
+            "self.clearGRVMLocalCrashPendingUnexpectedSession()",
+            primary[primary.find("if settings.crashReportingEnabled"):],
+        )
+
+    def test_offer_handled_is_set_only_for_presented_offer_or_final_no_logs(self) -> None:
+        text = source(APP_PATH)
+        assignments = [
+            match.start()
+            for match in re.finditer(
+                r"self\.grvmCrashOfferHandled\s*=\s*true", text
+            )
+        ]
+        self.assertEqual(len(assignments), 2)
+
+        no_logs_start = text.find("private func finishGRVMLocalCrashExportWithoutLogs(")
+        no_logs_end = text.find("private func", no_logs_start + 1)
+        presented_start = text.find("private func markGRVMLocalCrashOfferPresented(")
+        presented_end = text.find("private func", presented_start + 1)
+        self.assertGreaterEqual(no_logs_start, 0)
+        self.assertGreater(no_logs_end, no_logs_start)
+        self.assertGreaterEqual(presented_start, 0)
+        self.assertGreater(presented_end, presented_start)
+        self.assertIn(
+            "self.grvmCrashOfferHandled = true",
+            text[no_logs_start:no_logs_end],
+        )
+        self.assertIn(
+            "self.grvmCrashOfferHandled = true",
+            text[presented_start:presented_end],
+        )
+
+    def test_terminal_presentation_owner_cleans_once_and_tokens_stale_callbacks(self) -> None:
+        current_request = "new"
+        in_flight = True
+
+        def finish(request_id: str) -> None:
+            nonlocal current_request, in_flight
+            if current_request != request_id:
+                return
+            current_request = ""
+            in_flight = False
+
+        finish("old")
+        self.assertEqual(current_request, "new")
+        self.assertTrue(in_flight)
+        finish("new")
+        self.assertEqual(current_request, "")
+        self.assertFalse(in_flight)
+
+        text = source(APP_PATH)
+        owner_start = text.find(
+            "private final class GRVMLocalCrashExportPresentationOwner"
+        )
+        owner_end = text.find("@objc(AppDelegate)", owner_start)
+        self.assertGreaterEqual(owner_start, 0)
+        self.assertGreater(owner_end, owner_start)
+        owner = text[owner_start:owner_end]
+        for fragment in (
+            "UIAdaptivePresentationControllerDelegate",
+            "let id: UUID",
+            "let bundle: GRVMLocalCrashExportBundle",
+            "private var isFinished = false",
+            "guard !self.isFinished else",
+            "self.isFinished = true",
+            "self.exporter.cleanup(self.bundle)",
+            "self.finished(self.id)",
+            "func presentationControllerDidDismiss",
+            "self.finish()",
+            "deinit",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, owner)
+
+        self.assertIn("private var grvmCrashExportRequestId: UUID?", text)
+        finish_start = text.find("private func finishGRVMLocalCrashExportRequest(")
+        finish_end = text.find("private func", finish_start + 1)
+        finish_window = text[finish_start:finish_end]
+        self.assertIn(
+            "guard self.grvmCrashExportRequestId == requestId else",
+            finish_window,
+        )
+        self.assertLess(
+            finish_window.find("guard self.grvmCrashExportRequestId == requestId"),
+            finish_window.find("self.grvmCrashExportInFlight = false"),
+        )
+
+        verify_start = text.find("private func verifyGRVMLocalCrashPresentation(")
+        verify_end = text.find("private func", verify_start + 1)
+        verify = text[verify_start:verify_end]
+        self.assertIn("[weak controller]", verify)
+        self.assertIn("controller.presentingViewController != nil", verify)
+        self.assertIn("owner.finish()", verify)
+
+        offer_start = text.find("private func presentGRVMLocalCrashOffer(")
+        offer_end = text.find("private func presentGRVMLocalCrashShare", offer_start)
+        offer = text[offer_start:offer_end]
+        self.assertIn("owner: GRVMLocalCrashExportPresentationOwner", offer)
+        self.assertIn("owner.finish()", offer)
+        self.assertIn("verifyGRVMLocalCrashPresentation", offer)
+
+        share_start = text.find("private func presentGRVMLocalCrashShare(")
+        share_end = text.find("private func", share_start + 1)
+        share = text[share_start:share_end]
+        self.assertIn("owner: GRVMLocalCrashExportPresentationOwner", share)
+        self.assertIn("controller.completionWithItemsHandler", share)
+        self.assertIn("owner.finish()", share)
+        self.assertIn("controller.presentationController?.delegate = owner", share)
+        self.assertIn("verifyGRVMLocalCrashPresentation", share)
+
+    def test_ipad_popover_anchor_stays_inside_the_source_view(self) -> None:
+        text = source(APP_PATH)
+        share_start = text.find("private func presentGRVMLocalCrashShare(")
+        share_end = text.find("private func", share_start + 1)
+        self.assertGreaterEqual(share_start, 0)
+        self.assertGreater(share_end, share_start)
+        share = text[share_start:share_end]
+        self.assertIn("y: sourceView.bounds.maxY - 1.0", share)
+        self.assertNotIn("y: sourceView.bounds.maxY,", share)
 
     def test_automatic_offer_rechecks_account_and_setting_before_share(self) -> None:
         text = source(APP_PATH)
@@ -307,7 +500,9 @@ class CrashLifecycleContractTests(unittest.TestCase):
             "self.grvmCrashPrimaryAccountPeerId == accountPeerId", action_index
         )
         enabled_index = offer.find("self.grvmCrashReportingEnabled", action_index)
-        share_index = offer.find("self.presentGRVMLocalCrashShare(bundle)", action_index)
+        share_index = offer.find(
+            "self.presentGRVMLocalCrashShare(owner: owner)", action_index
+        )
         self.assertGreaterEqual(action_index, 0)
         self.assertGreater(account_index, action_index)
         self.assertGreater(enabled_index, action_index)
@@ -343,7 +538,7 @@ class CrashLifecycleContractTests(unittest.TestCase):
         self.assertGreater(stage_end, stage_start)
         stage = text[stage_start:stage_end]
         self.assertIn(
-            "recheckManualGRVMLocalCrashExport(accountPeerId: accountPeerId, bundle: bundle)",
+            "recheckManualGRVMLocalCrashExport(accountPeerId: accountPeerId, owner: owner)",
             stage,
         )
 
@@ -356,7 +551,7 @@ class CrashLifecycleContractTests(unittest.TestCase):
             "grvmSettings(accountId: accountPeerId, accountManager: accountManager)"
         )
         enabled_index = recheck.find("settings.crashReportingEnabled")
-        share_index = recheck.find("presentGRVMLocalCrashShare(bundle)")
+        share_index = recheck.find("presentGRVMLocalCrashShare(owner: owner)")
         self.assertGreaterEqual(settings_index, 0)
         self.assertGreater(enabled_index, settings_index)
         self.assertGreater(share_index, enabled_index)
