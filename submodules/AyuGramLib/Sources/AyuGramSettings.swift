@@ -74,6 +74,7 @@ public struct AyuGramSettings: Codable, Equatable {
     public var removeMessageBubbleTail: Bool
     public var disableCustomBackgrounds: Bool
     public var codeFontName: String
+    public var adaptiveCoverColor: Bool
     public var hideFolderCounters: Bool
     public var hideAllChatsFolder: Bool
     public var showGhostToggleInDrawer: Bool
@@ -227,6 +228,7 @@ public struct AyuGramSettings: Codable, Equatable {
             removeMessageBubbleTail: false,
             disableCustomBackgrounds: false,
             codeFontName: "",
+            adaptiveCoverColor: true,
             hideFolderCounters: false,
             hideAllChatsFolder: false,
             showGhostToggleInDrawer: true,
@@ -342,6 +344,7 @@ public struct AyuGramSettings: Codable, Equatable {
         removeMessageBubbleTail: Bool,
         disableCustomBackgrounds: Bool,
         codeFontName: String,
+        adaptiveCoverColor: Bool,
         hideFolderCounters: Bool,
         hideAllChatsFolder: Bool,
         showGhostToggleInDrawer: Bool,
@@ -454,6 +457,7 @@ public struct AyuGramSettings: Codable, Equatable {
         self.removeMessageBubbleTail = removeMessageBubbleTail
         self.disableCustomBackgrounds = disableCustomBackgrounds
         self.codeFontName = codeFontName
+        self.adaptiveCoverColor = adaptiveCoverColor
         self.hideFolderCounters = hideFolderCounters
         self.hideAllChatsFolder = hideAllChatsFolder
         self.showGhostToggleInDrawer = showGhostToggleInDrawer
@@ -576,6 +580,7 @@ public struct AyuGramSettings: Codable, Equatable {
         self.removeMessageBubbleTail = try container.decodeIfPresent(Bool.self, forKey: "removeMessageBubbleTail") ?? false
         self.disableCustomBackgrounds = try container.decodeIfPresent(Bool.self, forKey: "disableCustomBackgrounds") ?? false
         self.codeFontName = try container.decodeIfPresent(String.self, forKey: "codeFontName") ?? ""
+        self.adaptiveCoverColor = try container.decodeIfPresent(Bool.self, forKey: "adaptiveCoverColor") ?? true
         self.hideFolderCounters = try container.decodeIfPresent(Bool.self, forKey: "hideFolderCounters") ?? false
         self.hideAllChatsFolder = try container.decodeIfPresent(Bool.self, forKey: "hideAllChatsFolder") ?? false
         self.showGhostToggleInDrawer = try container.decodeIfPresent(Bool.self, forKey: "showGhostToggleInDrawer") ?? true
@@ -715,6 +720,7 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.removeMessageBubbleTail, forKey: "removeMessageBubbleTail")
         try container.encode(self.disableCustomBackgrounds, forKey: "disableCustomBackgrounds")
         try container.encode(self.codeFontName, forKey: "codeFontName")
+        try container.encode(self.adaptiveCoverColor, forKey: "adaptiveCoverColor")
         try container.encode(self.hideFolderCounters, forKey: "hideFolderCounters")
         try container.encode(self.hideAllChatsFolder, forKey: "hideAllChatsFolder")
         try container.encode(self.showGhostToggleInDrawer, forKey: "showGhostToggleInDrawer")

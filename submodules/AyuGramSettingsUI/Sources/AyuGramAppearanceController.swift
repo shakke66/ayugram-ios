@@ -96,6 +96,7 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
     case messageBubbleRadius(PresentationTheme, String, Int32)
     case singleCornerRadius(PresentationTheme, Bool)
     case hidePremiumStatuses(PresentationTheme, Bool)
+    case adaptiveCoverColor(PresentationTheme, Bool)
     case foldersHeader(PresentationTheme)
     case hideFolderCounters(PresentationTheme, Bool)
     case hideAllChats(PresentationTheme, Bool)
@@ -105,7 +106,7 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
     var section: ItemListSectionId {
         switch self {
         case .appIconHeader, .appIcon, .hideNotificationBadge, .hideNotificationCounters: return AyuGramAppearanceSection.appIcon.rawValue
-        case .appearanceHeader, .md3Switches, .removeBubbleTail, .disableCustomBg, .codeFont, .avatarCorners, .messageBubbleRadius, .singleCornerRadius, .hidePremiumStatuses: return AyuGramAppearanceSection.appearance.rawValue
+        case .appearanceHeader, .md3Switches, .removeBubbleTail, .disableCustomBg, .codeFont, .avatarCorners, .messageBubbleRadius, .singleCornerRadius, .hidePremiumStatuses, .adaptiveCoverColor: return AyuGramAppearanceSection.appearance.rawValue
         case .foldersHeader, .hideFolderCounters, .hideAllChats: return AyuGramAppearanceSection.folders.rawValue
         case .drawerHeader, .ghostInDrawer: return AyuGramAppearanceSection.drawer.rawValue
         }
@@ -126,11 +127,12 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
         case .messageBubbleRadius: return 10
         case .singleCornerRadius: return 11
         case .hidePremiumStatuses: return 12
-        case .foldersHeader: return 13
-        case .hideFolderCounters: return 14
-        case .hideAllChats: return 15
-        case .drawerHeader: return 16
-        case .ghostInDrawer: return 17
+        case .adaptiveCoverColor: return 13
+        case .foldersHeader: return 14
+        case .hideFolderCounters: return 15
+        case .hideAllChats: return 16
+        case .drawerHeader: return 17
+        case .ghostInDrawer: return 18
         }
     }
 
@@ -150,6 +152,7 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
         case let (.messageBubbleRadius(_, _, lv), .messageBubbleRadius(_, _, rv)): return lv == rv
         case let (.singleCornerRadius(_, lv), .singleCornerRadius(_, rv)): return lv == rv
         case let (.hidePremiumStatuses(_, lv), .hidePremiumStatuses(_, rv)): return lv == rv
+        case let (.adaptiveCoverColor(_, lv), .adaptiveCoverColor(_, rv)): return lv == rv
         default: return lhs.stableId == rhs.stableId
         }
     }
@@ -201,6 +204,8 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
             return ItemListSwitchItem(presentationData: presentationData, title: "Single Corner Radius (forums)", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.singleCornerRadius, v) })
         case let .hidePremiumStatuses(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Hide Premium Statuses", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hidePremiumStatuses, v) })
+        case let .adaptiveCoverColor(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: "Adaptive Saved Music Color", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.adaptiveCoverColor, v) })
         case .foldersHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "Folders", sectionId: self.section)
         case let .hideFolderCounters(_, value):
@@ -230,6 +235,7 @@ private func ayuGramAppearanceEntries(settings: AyuGramSettings, presentationDat
     entries.append(.messageBubbleRadius(presentationData.theme, "\(settings.messageBubbleRadius)", settings.messageBubbleRadius))
     entries.append(.singleCornerRadius(presentationData.theme, settings.singleCornerRadius))
     entries.append(.hidePremiumStatuses(presentationData.theme, settings.hidePremiumStatuses))
+    entries.append(.adaptiveCoverColor(presentationData.theme, settings.adaptiveCoverColor))
     entries.append(.foldersHeader(presentationData.theme))
     entries.append(.hideFolderCounters(presentationData.theme, settings.hideFolderCounters))
     entries.append(.hideAllChats(presentationData.theme, settings.hideAllChatsFolder))

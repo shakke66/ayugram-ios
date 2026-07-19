@@ -83,6 +83,12 @@ protocol PeerInfoHeaderTextFieldNode: ASDisplayNode {
 private let TitleNodeStateRegular = 0
 private let TitleNodeStateExpanded = 1
 
+private struct GRVMSavedMusicColorRequest: Equatable {
+    let accountPeerId: PeerId
+    let fileId: MediaId
+    let resourceId: String
+}
+
 final class PeerInfoHeaderNode: ASDisplayNode {
     private var context: AccountContext
     private let isPremiumDisabled: Bool
@@ -164,6 +170,10 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     
     var musicBackground: UIView?
     var music: ComponentView<Empty>?
+    private let savedMusicColorDisposable = MetaDisposable()
+    private var savedMusicColorRequest: GRVMSavedMusicColorRequest?
+    private var savedMusicColor: UIColor?
+    private var currentSavedMusicFile: TelegramMediaFile?
     
     var performButtonAction: ((PeerInfoHeaderButtonKey, PeerInfoHeaderButtonNode?, ContextGesture?) -> Void)?
     var requestAvatarExpansion: ((Bool, [AvatarGalleryEntry], AvatarGalleryEntry?, (ASDisplayNode, CGRect, () -> (UIView?, UIView?))?) -> Void)?
@@ -383,6 +393,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     
     deinit {
         self.emojiStatusPackDisposable.dispose()
+        self.savedMusicColorDisposable.dispose()
     }
     
     override func didLoad() {
@@ -582,6 +593,52 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 currentSavedMusic = savedMusicState.files.first
             } else if let cachedUserData = screenData.cachedData as? CachedUserData {
                 currentSavedMusic = cachedUserData.savedMusic
+            }
+        }
+        self.currentSavedMusicFile = currentSavedMusic
+        let shouldUseAdaptiveSavedMusicCover = AyuGramHooks.shouldUseAdaptiveSavedMusicCover?(self.context.account.peerId) ?? true
+        let savedMusicColorRequest: GRVMSavedMusicColorRequest?
+        if shouldUseAdaptiveSavedMusicCover, let currentSavedMusic, let representation = GRVMSavedMusicColor.largestArtworkRepresentation(for: currentSavedMusic) {
+            savedMusicColorRequest = GRVMSavedMusicColorRequest(
+                accountPeerId: self.context.account.peerId,
+                fileId: currentSavedMusic.fileId,
+                resourceId: representation.resource.id.stringRepresentation
+            )
+        } else {
+            savedMusicColorRequest = nil
+        }
+        if self.savedMusicColorRequest != savedMusicColorRequest {
+            self.savedMusicColorDisposable.set(nil)
+            self.savedMusicColorRequest = savedMusicColorRequest
+            self.savedMusicColor = nil
+            if let request = savedMusicColorRequest, let currentSavedMusic {
+                self.savedMusicColorDisposable.set(GRVMSavedMusicColor.color(
+                    mediaBox: self.context.account.postbox.mediaBox,
+                    file: currentSavedMusic,
+                    completion: { [weak self] receivedResourceId, color in
+                        guard let self else {
+                            return
+                        }
+                        guard self.savedMusicColorRequest == request else {
+                            return
+                        }
+                        guard receivedResourceId == request.resourceId else {
+                            return
+                        }
+                        guard let currentFile = self.currentSavedMusicFile, currentFile.fileId == request.fileId, let currentRepresentation = GRVMSavedMusicColor.largestArtworkRepresentation(for: currentFile) else {
+                            return
+                        }
+                        let currentResourceId = currentRepresentation.resource.id.stringRepresentation
+                        guard currentResourceId == receivedResourceId else {
+                            return
+                        }
+                        guard let color else {
+                            return
+                        }
+                        self.savedMusicColor = color
+                        self.requestUpdateLayout?(false)
+                    }
+                ))
             }
         }
         let musicHeight: CGFloat = hasBackground || self.isAvatarExpanded ? 24.0 : 16.0
@@ -2643,35 +2700,52 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             
             let musicString = NSMutableAttributedString()
             let isOverlay = self.isAvatarExpanded || hasBackground
-            musicString.append(NSAttributedString(string: track ?? "", font: Font.semibold(12.0), textColor: isOverlay ? .white : presentationData.theme.list.itemAccentColor))
-            musicString.append(NSAttributedString(string: " - \(artist)", font: Font.regular(12.0), textColor: isOverlay ? UIColor.white.withAlphaComponent(0.7) : presentationData.theme.list.itemSecondaryTextColor))
+            let adaptiveSavedMusicColor = self.savedMusicColor
+            let musicTitleColor: UIColor = adaptiveSavedMusicColor != nil ? .white : (isOverlay ? .white : presentationData.theme.list.itemAccentColor)
+            let musicSubtitleColor: UIColor = adaptiveSavedMusicColor != nil ? UIColor.white.withAlphaComponent(0.7) : (isOverlay ? UIColor.white.withAlphaComponent(0.7) : presentationData.theme.list.itemSecondaryTextColor)
+            let musicArrowColor: UIColor = adaptiveSavedMusicColor != nil ? .white : (isOverlay ? .white : presentationData.theme.list.itemSecondaryTextColor)
+            musicString.append(NSAttributedString(string: track ?? "", font: Font.semibold(12.0), textColor: musicTitleColor))
+            musicString.append(NSAttributedString(string: " - \(artist)", font: Font.regular(12.0), textColor: musicSubtitleColor))
+
+            let musicContent: AnyComponent<Empty> = AnyComponent(
+                HStack([
+                    AnyComponentWithIdentity(
+                        id: "icon",
+                        component: AnyComponent(BundleIconComponent(name: "Media Editor/SmallAudio", tintColor: musicTitleColor))
+                    ),
+                    AnyComponentWithIdentity(
+                        id: "label",
+                        component: AnyComponent(MarqueeComponent(attributedText: musicString, maxWidth: backgroundFrame.width - 96.0))
+                    ),
+                    AnyComponentWithIdentity(
+                        id: "arrow",
+                        component: AnyComponent(BundleIconComponent(name: "Item List/InlineTextRightArrow", tintColor: musicArrowColor))
+                    )
+                ], spacing: 4.0)
+            )
+            let musicAction: () -> Void = { [weak self] in
+                self?.displaySavedMusic?()
+            }
+            let musicButtonComponent: PlainButtonComponent
+            if let adaptiveSavedMusicColor {
+                musicButtonComponent = PlainButtonComponent(
+                    content: musicContent,
+                    background: AnyComponent(Rectangle(color: adaptiveSavedMusicColor)),
+                    minSize: CGSize(width: backgroundFrame.width, height: musicHeight),
+                    action: musicAction
+                )
+            } else {
+                musicButtonComponent = PlainButtonComponent(
+                    content: musicContent,
+                    background: nil,
+                    minSize: CGSize(width: backgroundFrame.width, height: musicHeight),
+                    action: musicAction
+                )
+            }
             
             let musicSize = music.update(
                 transition: .immediate,
-                component: AnyComponent(
-                    PlainButtonComponent(
-                        content: AnyComponent(
-                            HStack([
-                                AnyComponentWithIdentity(
-                                    id: "icon",
-                                    component: AnyComponent(BundleIconComponent(name: "Media Editor/SmallAudio", tintColor: isOverlay ? .white : presentationData.theme.list.itemAccentColor))
-                                ),
-                                AnyComponentWithIdentity(
-                                    id: "label",
-                                    component: AnyComponent(MarqueeComponent(attributedText: musicString, maxWidth: backgroundFrame.width - 96.0))
-                                ),
-                                AnyComponentWithIdentity(
-                                    id: "arrow",
-                                    component: AnyComponent(BundleIconComponent(name: "Item List/InlineTextRightArrow", tintColor: isOverlay ? .white : presentationData.theme.list.itemSecondaryTextColor))
-                                )
-                            ], spacing: 4.0)
-                        ),
-                        minSize: CGSize(width: backgroundFrame.width, height: musicHeight),
-                        action: { [weak self] in
-                            self?.displaySavedMusic?()
-                        }
-                    )
-                ),
+                component: AnyComponent(musicButtonComponent),
                 environment: {},
                 containerSize: CGSize(width: backgroundFrame.width, height: musicHeight)
             )

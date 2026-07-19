@@ -45,6 +45,7 @@ public final class AyuGramHooks {
 
     // MARK: - Appearance
     public static var chatAppearanceSettings: ((PeerId) -> GRVMChatAppearanceSettings)?
+    public static var shouldUseAdaptiveSavedMusicCover: ((PeerId) -> Bool)?
     public static private(set) var primaryChatAppearance = GRVMChatAppearanceSettings.default
 
     public static func chatAppearance(accountPeerId: PeerId) -> GRVMChatAppearanceSettings {

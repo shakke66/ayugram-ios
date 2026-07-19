@@ -231,6 +231,9 @@ public final class AyuGramFeatureManager {
         }
 
         // MARK: - Appearance
+        AyuGramHooks.shouldUseAdaptiveSavedMusicCover = { [weak self] accountPeerId in
+            return self?.settings(accountPeerId: accountPeerId)?.adaptiveCoverColor ?? true
+        }
         AyuGramHooks.shouldHideNotificationBadge = { [weak self] in
             return self?.currentSettings.hideNotificationBadge ?? false
         }
