@@ -218,6 +218,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptivePresentationControllerDelegate {
     let id: UUID
     let bundle: GRVMLocalCrashExportBundle
+    let automaticAccountPeerId: PeerId?
 
     private let exporter: GRVMLocalCrashExport
     private let finished: (UUID) -> Void
@@ -226,11 +227,13 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
     init(
         id: UUID,
         bundle: GRVMLocalCrashExportBundle,
+        automaticAccountPeerId: PeerId?,
         exporter: GRVMLocalCrashExport,
         finished: @escaping (UUID) -> Void
     ) {
         self.id = id
         self.bundle = bundle
+        self.automaticAccountPeerId = automaticAccountPeerId
         self.exporter = exporter
         self.finished = finished
     }
@@ -242,6 +245,16 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
         self.isFinished = true
         self.exporter.cleanup(self.bundle)
         self.finished(self.id)
+    }
+
+    func dismissAndFinish(_ controller: UIViewController) {
+        guard !self.isFinished else {
+            return
+        }
+        if controller.presentingViewController != nil {
+            controller.dismiss(animated: false, completion: nil)
+        }
+        self.finish()
     }
 
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
@@ -286,6 +299,11 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
     private var grvmCrashPendingUnexpectedAccountPeerId: PeerId?
     private var grvmCrashExportInFlight = false
     private var grvmCrashExportRequestId: UUID?
+    private weak var grvmCrashAutomaticPresentationController: UIViewController?
+    private weak var grvmCrashAutomaticPresentationOwner: GRVMLocalCrashExportPresentationOwner?
+    private var grvmCrashAutomaticPresentationRequestId: UUID?
+    private var grvmCrashPresentationRetryAvailable = true
+    private var grvmCrashPresentationRetryCycleId = UUID()
     private let grvmCrashAccountDisposable = MetaDisposable()
     private let grvmCrashSettingsDisposable = MetaDisposable()
     
@@ -1693,6 +1711,7 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
             SharedDisplayLinkDriver.shared.updateForegroundState(self.isActiveValue)
             
             self.runForegroundTasks()
+            self.resetGRVMLocalCrashPresentationRetryAllowance()
             self.updateGRVMLocalCrashForegroundSession()
         }
         
@@ -2090,6 +2109,7 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
             self.markGRVMLocalCrashSessionClean()
         }
         guard let accountPeerId else {
+            self.cancelGRVMLocalCrashAutomaticPresentation()
             self.grvmCrashSettingsDisposable.set(nil)
             self.grvmCrashPrimaryAccountPeerId = nil
             self.grvmCrashReportingEnabled = false
@@ -2101,6 +2121,8 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
             return
         }
 
+        self.cancelGRVMLocalCrashAutomaticPresentation()
+        self.resetGRVMLocalCrashPresentationRetryAllowance()
         if self.grvmCrashPrimaryAccountPeerId != nil {
             self.markGRVMLocalCrashSessionClean()
         }
@@ -2116,10 +2138,15 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
             guard let self, self.grvmCrashPrimaryAccountPeerId == accountPeerId else {
                 return
             }
+            let wasCrashReportingEnabled = self.grvmCrashReportingEnabled
             self.grvmCrashReportingEnabled = settings.crashReportingEnabled
             if settings.crashReportingEnabled {
+                if !wasCrashReportingEnabled {
+                    self.resetGRVMLocalCrashPresentationRetryAllowance()
+                }
                 self.updateGRVMLocalCrashForegroundSession()
             } else {
+                self.cancelGRVMLocalCrashAutomaticPresentation()
                 self.markGRVMLocalCrashSessionClean()
                 self.clearGRVMLocalCrashPendingUnexpectedSession()
                 self.grvmLocalCrashExport?.removeSessionMarker()
@@ -2154,6 +2181,53 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
 
     private func clearGRVMLocalCrashPendingUnexpectedSession() {
         self.grvmCrashPendingUnexpectedAccountPeerId = nil
+    }
+
+    private func resetGRVMLocalCrashPresentationRetryAllowance() {
+        self.grvmCrashPresentationRetryCycleId = UUID()
+        self.grvmCrashPresentationRetryAvailable = true
+    }
+
+    private func trackGRVMLocalCrashAutomaticPresentation(
+        controller: UIViewController,
+        owner: GRVMLocalCrashExportPresentationOwner
+    ) {
+        guard owner.automaticAccountPeerId != nil,
+              self.grvmCrashExportRequestId == owner.id else {
+            return
+        }
+        self.grvmCrashAutomaticPresentationController = controller
+        self.grvmCrashAutomaticPresentationOwner = owner
+        self.grvmCrashAutomaticPresentationRequestId = owner.id
+    }
+
+    private func clearGRVMLocalCrashAutomaticPresentation(requestId: UUID) {
+        guard self.grvmCrashAutomaticPresentationRequestId == requestId else {
+            return
+        }
+        self.grvmCrashAutomaticPresentationController = nil
+        self.grvmCrashAutomaticPresentationOwner = nil
+        self.grvmCrashAutomaticPresentationRequestId = nil
+    }
+
+    private func cancelGRVMLocalCrashAutomaticPresentation() {
+        let controller = self.grvmCrashAutomaticPresentationController
+        let owner = self.grvmCrashAutomaticPresentationOwner
+        let requestId = self.grvmCrashAutomaticPresentationRequestId
+        if let requestId {
+            self.clearGRVMLocalCrashAutomaticPresentation(requestId: requestId)
+        }
+        guard let owner else {
+            if let requestId {
+                self.finishGRVMLocalCrashExportRequest(requestId: requestId)
+            }
+            return
+        }
+        if let controller {
+            owner.dismissAndFinish(controller)
+        } else {
+            owner.finish()
+        }
     }
 
     private func markGRVMLocalCrashSessionClean() {
@@ -2213,6 +2287,7 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
             let owner = GRVMLocalCrashExportPresentationOwner(
                 id: requestId,
                 bundle: bundle,
+                automaticAccountPeerId: automatic ? accountPeerId : nil,
                 exporter: exporter,
                 finished: { [weak self] requestId in
                     self?.finishGRVMLocalCrashExportRequest(requestId: requestId)
@@ -2288,7 +2363,7 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
         accountPeerId: PeerId
     ) {
         guard let mainWindow = self.mainWindow else {
-            owner.finish()
+            self.handleGRVMLocalCrashPhysicalPresentationFailure(owner: owner)
             return
         }
         let bundle = owner.bundle
@@ -2321,15 +2396,15 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
             }
         }))
         mainWindow.presentNative(controller)
-        self.verifyGRVMLocalCrashPresentation(controller, owner: owner, presented: { [weak self] in
-            guard let self,
-                  self.markGRVMLocalCrashOfferPresented(
-                    accountPeerId: accountPeerId,
-                    requestId: owner.id
-                  ) else {
-                owner.finish()
-                return
+        self.trackGRVMLocalCrashAutomaticPresentation(controller: controller, owner: owner)
+        self.verifyGRVMLocalCrashPresentation(controller, owner: owner, presented: { [weak self] -> Bool in
+            guard let self else {
+                return false
             }
+            return self.markGRVMLocalCrashOfferPresented(
+                accountPeerId: accountPeerId,
+                requestId: owner.id
+            )
         })
     }
 
@@ -2354,7 +2429,7 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
         owner: GRVMLocalCrashExportPresentationOwner
     ) {
         guard let mainWindow = self.mainWindow else {
-            owner.finish()
+            self.handleGRVMLocalCrashPhysicalPresentationFailure(owner: owner)
             return
         }
         let controller = UIActivityViewController(
@@ -2375,22 +2450,68 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
             height: 1.0
         )
         mainWindow.presentNative(controller)
-        self.verifyGRVMLocalCrashPresentation(controller, owner: owner, presented: {
+        self.trackGRVMLocalCrashAutomaticPresentation(controller: controller, owner: owner)
+        self.verifyGRVMLocalCrashPresentation(controller, owner: owner, presented: { () -> Bool in
             controller.presentationController?.delegate = owner
+            return true
         })
     }
 
     private func verifyGRVMLocalCrashPresentation(
         _ controller: UIViewController,
         owner: GRVMLocalCrashExportPresentationOwner,
-        presented: @escaping () -> Void
+        presented: @escaping () -> Bool
     ) {
-        Queue.mainQueue().async { [weak controller] in
-            guard let controller, controller.presentingViewController != nil else {
+        Queue.mainQueue().async { [weak self, weak controller] in
+            guard let self else {
                 owner.finish()
                 return
             }
-            presented()
+            guard let controller, controller.presentingViewController != nil else {
+                self.handleGRVMLocalCrashPhysicalPresentationFailure(owner: owner)
+                return
+            }
+            guard presented() else {
+                owner.dismissAndFinish(controller)
+                return
+            }
+        }
+    }
+
+    private func handleGRVMLocalCrashPhysicalPresentationFailure(
+        owner: GRVMLocalCrashExportPresentationOwner
+    ) {
+        var retryAccountPeerId: PeerId?
+        var retryCycleId: UUID?
+        if let accountPeerId = owner.automaticAccountPeerId,
+           self.grvmCrashExportRequestId == owner.id,
+           self.isActiveValue,
+           self.grvmCrashPrimaryAccountPeerId == accountPeerId,
+           self.grvmCrashReportingEnabled,
+           self.grvmCrashPendingUnexpectedAccountPeerId == accountPeerId,
+           !self.grvmCrashOfferHandled,
+           self.grvmCrashPresentationRetryAvailable {
+            self.grvmCrashPresentationRetryAvailable = false
+            retryAccountPeerId = accountPeerId
+            retryCycleId = self.grvmCrashPresentationRetryCycleId
+        }
+        owner.finish()
+
+        guard let retryAccountPeerId, let retryCycleId else {
+            return
+        }
+        Queue.mainQueue().after(0.5) { [weak self] in
+            guard let self,
+                  self.grvmCrashPresentationRetryCycleId == retryCycleId,
+                  self.isActiveValue,
+                  self.grvmCrashPrimaryAccountPeerId == retryAccountPeerId,
+                  self.grvmCrashReportingEnabled,
+                  self.grvmCrashPendingUnexpectedAccountPeerId == retryAccountPeerId,
+                  !self.grvmCrashOfferHandled,
+                  !self.grvmCrashExportInFlight else {
+                return
+            }
+            self.updateGRVMLocalCrashForegroundSession()
         }
     }
 
@@ -2398,6 +2519,7 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
         guard self.grvmCrashExportRequestId == requestId else {
             return
         }
+        self.clearGRVMLocalCrashAutomaticPresentation(requestId: requestId)
         self.grvmCrashExportRequestId = nil
         self.grvmCrashExportInFlight = false
     }
@@ -2516,6 +2638,7 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
         self.isInForegroundPromise.set(true)
         self.isActiveValue = true
         self.isActivePromise.set(true)
+        self.resetGRVMLocalCrashPresentationRetryAllowance()
         self.updateGRVMLocalCrashForegroundSession()
 
         self.resetBadge()

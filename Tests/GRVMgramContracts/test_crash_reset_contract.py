@@ -454,7 +454,7 @@ class CrashLifecycleContractTests(unittest.TestCase):
         verify_start = text.find("private func verifyGRVMLocalCrashPresentation(")
         verify_end = text.find("private func", verify_start + 1)
         verify = text[verify_start:verify_end]
-        self.assertIn("[weak controller]", verify)
+        self.assertIn("weak controller", verify)
         self.assertIn("controller.presentingViewController != nil", verify)
         self.assertIn("owner.finish()", verify)
 
@@ -473,6 +473,154 @@ class CrashLifecycleContractTests(unittest.TestCase):
         self.assertIn("owner.finish()", share)
         self.assertIn("controller.presentationController?.delegate = owner", share)
         self.assertIn("verifyGRVMLocalCrashPresentation", share)
+
+    def test_invalidated_physical_offer_dismisses_before_cleanup(self) -> None:
+        text = source(APP_PATH)
+        owner_start = text.find(
+            "private final class GRVMLocalCrashExportPresentationOwner"
+        )
+        owner_end = text.find("@objc(AppDelegate)", owner_start)
+        owner = text[owner_start:owner_end]
+        dismiss_start = owner.find("func dismissAndFinish(_ controller: UIViewController)")
+        dismiss_end = owner.find("\n    }", dismiss_start)
+        self.assertGreaterEqual(dismiss_start, 0)
+        self.assertGreater(dismiss_end, dismiss_start)
+        dismiss = owner[dismiss_start:dismiss_end]
+        dismiss_call = dismiss.find("controller.dismiss(animated: false")
+        finish_call = dismiss.find("self.finish()")
+        self.assertGreaterEqual(dismiss_call, 0)
+        self.assertGreater(finish_call, dismiss_call)
+
+        verify_start = text.find("private func verifyGRVMLocalCrashPresentation(")
+        verify_end = text.find("private func", verify_start + 1)
+        verify = text[verify_start:verify_end]
+        self.assertIn("presented: @escaping () -> Bool", verify)
+        physical_index = verify.find("controller.presentingViewController != nil")
+        invalid_index = verify.find("guard presented() else")
+        dismiss_index = verify.find("owner.dismissAndFinish(controller)", invalid_index)
+        self.assertGreaterEqual(physical_index, 0)
+        self.assertGreater(invalid_index, physical_index)
+        self.assertGreater(dismiss_index, invalid_index)
+
+        offer_start = text.find("private func presentGRVMLocalCrashOffer(")
+        offer_end = text.find("private func markGRVMLocalCrashOfferPresented", offer_start)
+        offer = text[offer_start:offer_end]
+        self.assertIn("return self.markGRVMLocalCrashOfferPresented(", offer)
+        self.assertNotIn("owner.finish()\n                return", offer[offer.find("presented:"):])
+
+    def test_confirmed_automatic_ui_is_cancelled_only_by_account_or_setting(self) -> None:
+        confirmed = {"visible": True, "offer_handled": True}
+        confirmed_after_resign = dict(confirmed)
+        self.assertTrue(confirmed_after_resign["visible"])
+        self.assertTrue(confirmed_after_resign["offer_handled"])
+        confirmed["visible"] = False
+        self.assertFalse(confirmed["visible"])
+
+        text = source(APP_PATH)
+        for fragment in (
+            "let automaticAccountPeerId: PeerId?",
+            "private weak var grvmCrashAutomaticPresentationController: UIViewController?",
+            "private weak var grvmCrashAutomaticPresentationOwner: GRVMLocalCrashExportPresentationOwner?",
+            "private var grvmCrashAutomaticPresentationRequestId: UUID?",
+        ):
+            self.assertIn(fragment, text)
+
+        primary_start = text.find("private func updateGRVMLocalCrashPrimaryAccount(")
+        primary_end = text.find(
+            "private func updateGRVMLocalCrashForegroundSession()", primary_start
+        )
+        primary = text[primary_start:primary_end]
+        self.assertGreaterEqual(
+            primary.count("self.cancelGRVMLocalCrashAutomaticPresentation()"),
+            2,
+        )
+
+        cancel_start = text.find("private func cancelGRVMLocalCrashAutomaticPresentation(")
+        cancel_end = text.find("private func", cancel_start + 1)
+        cancel = text[cancel_start:cancel_end]
+        self.assertIn("owner.dismissAndFinish(controller)", cancel)
+        self.assertIn("owner.finish()", cancel)
+
+        offer_start = text.find("private func presentGRVMLocalCrashOffer(")
+        offer_end = text.find("private func markGRVMLocalCrashOfferPresented", offer_start)
+        share_start = text.find("private func presentGRVMLocalCrashShare(")
+        share_end = text.find("private func verifyGRVMLocalCrashPresentation", share_start)
+        self.assertIn(
+            "self.trackGRVMLocalCrashAutomaticPresentation(controller: controller, owner: owner)",
+            text[offer_start:offer_end],
+        )
+        self.assertIn(
+            "self.trackGRVMLocalCrashAutomaticPresentation(controller: controller, owner: owner)",
+            text[share_start:share_end],
+        )
+
+        resign_start = text.find("func applicationWillResignActive(")
+        resign_end = text.find("func applicationDidEnterBackground", resign_start)
+        resign = text[resign_start:resign_end]
+        self.assertNotIn("cancelGRVMLocalCrashAutomaticPresentation", resign)
+        self.assertNotIn("grvmCrashOfferHandled = false", resign)
+
+    def test_native_presentation_conflict_has_one_deferred_retry_per_cycle(self) -> None:
+        retry_available = True
+        scheduled = 0
+        if retry_available:
+            retry_available = False
+            scheduled += 1
+        if retry_available:
+            scheduled += 1
+        self.assertEqual(scheduled, 1)
+        retry_available = True
+        self.assertTrue(retry_available)
+
+        text = source(APP_PATH)
+        self.assertIn("private var grvmCrashPresentationRetryAvailable = true", text)
+        self.assertIn("private var grvmCrashPresentationRetryCycleId = UUID()", text)
+
+        failure_start = text.find(
+            "private func handleGRVMLocalCrashPhysicalPresentationFailure("
+        )
+        failure_end = text.find("private func", failure_start + 1)
+        self.assertGreaterEqual(failure_start, 0)
+        self.assertGreater(failure_end, failure_start)
+        failure = text[failure_start:failure_end]
+        guard_index = failure.find("self.grvmCrashPresentationRetryAvailable")
+        consume_index = failure.find("self.grvmCrashPresentationRetryAvailable = false")
+        finish_index = failure.find("owner.finish()")
+        defer_index = failure.find("Queue.mainQueue().after(0.5)")
+        cycle_index = failure.find(
+            "self.grvmCrashPresentationRetryCycleId == retryCycleId",
+            defer_index,
+        )
+        self.assertGreaterEqual(guard_index, 0)
+        self.assertGreater(consume_index, guard_index)
+        self.assertGreater(finish_index, consume_index)
+        self.assertGreater(defer_index, finish_index)
+        self.assertGreater(cycle_index, defer_index)
+        self.assertNotIn("Queue.mainQueue().async", failure)
+
+        verify_start = text.find("private func verifyGRVMLocalCrashPresentation(")
+        verify_end = text.find("private func", verify_start + 1)
+        verify = text[verify_start:verify_end]
+        physical_index = verify.find("controller.presentingViewController != nil")
+        retry_index = verify.find(
+            "self.handleGRVMLocalCrashPhysicalPresentationFailure(owner: owner)"
+        )
+        self.assertGreaterEqual(physical_index, 0)
+        self.assertGreater(retry_index, physical_index)
+
+        active_start = text.find("func applicationDidBecomeActive(")
+        active_end = text.find("func applicationWillTerminate", active_start)
+        active = text[active_start:active_end]
+        self.assertIn("self.resetGRVMLocalCrashPresentationRetryAllowance()", active)
+
+        primary_start = text.find("private func updateGRVMLocalCrashPrimaryAccount(")
+        primary_end = text.find(
+            "private func updateGRVMLocalCrashForegroundSession()", primary_start
+        )
+        self.assertIn(
+            "self.resetGRVMLocalCrashPresentationRetryAllowance()",
+            text[primary_start:primary_end],
+        )
 
     def test_ipad_popover_anchor_stays_inside_the_source_view(self) -> None:
         text = source(APP_PATH)
