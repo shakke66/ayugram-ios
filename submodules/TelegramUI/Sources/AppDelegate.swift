@@ -240,6 +240,14 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     private let grvmActiveAccountsDisposable = MetaDisposable()
     private let grvmAppIconDisposable = MetaDisposable()
     private var grvmScreenCapturePrivacyController: GRVMScreenCapturePrivacyController?
+    private var grvmLocalCrashExport: GRVMLocalCrashExport?
+    private var grvmCrashPrimaryAccountPeerId: PeerId?
+    private var grvmCrashReportingEnabled = false
+    private var grvmCrashForegroundMarkerActive = false
+    private var grvmCrashOfferHandled = false
+    private var grvmCrashExportInFlight = false
+    private let grvmCrashAccountDisposable = MetaDisposable()
+    private let grvmCrashSettingsDisposable = MetaDisposable()
     
     private var contextValue: AuthorizedApplicationContext?
     private let context = Promise<AuthorizedApplicationContext?>()
@@ -747,6 +755,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         let logsPath = rootPath + "/logs/app-logs"
         let _ = try? FileManager.default.createDirectory(atPath: logsPath, withIntermediateDirectories: true, attributes: nil)
         Logger.setSharedLogger(Logger(rootPath: rootPath, basePath: logsPath))
+        self.grvmLocalCrashExport = GRVMLocalCrashExport(rootPath: rootPath)
+        AyuGramFeatures.exportLocalLogs = { [weak self] accountPeerId in
+            Queue.mainQueue().async {
+                self?.requestManualGRVMLocalCrashExport(accountPeerId: accountPeerId)
+            }
+        }
 
         setManagedAudioSessionLogger({ s in
             Logger.shared.log("ManagedAudioSession", s)
@@ -1151,6 +1165,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 |> distinctUntilChanged
                 |> deliverOnMainQueue
             )
+            self.bindGRVMLocalCrashLifecycle(sharedContext: sharedContext, accountManager: accountManager)
 
             let grvmActiveAccounts = sharedContext.activeAccountContexts
             |> mapToSignal { primary, accounts, _ -> Signal<(AccountContext?, [(AccountRecordId, AccountContext, Int32)], [(PeerId, AyuGramSettings)]), NoError> in
@@ -1638,6 +1653,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             SharedDisplayLinkDriver.shared.updateForegroundState(self.isActiveValue)
             
             self.runForegroundTasks()
+            self.updateGRVMLocalCrashForegroundSession()
         }
         
         
@@ -1649,14 +1665,6 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         self.maybeCheckForUpdates()
 
-        #if canImport(AppCenter)
-        if !buildConfig.isAppStoreBuild, let appCenterId = buildConfig.appCenterId, !appCenterId.isEmpty {
-            AppCenter.start(withAppSecret: buildConfig.appCenterId, services: [
-                Crashes.self
-            ])
-        }
-        #endif
-        
         if #available(iOS 13.0, *) {
             let cleanupTaskId = "\(baseAppBundleId).cleanup"
             
@@ -2015,6 +2023,251 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }))
     }
 
+    private func bindGRVMLocalCrashLifecycle(
+        sharedContext: SharedAccountContextImpl,
+        accountManager: AccountManager<TelegramAccountManagerTypes>
+    ) {
+        self.grvmCrashAccountDisposable.set((sharedContext.activeAccountContexts
+        |> map { primary, _, _ -> PeerId? in
+            return primary?.account.peerId
+        }
+        |> distinctUntilChanged(isEqual: { lhs, rhs in
+            return lhs == rhs
+        })
+        |> deliverOnMainQueue).start(next: { [weak self] accountPeerId in
+            self?.updateGRVMLocalCrashPrimaryAccount(
+                accountPeerId: accountPeerId,
+                accountManager: accountManager
+            )
+        }))
+    }
+
+    private func updateGRVMLocalCrashPrimaryAccount(
+        accountPeerId: PeerId?,
+        accountManager: AccountManager<TelegramAccountManagerTypes>
+    ) {
+        if accountPeerId == nil, self.grvmCrashPrimaryAccountPeerId != nil {
+            self.markGRVMLocalCrashSessionClean()
+        }
+        guard let accountPeerId else {
+            self.grvmCrashSettingsDisposable.set(nil)
+            self.grvmCrashPrimaryAccountPeerId = nil
+            self.grvmCrashReportingEnabled = false
+            self.grvmLocalCrashExport?.removeSessionMarker()
+            return
+        }
+        guard self.grvmCrashPrimaryAccountPeerId != accountPeerId else {
+            return
+        }
+
+        if self.grvmCrashPrimaryAccountPeerId != nil {
+            self.markGRVMLocalCrashSessionClean()
+        }
+        self.grvmCrashSettingsDisposable.set(nil)
+        self.grvmCrashPrimaryAccountPeerId = accountPeerId
+        self.grvmCrashReportingEnabled = false
+        self.grvmCrashSettingsDisposable.set((grvmSettings(
+            accountId: accountPeerId,
+            accountManager: accountManager
+        )
+        |> deliverOnMainQueue).start(next: { [weak self] settings in
+            guard let self, self.grvmCrashPrimaryAccountPeerId == accountPeerId else {
+                return
+            }
+            self.grvmCrashReportingEnabled = settings.crashReportingEnabled
+            if settings.crashReportingEnabled {
+                self.updateGRVMLocalCrashForegroundSession()
+            } else {
+                self.markGRVMLocalCrashSessionClean()
+                self.grvmLocalCrashExport?.removeSessionMarker()
+            }
+        }))
+    }
+
+    private func updateGRVMLocalCrashForegroundSession() {
+        guard self.isActiveValue,
+              self.grvmCrashReportingEnabled,
+              !self.grvmCrashForegroundMarkerActive,
+              let accountPeerId = self.grvmCrashPrimaryAccountPeerId,
+              let exporter = self.grvmLocalCrashExport else {
+            return
+        }
+
+        let endedUnexpectedly = exporter.previousSessionEndedUnexpectedly(accountPeerId: accountPeerId)
+        exporter.beginForegroundSession(accountPeerId: accountPeerId)
+        self.grvmCrashForegroundMarkerActive = true
+
+        guard endedUnexpectedly else {
+            return
+        }
+        guard !self.grvmCrashOfferHandled else {
+            return
+        }
+        self.grvmCrashOfferHandled = true
+        self.stageGRVMLocalCrashExport(accountPeerId: accountPeerId, automatic: true)
+    }
+
+    private func markGRVMLocalCrashSessionClean() {
+        guard self.grvmCrashForegroundMarkerActive else {
+            return
+        }
+        self.grvmLocalCrashExport?.markSessionClean()
+        self.grvmCrashForegroundMarkerActive = false
+    }
+
+    private func requestManualGRVMLocalCrashExport(accountPeerId: PeerId) {
+        guard !self.grvmCrashExportInFlight, let accountManager = self.accountManager else {
+            return
+        }
+        let _ = (grvmSettings(accountId: accountPeerId, accountManager: accountManager)
+        |> take(1)
+        |> deliverOnMainQueue).start(next: { [weak self] settings in
+            guard let self,
+                  settings.crashReportingEnabled,
+                  !self.grvmCrashExportInFlight else {
+                return
+            }
+            self.stageGRVMLocalCrashExport(accountPeerId: accountPeerId, automatic: false)
+        })
+    }
+
+    private func stageGRVMLocalCrashExport(accountPeerId: PeerId, automatic: Bool) {
+        guard !self.grvmCrashExportInFlight, let exporter = self.grvmLocalCrashExport else {
+            return
+        }
+        self.grvmCrashExportInFlight = true
+        let _ = (exporter.stageExport()
+        |> deliverOnMainQueue).start(next: { [weak self] bundle in
+            guard let bundle else {
+                self?.grvmCrashExportInFlight = false
+                return
+            }
+            guard let self else {
+                exporter.cleanup(bundle)
+                return
+            }
+            guard self.isActiveValue else {
+                self.finishGRVMLocalCrashExport(bundle)
+                return
+            }
+
+            if automatic {
+                guard self.grvmCrashPrimaryAccountPeerId == accountPeerId,
+                      self.grvmCrashReportingEnabled else {
+                    self.finishGRVMLocalCrashExport(bundle)
+                    return
+                }
+                self.presentGRVMLocalCrashOffer(bundle, accountPeerId: accountPeerId)
+            } else {
+                self.recheckManualGRVMLocalCrashExport(accountPeerId: accountPeerId, bundle: bundle)
+            }
+        })
+    }
+
+    private func recheckManualGRVMLocalCrashExport(
+        accountPeerId: PeerId,
+        bundle: GRVMLocalCrashExportBundle
+    ) {
+        guard let accountManager = self.accountManager else {
+            self.finishGRVMLocalCrashExport(bundle)
+            return
+        }
+        let exporter = self.grvmLocalCrashExport
+        let _ = (grvmSettings(accountId: accountPeerId, accountManager: accountManager)
+        |> take(1)
+        |> deliverOnMainQueue).start(next: { [weak self] settings in
+            guard let self else {
+                exporter?.cleanup(bundle)
+                return
+            }
+            guard self.grvmCrashExportInFlight,
+                  self.isActiveValue,
+                  settings.crashReportingEnabled else {
+                self.finishGRVMLocalCrashExport(bundle)
+                return
+            }
+            self.presentGRVMLocalCrashShare(bundle)
+        })
+    }
+
+    private func presentGRVMLocalCrashOffer(
+        _ bundle: GRVMLocalCrashExportBundle,
+        accountPeerId: PeerId
+    ) {
+        guard let mainWindow = self.mainWindow else {
+            self.finishGRVMLocalCrashExport(bundle)
+            return
+        }
+        let formattedSize = ByteCountFormatter.string(
+            fromByteCount: bundle.totalBytes,
+            countStyle: .file
+        )
+        let message = "The previous foreground session ended unexpectedly. \(bundle.fileCount) local log file(s) (\(formattedSize)) can be exported. Nothing is uploaded automatically."
+        let controller = UIAlertController(
+            title: "Export Local Logs",
+            message: message,
+            preferredStyle: .alert
+        )
+        let exporter = self.grvmLocalCrashExport
+        controller.addAction(UIAlertAction(title: "Not Now", style: .cancel, handler: { [weak self] _ in
+            guard let self else {
+                exporter?.cleanup(bundle)
+                return
+            }
+            self.finishGRVMLocalCrashExport(bundle)
+        }))
+        controller.addAction(UIAlertAction(title: "Export Local Logs", style: .default, handler: { [weak self] _ in
+            Queue.mainQueue().async {
+                guard let self else {
+                    exporter?.cleanup(bundle)
+                    return
+                }
+                guard self.grvmCrashPrimaryAccountPeerId == accountPeerId,
+                      self.grvmCrashReportingEnabled else {
+                    self.finishGRVMLocalCrashExport(bundle)
+                    return
+                }
+                self.presentGRVMLocalCrashShare(bundle)
+            }
+        }))
+        mainWindow.presentNative(controller)
+    }
+
+    private func presentGRVMLocalCrashShare(_ bundle: GRVMLocalCrashExportBundle) {
+        guard let mainWindow = self.mainWindow else {
+            self.finishGRVMLocalCrashExport(bundle)
+            return
+        }
+        let controller = UIActivityViewController(
+            activityItems: bundle.urls,
+            applicationActivities: nil
+        )
+        let exporter = self.grvmLocalCrashExport
+        controller.completionWithItemsHandler = { [weak self] _, _, _, _ in
+            Queue.mainQueue().async {
+                guard let self else {
+                    exporter?.cleanup(bundle)
+                    return
+                }
+                self.finishGRVMLocalCrashExport(bundle)
+            }
+        }
+        let sourceView = mainWindow.hostView.containerView
+        controller.popoverPresentationController?.sourceView = sourceView
+        controller.popoverPresentationController?.sourceRect = CGRect(
+            x: sourceView.bounds.midX,
+            y: sourceView.bounds.maxY,
+            width: 1.0,
+            height: 1.0
+        )
+        mainWindow.presentNative(controller)
+    }
+
+    private func finishGRVMLocalCrashExport(_ bundle: GRVMLocalCrashExportBundle) {
+        self.grvmLocalCrashExport?.cleanup(bundle)
+        self.grvmCrashExportInFlight = false
+    }
+
     func applicationWillResignActive(_ application: UIApplication) {
         self.grvmScreenCapturePrivacyController?.refreshCaptureState()
         self.isActiveValue = false
@@ -2044,6 +2297,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
+        self.markGRVMLocalCrashSessionClean()
         let _ = (self.sharedContextPromise.get()
         |> take(1)
         |> deliverOnMainQueue).start(next: { sharedApplicationContext in
@@ -2128,6 +2382,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         self.isInForegroundPromise.set(true)
         self.isActiveValue = true
         self.isActivePromise.set(true)
+        self.updateGRVMLocalCrashForegroundSession()
 
         self.resetBadge()
         
@@ -2153,6 +2408,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func applicationWillTerminate(_ application: UIApplication) {
+        self.markGRVMLocalCrashSessionClean()
         self.grvmScreenCapturePrivacyController?.dispose()
         self.grvmScreenCapturePrivacyController = nil
         Logger.shared.log("App \(self.episodeId)", "terminating")

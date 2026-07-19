@@ -9,6 +9,8 @@ import TelegramUIPreferences
 import ItemListUI
 import PresentationDataUtils
 import AccountContext
+import AlertUI
+import AyuGramFeatures
 import AyuGramLib
 
 private final class AyuGramOtherArguments {
@@ -46,6 +48,7 @@ private enum AyuGramOtherEntry: ItemListNodeEntry {
     case streamerModeInfo(PresentationTheme)
     case crashReporting(PresentationTheme, Bool)
     case crashReportingInfo(PresentationTheme)
+    case exportLocalLogs(PresentationTheme)
     case associateLinks(PresentationTheme, Bool)
     case resetSettings(PresentationTheme)
 
@@ -53,7 +56,7 @@ private enum AyuGramOtherEntry: ItemListNodeEntry {
         switch self {
         case .supportHeader, .boosty, .ton, .bitcoin, .ethereum, .solana, .tron, .supportInfo:
             return AyuGramOtherSection.support.rawValue
-        case .otherHeader, .streamerMode, .streamerModeInfo, .crashReporting, .crashReportingInfo, .associateLinks, .resetSettings:
+        case .otherHeader, .streamerMode, .streamerModeInfo, .crashReporting, .crashReportingInfo, .exportLocalLogs, .associateLinks, .resetSettings:
             return AyuGramOtherSection.other.rawValue
         }
     }
@@ -73,8 +76,9 @@ private enum AyuGramOtherEntry: ItemListNodeEntry {
         case .streamerModeInfo: return 10
         case .crashReporting: return 11
         case .crashReportingInfo: return 12
-        case .associateLinks: return 13
-        case .resetSettings: return 14
+        case .exportLocalLogs: return 13
+        case .associateLinks: return 14
+        case .resetSettings: return 15
         }
     }
 
@@ -117,7 +121,11 @@ private enum AyuGramOtherEntry: ItemListNodeEntry {
         case let .crashReporting(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Crash Reporting", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.crashReportingEnabled, v) })
         case .crashReportingInfo:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("When enabled, you will be offered to send a crash report after an unexpected app termination."), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain("When enabled, you will be offered to export local logs after an unexpected app termination. Nothing is uploaded automatically."), sectionId: self.section)
+        case .exportLocalLogs:
+            return ItemListActionItem(presentationData: presentationData, title: "Export Local Logs", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                AyuGramFeatures.exportLocalLogs?(arguments.context.account.peerId)
+            })
         case let .associateLinks(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: "Associate Links with AyuGram", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.associateLinks, v) })
         case .resetSettings:
@@ -141,12 +149,16 @@ private func ayuGramOtherEntries(settings: AyuGramSettings, presentationData: Pr
     entries.append(.streamerModeInfo(presentationData.theme))
     entries.append(.crashReporting(presentationData.theme, settings.crashReportingEnabled))
     entries.append(.crashReportingInfo(presentationData.theme))
+    if settings.crashReportingEnabled {
+        entries.append(.exportLocalLogs(presentationData.theme))
+    }
     entries.append(.associateLinks(presentationData.theme, settings.associateLinks))
     entries.append(.resetSettings(presentationData.theme))
     return entries
 }
 
 public func ayuGramOtherController(context: AccountContext) -> ViewController {
+    var presentControllerImpl: ((ViewController, ViewControllerPresentationArguments?) -> Void)?
     let arguments = AyuGramOtherArguments(
         context: context,
         updateBool: { keyPath, value in
@@ -159,9 +171,31 @@ public func ayuGramOtherController(context: AccountContext) -> ViewController {
             UIPasteboard.general.string = text
         },
         resetSettings: {
-            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { _ in
-                return .defaultSettings
-            }.startStandalone()
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            presentControllerImpl?(textAlertController(
+                context: context,
+                title: "Reset Settings",
+                text: "Reset settings for this account?",
+                actions: [
+                    TextAlertAction(
+                        type: .genericAction,
+                        title: presentationData.strings.Common_Cancel,
+                        action: {}
+                    ),
+                    TextAlertAction(
+                        type: .destructiveAction,
+                        title: "Reset",
+                        action: {
+                            let _ = updateGRVMSettings(
+                                accountId: context.account.peerId,
+                                accountManager: context.sharedContext.accountManager
+                            ) { _ in
+                                return AyuGramSettings.defaultSettings
+                            }.startStandalone()
+                        }
+                    )
+                ]
+            ), nil)
         }
     )
 
@@ -174,5 +208,9 @@ public func ayuGramOtherController(context: AccountContext) -> ViewController {
         )
     }
 
-    return ItemListController(context: context, state: signal)
+    let controller = ItemListController(context: context, state: signal)
+    presentControllerImpl = { [weak controller] child, arguments in
+        controller?.present(child, in: .window(.root), with: arguments)
+    }
+    return controller
 }
