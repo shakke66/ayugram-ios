@@ -12,6 +12,31 @@ private struct GRVMCoordinatorSettingsState {
     }
 }
 
+private struct GRVMConsumableMediaPreparation {
+    let message: Message
+    let key: GRVMMessageKey
+    let resources: [GRVMMediaResourceReference]
+    let plannedMedia: [GRVMArchivedMedia]
+    let requiredPrimaryIds: [String]
+    let alreadyPrepared: Bool
+}
+
+private struct GRVMConsumableMediaRestoreContext {
+    let key: GRVMMessageKey
+    let attribute: GRVMPreservedConsumableMediaAttribute
+}
+
+private func grvmMediaResources(_ message: Message) -> [GRVMMediaResourceReference] {
+    return grvmMediaResources(message.media)
+}
+
+private func grvmPositiveFileSize(_ path: String) -> Int64 {
+    guard let value = (try? FileManager.default.attributesOfItem(atPath: path)[.size]) as? NSNumber else {
+        return 0
+    }
+    return value.int64Value
+}
+
 private func grvmEntitiesData(_ message: Message) -> Data {
     guard let attribute = message.attributes.first(where: { $0 is TextEntitiesMessageAttribute }) else {
         return Data()
@@ -437,6 +462,282 @@ public final class GRVMMessageArchiveCoordinator {
             messageId: message.id.id,
             threadId: message.threadId ?? 0
         )
+    }
+
+    public func prepareConsumableMedia(_ message: Message) -> Signal<Bool, NoError> {
+        guard self.settingsSnapshot().saveDeletedMessages else {
+            return .single(false)
+        }
+
+        return self.postbox.transaction { transaction -> Bool in
+            guard let currentMessage = transaction.getMessage(message.id),
+                  currentMessage.stableId == message.stableId else {
+                return false
+            }
+            if currentMessage.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) {
+                return true
+            }
+            _ = currentMessage.media
+            _ = grvmMediaResources(currentMessage)
+            return false
+        }
+        |> mapToSignal { [weak self] markerPresent -> Signal<Bool, NoError> in
+            guard let self else {
+                return .single(false)
+            }
+            if markerPresent {
+                return Signal<Bool, NoError>.single(markerPresent)
+            }
+
+            return self.postbox.transaction { transaction -> GRVMConsumableMediaPreparation? in
+                guard let freshMessage = transaction.getMessage(message.id),
+                      freshMessage.stableId == message.stableId else {
+                    return nil
+                }
+                let key = self.messageKey(freshMessage)
+                if freshMessage.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) {
+                    return GRVMConsumableMediaPreparation(
+                        message: freshMessage,
+                        key: key,
+                        resources: [],
+                        plannedMedia: [],
+                        requiredPrimaryIds: [],
+                        alreadyPrepared: true
+                    )
+                }
+
+                var selectedResourceSet = Set<MediaResourceId>()
+                var preservedMedia: [Media] = []
+                for media in freshMessage.media {
+                    if let image = media as? TelegramMediaImage {
+                        guard let representation = largestImageRepresentation(image.representations) else {
+                            return nil
+                        }
+                        selectedResourceSet.insert(representation.resource.id)
+                        preservedMedia.append(image)
+                    } else if let file = media as? TelegramMediaFile {
+                        selectedResourceSet.insert(file.resource.id)
+                        preservedMedia.append(file)
+                    } else {
+                        return nil
+                    }
+                }
+                guard !selectedResourceSet.isEmpty, preservedMedia.count == freshMessage.media.count else {
+                    return nil
+                }
+
+                let requiredResources = grvmMediaResources(freshMessage).filter {
+                    selectedResourceSet.contains($0.id)
+                }
+                let requiredPrimaryIds = requiredResources.map { $0.id.stringRepresentation }.sorted()
+                guard Set(requiredPrimaryIds) == Set(selectedResourceSet.map(\.stringRepresentation)),
+                      requiredResources.count == requiredPrimaryIds.count else {
+                    return nil
+                }
+                for resource in requiredResources {
+                    guard let path = self.mediaBox.completedResourcePath(id: resource.id) else {
+                        return nil
+                    }
+                    let fileSize = grvmPositiveFileSize(path)
+                    guard fileSize > 0 else {
+                        return nil
+                    }
+                }
+                let plannedMedia = requiredResources.map {
+                    self.mediaStore.plannedRecord(accountId: self.accountRecordId.int64, resource: $0)
+                }
+                return GRVMConsumableMediaPreparation(
+                    message: freshMessage,
+                    key: key,
+                    resources: requiredResources,
+                    plannedMedia: plannedMedia,
+                    requiredPrimaryIds: requiredPrimaryIds,
+                    alreadyPrepared: false
+                )
+            }
+            |> mapToSignal { preparation -> Signal<Bool, NoError> in
+                guard let preparation else {
+                    return .single(false)
+                }
+                if preparation.alreadyPrepared {
+                    return Signal<Bool, NoError>.single(preparation.alreadyPrepared)
+                }
+                let requiredPrimaryIds = preparation.requiredPrimaryIds
+                guard let reservation = try? self.store.reserveConsumableMedia(
+                    key: preparation.key,
+                    media: preparation.plannedMedia
+                ) else {
+                    return .single(false)
+                }
+                let recordsById = Dictionary(uniqueKeysWithValues: reservation.media.map { ($0.resourceId, $0) })
+                let archiveSignals: [Signal<GRVMArchivedMedia, NoError>] = preparation.resources.compactMap { resource in
+                    guard let record = recordsById[resource.id.stringRepresentation] else {
+                        return nil
+                    }
+                    return self.mediaStore.archive(record, resource: resource, mediaBox: self.mediaBox)
+                }
+                guard archiveSignals.count == preparation.resources.count, !archiveSignals.isEmpty else {
+                    let orphanedMedia = (try? self.store.rollbackConsumableMediaReservation(
+                        key: preparation.key,
+                        insertedResourceIds: reservation.insertedResourceIds
+                    )) ?? []
+                    var invalidOrphanedMedia = false
+                    for record in orphanedMedia {
+                        if record.accountId != self.accountRecordId.int64 || record.relativePath.isEmpty {
+                            invalidOrphanedMedia = true
+                            break
+                        }
+                    }
+                    guard !invalidOrphanedMedia else {
+                        return .single(false)
+                    }
+                    _ = self.mediaStore.removeArchivedFiles(orphanedMedia)
+                    return .single(false)
+                }
+
+                return combineLatest(archiveSignals)
+                |> mapToSignal { terminalRecords -> Signal<Bool, NoError> in
+                    do {
+                        for record in terminalRecords {
+                            try self.store.updateMedia(record)
+                        }
+                    } catch {
+                        let orphanedMedia = (try? self.store.rollbackConsumableMediaReservation(
+                            key: preparation.key,
+                            insertedResourceIds: reservation.insertedResourceIds
+                        )) ?? []
+                        _ = self.mediaStore.removeArchivedFiles(orphanedMedia)
+                        return .single(false)
+                    }
+
+                    let terminalRecordsComplete = terminalRecords.allSatisfy {
+                        $0.copyState == .complete && $0.byteCount > 0
+                    }
+                    let terminalResourceIds = terminalRecords.map(\.resourceId).sorted()
+                    let terminalIdsMatch = Set(requiredPrimaryIds) == Set(terminalResourceIds)
+                    guard terminalRecordsComplete else {
+                        let orphanedMedia = (try? self.store.rollbackConsumableMediaReservation(
+                            key: preparation.key,
+                            insertedResourceIds: reservation.insertedResourceIds
+                        )) ?? []
+                        _ = self.mediaStore.removeArchivedFiles(orphanedMedia)
+                        return .single(false)
+                    }
+                    guard terminalIdsMatch else {
+                        let orphanedMedia = (try? self.store.rollbackConsumableMediaReservation(
+                            key: preparation.key,
+                            insertedResourceIds: reservation.insertedResourceIds
+                        )) ?? []
+                        _ = self.mediaStore.removeArchivedFiles(orphanedMedia)
+                        return .single(false)
+                    }
+
+                    return self.postbox.transaction { transaction -> Bool in
+                        guard let freshMessage = transaction.getMessage(message.id),
+                              freshMessage.stableId == message.stableId else {
+                            return false
+                        }
+                        if freshMessage.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) {
+                            return true
+                        }
+                        var attributes = freshMessage.attributes
+                        attributes.removeAll(where: { $0 is GRVMPreservedConsumableMediaAttribute })
+                        attributes.append(GRVMPreservedConsumableMediaAttribute(
+                            resourceIds: terminalResourceIds,
+                            media: preparation.message.media,
+                            preparedAt: Int32(Date().timeIntervalSince1970)
+                        ))
+                        transaction.updateMessage(freshMessage.id, update: { currentMessage in
+                            var storeForwardInfo: StoreMessageForwardInfo?
+                            if let forwardInfo = currentMessage.forwardInfo {
+                                storeForwardInfo = StoreMessageForwardInfo(authorId: forwardInfo.author?.id, sourceId: forwardInfo.source?.id, sourceMessageId: forwardInfo.sourceMessageId, date: forwardInfo.date, authorSignature: forwardInfo.authorSignature, psaType: forwardInfo.psaType, flags: forwardInfo.flags)
+                            }
+                            return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
+                        })
+                        return true
+                    }
+                    |> map { attached -> Bool in
+                        if !attached {
+                            let orphanedMedia = (try? self.store.rollbackConsumableMediaReservation(
+                                key: preparation.key,
+                                insertedResourceIds: reservation.insertedResourceIds
+                            )) ?? []
+                            _ = self.mediaStore.removeArchivedFiles(orphanedMedia)
+                        }
+                        return attached
+                    }
+                }
+            }
+        }
+    }
+
+    public func restoreArchivedMedia(for message: Message) -> Signal<Bool, NoError> {
+        guard let records = try? self.store.consumableMedia(key: self.messageKey(message)),
+              !records.isEmpty else {
+            return .single(false)
+        }
+        return self.postbox.transaction { transaction -> GRVMConsumableMediaRestoreContext? in
+            guard let currentMessage = transaction.getMessage(message.id),
+                  currentMessage.stableId == message.stableId,
+                  let attribute = currentMessage.attributes.first(where: {
+                      $0 is GRVMPreservedConsumableMediaAttribute
+                  }) as? GRVMPreservedConsumableMediaAttribute else {
+                return nil
+            }
+            return GRVMConsumableMediaRestoreContext(
+                key: self.messageKey(currentMessage),
+                attribute: attribute
+            )
+        }
+        |> mapToSignal { [weak self] context -> Signal<Bool, NoError> in
+            guard let self, let context else {
+                return .single(false)
+            }
+            guard context.key.accountId == self.accountRecordId.int64 else {
+                return .single(false)
+            }
+            let attribute = context.attribute
+            guard records.allSatisfy({ $0.copyState == .complete && $0.byteCount > 0 }),
+                  Set(attribute.resourceIds) == Set(records.map(\.resourceId)) else {
+                return .single(false)
+            }
+            let restoreSignals = records.map { record in
+                self.mediaStore.restore(record, to: self.mediaBox)
+            }
+            return combineLatest(restoreSignals)
+            |> mapToSignal { restored -> Signal<Bool, NoError> in
+                guard restored.allSatisfy({ $0 }) else {
+                    return .single(false)
+                }
+                for resourceId in attribute.resourceIds {
+                    guard let path = self.mediaBox.completedResourcePath(id: MediaResourceId(resourceId)) else {
+                        return .single(false)
+                    }
+                    let fileSize = grvmPositiveFileSize(path)
+                    guard fileSize > 0 else {
+                        return .single(false)
+                    }
+                }
+
+                return self.postbox.transaction { transaction -> Bool in
+                    guard let freshMessage = transaction.getMessage(message.id),
+                          freshMessage.stableId == message.stableId,
+                          freshMessage.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) else {
+                        return false
+                    }
+                    if freshMessage.media.contains(where: { $0 is TelegramMediaExpiredContent }) {
+                        transaction.updateMessage(freshMessage.id, update: { currentMessage in
+                            var storeForwardInfo: StoreMessageForwardInfo?
+                            if let forwardInfo = currentMessage.forwardInfo {
+                                storeForwardInfo = StoreMessageForwardInfo(authorId: forwardInfo.author?.id, sourceId: forwardInfo.source?.id, sourceMessageId: forwardInfo.sourceMessageId, date: forwardInfo.date, authorSignature: forwardInfo.authorSignature, psaType: forwardInfo.psaType, flags: forwardInfo.flags)
+                            }
+                            return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: currentMessage.attributes, media: attribute.media))
+                        })
+                    }
+                    return true
+                }
+            }
+        }
     }
 
     public func preserveDeletedMessages(_ messages: [Message], source: GRVMDeletionSource) -> GRVMDeletedMessagesPreservationResult {

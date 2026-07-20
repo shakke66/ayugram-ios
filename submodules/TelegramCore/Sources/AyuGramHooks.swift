@@ -1,5 +1,6 @@
 import Foundation
 import Postbox
+import SwiftSignalKit
 
 public enum GRVMDeletedMessagesPreservationResult {
     case disabled
@@ -15,6 +16,8 @@ public final class AyuGramHooks {
     public static var preserveEditRevision: ((PeerId, Message, GRVMEditableMessageContent) -> Bool)?
     public static var hasEditHistory: ((PeerId, MessageId) -> Bool)?
     public static var shouldPreserveOneTimeMedia: ((PeerId) -> Bool)?
+    public static var prepareConsumableMedia: ((PeerId, Message) -> Signal<Bool, NoError>)?
+    public static var restoreConsumableMedia: ((PeerId, Message) -> Signal<Bool, NoError>)?
 
     // MARK: - Ghost Mode
     public static var shouldSuppressReadReceipts: ((PeerId) -> Bool)?
@@ -120,6 +123,10 @@ func grvmMergedEditStateAttributes(
         result.removeAll(where: { $0 is GRVMDeletedMessageAttribute })
         result.append(deleted)
     }
+    if let preservedConsumable = previous.first(where: { $0 is GRVMPreservedConsumableMediaAttribute }) {
+        result.removeAll(where: { $0 is GRVMPreservedConsumableMediaAttribute })
+        result.append(preservedConsumable)
+    }
 
     let previousHistory = previous.first(where: { $0 is GRVMEditHistoryMessageAttribute })
     result.removeAll(where: { $0 is GRVMEditHistoryMessageAttribute })
@@ -171,6 +178,12 @@ func grvmMergedEditedMessage(
     }
 
     var updatedMedia = incoming.media
+    if let preservedConsumable = previous.attributes.first(where: { $0 is GRVMPreservedConsumableMediaAttribute }) as? GRVMPreservedConsumableMediaAttribute {
+        let incomingMediaContainsTelegramMediaExpiredContent = incoming.media.contains(where: { $0 is TelegramMediaExpiredContent })
+        if incoming.media.count > 0 && incomingMediaContainsTelegramMediaExpiredContent {
+            updatedMedia = preservedConsumable.media
+        }
+    }
     if let previousPaidContent = previous.media.first(where: { $0 is TelegramMediaPaidContent })
         as? TelegramMediaPaidContent,
        case .full = previousPaidContent.extendedMedia.first {

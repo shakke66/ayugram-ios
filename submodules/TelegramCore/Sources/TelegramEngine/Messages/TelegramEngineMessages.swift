@@ -244,8 +244,8 @@ public extension TelegramEngine {
             return _internal_getMessagesLoadIfNecessary(messageIds, postbox: self.account.postbox, network: self.account.network, accountPeerId: self.account.peerId, strategy: strategy)
         }
 
-        public func markMessageContentAsConsumedInteractively(messageId: MessageId) -> Signal<Void, NoError> {
-            return _internal_markMessageContentAsConsumedInteractively(accountPeerId: self.account.peerId, postbox: self.account.postbox, messageId: messageId)
+        public func markMessageContentAsConsumedInteractively(messageId: MessageId, force: Bool = false) -> Signal<Void, NoError> {
+            return _internal_markMessageContentAsConsumedInteractively(accountPeerId: self.account.peerId, postbox: self.account.postbox, messageId: messageId, force: force)
         }
 
         public func installInteractiveReadMessagesAction(peerId: PeerId, threadId: Int64?) -> Disposable {

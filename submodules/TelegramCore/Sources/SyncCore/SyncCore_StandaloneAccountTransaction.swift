@@ -133,6 +133,10 @@ public let telegramPostboxSeedConfiguration: SeedConfiguration = {
                !updated.contains(where: { $0 is GRVMEditHistoryMessageAttribute }) {
                 updated.append(editHistory)
             }
+            if let preservedConsumable = previous.first(where: { $0 is GRVMPreservedConsumableMediaAttribute }),
+               !updated.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) {
+                updated.append(preservedConsumable)
+            }
             var audioTranscription: AudioTranscriptionMessageAttribute?
             for attribute in previous {
                 if let attribute = attribute as? AudioTranscriptionMessageAttribute {

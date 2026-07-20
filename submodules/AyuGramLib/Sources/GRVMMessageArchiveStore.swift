@@ -15,8 +15,19 @@ public enum GRVMArchiveError: Error {
     case unsupportedSchema(Int32)
 }
 
+public struct GRVMConsumableMediaReservation {
+    public let media: [GRVMArchivedMedia]
+    public let insertedResourceIds: Set<String>
+
+    public init(media: [GRVMArchivedMedia], insertedResourceIds: Set<String>) {
+        self.media = media
+        self.insertedResourceIds = insertedResourceIds
+    }
+}
+
 public final class GRVMMessageArchiveStore {
     private static let sqliteVariableBatchSize = 500
+    private static let consumableMediaRevisionId: Int64 = -1
 
     static let schemaV2 = """
     PRAGMA foreign_keys = ON;
@@ -330,7 +341,7 @@ public final class GRVMMessageArchiveStore {
             try self.transaction(database) { () -> [GRVMMessageKey: [GRVMArchivedMedia]] in
                 var admittedByResource: [GRVMStoredMediaKey: GRVMArchivedMedia] = [:]
                 var admittedByMessage: [GRVMMessageKey: [GRVMArchivedMedia]] = [:]
-                for message in messages {
+                for message in messages.lazy {
                     try self.executePrepared(
                         database,
                         sql: """
@@ -352,17 +363,38 @@ public final class GRVMMessageArchiveStore {
                         """,
                         values: self.messageValues(message)
                     )
-                    for record in media[message.key] ?? [] {
+                    let messageMedia = media[message.key] ?? []
+                    for record in messageMedia {
                         let mediaKey = GRVMStoredMediaKey(accountId: record.accountId, resourceId: record.resourceId)
                         let admitted: GRVMArchivedMedia
                         if let current = admittedByResource[mediaKey] {
                             admitted = current
+                        } else if let current = try self.media(
+                            database,
+                            accountId: record.accountId,
+                            resourceId: record.resourceId
+                        ), current.copyState == .complete, current.byteCount > 0 {
+                            admitted = current
+                            admittedByResource[mediaKey] = current
                         } else {
                             admitted = try self.admitMedia(database, record: record)
                             admittedByResource[mediaKey] = admitted
                         }
                         admittedByMessage[message.key, default: []].append(admitted)
                         try self.insertMapping(database, key: message.key, revisionId: 0, resourceId: admitted.resourceId)
+                        try self.executePrepared(
+                            database,
+                            sql: """
+                            DELETE FROM archived_message_media
+                            WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
+                              AND message_id = ? AND thread_id = ? AND revision_id = ?
+                              AND resource_id = ?
+                            """,
+                            values: keyValues(message.key) + [
+                                .int64(Self.consumableMediaRevisionId),
+                                .text(record.resourceId)
+                            ]
+                        )
                     }
                 }
                 return admittedByMessage
@@ -451,6 +483,146 @@ public final class GRVMMessageArchiveStore {
                     .text(record.resourceId),
                     .int64(record.generation)
                 ]
+            )
+        }
+    }
+
+    public func reserveConsumableMedia(
+        key: GRVMMessageKey,
+        media: [GRVMArchivedMedia]
+    ) throws -> GRVMConsumableMediaReservation {
+        return try self.perform { database in
+            try self.transaction(database) {
+                var admittedMedia: [GRVMArchivedMedia] = []
+                var insertedResourceIds = Set<String>()
+
+                func insertReservationMapping(_ resourceId: String) throws -> Bool {
+                    try self.executePrepared(
+                        database,
+                        sql: """
+                        INSERT OR IGNORE INTO archived_message_media (
+                            account_id, peer_id, message_namespace, message_id,
+                            thread_id, revision_id, resource_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        values: self.keyValues(key) + [
+                            .int64(Self.consumableMediaRevisionId),
+                            .text(resourceId)
+                        ]
+                    )
+                    return sqlite3_changes(database) > 0
+                }
+
+                for record in media {
+                    guard record.accountId == key.accountId else {
+                        throw GRVMArchiveError.sqlite("consumable media account mismatch")
+                    }
+                    if let current = try self.media(
+                        database,
+                        accountId: record.accountId,
+                        resourceId: record.resourceId
+                    ), current.copyState == .complete, current.byteCount > 0 {
+                        if try insertReservationMapping(current.resourceId) {
+                            insertedResourceIds.insert(current.resourceId)
+                        }
+                        admittedMedia.append(current)
+                        continue
+                    }
+
+                    let admitted = try self.admitMedia(database, record: record)
+                    if try insertReservationMapping(admitted.resourceId) {
+                        insertedResourceIds.insert(admitted.resourceId)
+                    }
+                    admittedMedia.append(admitted)
+                }
+                return GRVMConsumableMediaReservation(
+                    media: admittedMedia,
+                    insertedResourceIds: insertedResourceIds
+                )
+            }
+        }
+    }
+
+    public func rollbackConsumableMediaReservation(
+        key: GRVMMessageKey,
+        insertedResourceIds: Set<String>
+    ) throws -> [GRVMArchivedMedia] {
+        return try self.perform { database in
+            try self.transaction(database) {
+                var orphanedMedia: [GRVMArchivedMedia] = []
+                for resourceId in insertedResourceIds {
+                    try self.executePrepared(
+                        database,
+                        sql: """
+                        DELETE FROM archived_message_media
+                        WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
+                          AND message_id = ? AND thread_id = ? AND revision_id = ?
+                          AND resource_id = ?
+                        """,
+                        values: keyValues(key) + [
+                            .int64(Self.consumableMediaRevisionId),
+                            .text(resourceId)
+                        ]
+                    )
+                    let references = try self.executePreparedScalarInt64(
+                        database,
+                        sql: "SELECT COUNT(*) FROM archived_message_media WHERE account_id = ? AND resource_id = ?",
+                        values: [.int64(key.accountId), .text(resourceId)]
+                    )
+                    if references == 0, let record = try self.media(
+                        database,
+                        accountId: key.accountId,
+                        resourceId: resourceId
+                    ) {
+                        try self.executePrepared(
+                            database,
+                            sql: "DELETE FROM archived_media_blobs WHERE account_id = ? AND resource_id = ?",
+                            values: [.int64(key.accountId), .text(resourceId)]
+                        )
+                        orphanedMedia.append(record)
+                    }
+                }
+                return orphanedMedia
+            }
+        }
+    }
+
+    public func consumableMedia(key: GRVMMessageKey) throws -> [GRVMArchivedMedia] {
+        return try self.perform { database in
+            let reserved = try self.queryMedia(
+                database,
+                sql: """
+                SELECT blob.account_id, blob.resource_id, blob.relative_path,
+                       blob.byte_count, blob.kind, blob.copy_state, blob.generation
+                FROM archived_message_media AS mapping
+                INNER JOIN archived_media_blobs AS blob
+                   ON blob.account_id = mapping.account_id
+                  AND blob.resource_id = mapping.resource_id
+                WHERE mapping.account_id = ? AND mapping.peer_id = ?
+                  AND mapping.message_namespace = ? AND mapping.message_id = ?
+                  AND mapping.thread_id = ? AND mapping.revision_id = ?
+                ORDER BY blob.resource_id
+                """,
+                values: self.keyValues(key) + [.int64(Self.consumableMediaRevisionId)]
+            )
+            if !reserved.isEmpty {
+                return reserved
+            }
+            return try self.queryMedia(
+                database,
+                sql: """
+                SELECT blob.account_id, blob.resource_id, blob.relative_path,
+                       blob.byte_count, blob.kind, blob.copy_state, blob.generation
+                FROM archived_message_media AS mapping
+                INNER JOIN archived_media_blobs AS blob
+                   ON blob.account_id = mapping.account_id
+                  AND blob.resource_id = mapping.resource_id
+                WHERE mapping.account_id = ? AND mapping.peer_id = ?
+                  AND mapping.message_namespace = ? AND mapping.message_id = ?
+                  AND mapping.thread_id = ? AND mapping.revision_id = 0
+                ORDER BY blob.resource_id
+                """,
+                values: self.keyValues(key)
             )
         }
     }
@@ -1063,6 +1235,14 @@ public final class GRVMMessageArchiveStore {
             }
             return sqlite3_column_int64(statement, 0)
         }
+    }
+
+    private func executePreparedScalarInt64(
+        _ database: OpaquePointer,
+        sql: String,
+        values: [SQLValue]
+    ) throws -> Int64 {
+        return try self.scalarInt64(database, sql: sql, values: values)
     }
 
     private func admitMedia(_ database: OpaquePointer, record: GRVMArchivedMedia) throws -> GRVMArchivedMedia {

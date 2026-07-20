@@ -122,6 +122,18 @@ public final class AyuGramFeatureManager {
         AyuGramHooks.hasEditHistory = { [weak self] accountPeerId, messageId in
             return self?.registry.service(accountPeerId: accountPeerId)?.hasEditHistory(messageId) ?? false
         }
+        AyuGramHooks.prepareConsumableMedia = { [weak self] accountPeerId, message in
+            guard let service = self?.registry.service(accountPeerId: accountPeerId) else {
+                return .single(false)
+            }
+            return service.prepareConsumableMedia(message)
+        }
+        AyuGramHooks.restoreConsumableMedia = { [weak self] accountPeerId, message in
+            guard let service = self?.registry.service(accountPeerId: accountPeerId) else {
+                return .single(false)
+            }
+            return service.restoreArchivedMedia(for: message)
+        }
         AyuGramFeatures.deletedMessages = { [weak self] accountPeerId, peerId, threadId, query in
             return self?.registry.service(accountPeerId: accountPeerId)?.deletedMessages(
                 peerId: peerId,

@@ -4235,6 +4235,18 @@ func replayFinalState(
                         }
                     }
                 }
+
+                messages = messages.map { message in
+                    guard case let .Id(id) = message.id,
+                          let previous = transaction.getMessage(id) else {
+                        return message
+                    }
+                    return grvmMergedEditedMessage(
+                        previous: previous,
+                        incoming: message,
+                        markHistory: false
+                    )
+                }
             
                 let _ = transaction.addMessages(messages, location: location)
                 if case .UpperHistoryBlock = location {
@@ -4492,11 +4504,21 @@ func replayFinalState(
                     id: id,
                     incoming: message
                 )
+                let mergedIncomingAttributes: [MessageAttribute]?
+                if let previousMessage = transaction.getMessage(id) {
+                    mergedIncomingAttributes = grvmMergedEditStateAttributes(
+                        previous: previousMessage.attributes,
+                        incoming: message.attributes,
+                        markHistory: shouldMarkHistory
+                    )
+                } else {
+                    mergedIncomingAttributes = nil
+                }
                 var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?
                 transaction.updateMessage(id, update: { previousMessage in
                     var updatedFlags = message.flags
                     var updatedLocalTags = message.localTags
-                    var updatedAttributes = message.attributes
+                    var updatedAttributes = mergedIncomingAttributes ?? message.attributes
                     if previousMessage.localTags.contains(.OutgoingLiveLocation) {
                         updatedLocalTags.insert(.OutgoingLiveLocation)
                     }
@@ -4537,12 +4559,10 @@ func replayFinalState(
                     if let previousPaidContent = previousMessage.media.first(where: { $0 is TelegramMediaPaidContent }) as? TelegramMediaPaidContent, case .full = previousPaidContent.extendedMedia.first {
                         updatedMedia = previousMessage.media
                     }
-                    updatedAttributes = grvmMergedEditStateAttributes(
-                        previous: previousMessage.attributes,
-                        incoming: updatedAttributes,
-                        markHistory: shouldMarkHistory
-                    )
-                    
+                    if let preservedConsumable = previousMessage.attributes.first(where: { $0 is GRVMPreservedConsumableMediaAttribute }) as? GRVMPreservedConsumableMediaAttribute,
+                       message.media.contains(where: { $0 is TelegramMediaExpiredContent }) {
+                        updatedMedia = preservedConsumable.media
+                    }
                     return .update(message.withUpdatedLocalTags(updatedLocalTags).withUpdatedFlags(updatedFlags).withUpdatedAttributes(updatedAttributes).withUpdatedMedia(updatedMedia))
                 })
                 if let generatedEvent = generatedEvent {
@@ -5084,11 +5104,11 @@ func replayFinalState(
 
                 if let peerId = peerId {
                     for id in messageIds {
-                        markMessageContentAsConsumedRemotely(transaction: transaction, messageId: MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: id), consumeDate: date)
+                        markMessageContentAsConsumedRemotely(accountPeerId: accountPeerId, transaction: transaction, messageId: MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: id), consumeDate: date)
                     }
                 } else {
                     for messageId in transaction.messageIdsForGlobalIds(messageIds) {
-                        markMessageContentAsConsumedRemotely(transaction: transaction, messageId: messageId, consumeDate: date)
+                        markMessageContentAsConsumedRemotely(accountPeerId: accountPeerId, transaction: transaction, messageId: messageId, consumeDate: date)
                     }
                 }
             case let .UpdateMessageImpressionCount(id, count):
