@@ -66,18 +66,8 @@ class DeleteRouteContractTests(unittest.TestCase):
         self.assertIn("directBot", coordinator)
         self.assertIn("try self.store.saveDeleted(", coordinator)
         self.assertIn("self.index.insertDeleted(", coordinator)
-        self.assertIn("shouldPreserveOneTimeMedia: ((PeerId) -> Bool)?", hooks)
-        self.assertIn("shouldPreserveOneTimeMedia?(accountPeerId)", autoremove)
-        hook_assignment = occurrence_window(
-            manager,
-            "AyuGramHooks.shouldPreserveOneTimeMedia = { [weak self] accountPeerId in",
-            1,
-            500,
-        )
-        self.assertIn("guard let service = self?.registry.service(accountPeerId: accountPeerId) else", hook_assignment)
-        self.assertIn("return true", hook_assignment)
-        self.assertIn("return service.settingsSnapshot().saveDeletedMessages", hook_assignment)
-        self.assertNotIn("primaryService", hook_assignment)
+        self.assertTrue("GRVMPreservedConsumableMediaAttribute" in autoremove)
+        self.assertFalse("shouldPreserveOneTimeMedia" in autoremove)
         self.assertGreaterEqual(manager.count("registry.service(accountPeerId: accountPeerId)"), 2)
 
     def test_unavailable_preservation_never_authorizes_physical_deletion(self) -> None:
