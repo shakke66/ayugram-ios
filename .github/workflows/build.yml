@@ -1,4 +1,4 @@
-name: CI
+name: GRVMgram build
 
 on:
   push:
@@ -15,6 +15,11 @@ jobs:
         with:
           submodules: 'recursive'
           fetch-depth: '0'
+
+      - name: Validate GRVMgram sources
+        run: |
+          python3 -m unittest discover -s Tests/GRVMgramValidation -p 'test_*.py' -v
+          python3 build-system/Make/ValidateGRVMgram.py source
 
       - name: Fetch submodules by exact commit
         run: |
@@ -115,43 +120,42 @@ jobs:
           grep -nE "error:|warning:|FAILED|Error:|fatal error" /Users/Shared/build_log.txt | head -200 || echo "no matches / no log"
           cp /Users/Shared/build_log.txt $GITHUB_WORKSPACE/build_log.txt || true
 
+      - name: Collect IPA
+        if: success()
+        run: |
+          set -euo pipefail
+          SOURCE_DIR=/Users/Shared/telegram-ios
+          cd "$SOURCE_DIR"
+          IPA="bazel-bin/Telegram/Telegram.ipa"
+          if [ ! -e "$IPA" ]; then
+            IPA="$(ls -1 bazel-out/*/bin/Telegram/Telegram.ipa 2>/dev/null | head -1 || true)"
+          fi
+          if [ -z "$IPA" ] || [ ! -e "$IPA" ]; then
+            echo "ERROR: Telegram.ipa not found. Contents of bazel-bin/Telegram:"
+            ls -la bazel-bin/Telegram/ 2>/dev/null | head -60 || true
+            exit 1
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp -L "$IPA" "$GITHUB_WORKSPACE/artifacts/GRVMgram.ipa"
+          test -s "$GITHUB_WORKSPACE/artifacts/GRVMgram.ipa"
+          ls -lh "$GITHUB_WORKSPACE/artifacts/GRVMgram.ipa"
+
+      - name: Validate GRVMgram IPA
+        if: success()
+        run: python3 build-system/Make/ValidateGRVMgram.py ipa artifacts/GRVMgram.ipa
+
+      - name: Upload IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GRVMgram-ipa
+          path: artifacts/GRVMgram.ipa
+          if-no-files-found: error
+
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: build_log.txt
-          if-no-files-found: warn
-
-      - name: Collect IPA
-        if: success()
-        run: |
-          SOURCE_DIR=/Users/Shared/telegram-ios
-          cd $SOURCE_DIR
-          OUTPUT_PATH="build/artifacts"
-          rm -rf "$OUTPUT_PATH"
-          mkdir -p "$OUTPUT_PATH"
-          # Canonical location used by Make.py: the bazel-bin convenience symlink
-          # resolves to the correct config dir regardless of the config hash.
-          IPA="bazel-bin/Telegram/Telegram.ipa"
-          if [ ! -e "$IPA" ]; then
-            IPA="$(ls -1 bazel-out/*/bin/Telegram/Telegram.ipa 2>/dev/null | head -1)"
-          fi
-          if [ -n "$IPA" ] && [ -e "$IPA" ]; then
-            echo "Found IPA: $IPA"
-            cp -L "$IPA" "$OUTPUT_PATH/Telegram.ipa"
-          else
-            echo "ERROR: Telegram.ipa not found. Contents of bazel-bin/Telegram:"
-            ls -la bazel-bin/Telegram/ 2>/dev/null | head -60
-          fi
-          cp -R $OUTPUT_PATH $GITHUB_WORKSPACE/artifacts || true
-          echo "=== artifacts ==="
-          ls -la $GITHUB_WORKSPACE/artifacts/ || true
-
-      - name: Upload IPA
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Telegram-ipa
-          path: artifacts
           if-no-files-found: warn

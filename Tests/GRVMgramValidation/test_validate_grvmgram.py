@@ -761,6 +761,12 @@ class BrandingTests(unittest.TestCase):
     def test_repository_has_no_public_ayugram_branding(self) -> None:
         VALIDATOR.validate_public_branding(REPOSITORY_ROOT)
 
+    def test_repository_workflow_satisfies_release_contract(self) -> None:
+        try:
+            VALIDATOR.validate_workflow(REPOSITORY_ROOT)
+        except VALIDATOR.ValidationError as error:
+            self.fail(str(error))
+
     def test_repository_settings_ui_has_no_hard_coded_text(self) -> None:
         VALIDATOR.validate_settings_ui_literals(REPOSITORY_ROOT)
 
