@@ -221,9 +221,9 @@ public final class Transaction {
         self.postbox?.setNeedsIncomingReadStateSynchronization(peerId)
     }
 
-    public func forceSynchronizeIncomingReadState(_ peerId: PeerId) {
+    public func forceSynchronizeIncomingReadState(_ peerId: PeerId, state: CombinedPeerReadState, forceTokenId: PeerReadStateSynchronizationForceTokenId) {
         assert(!self.disposed)
-        self.postbox?.forceSynchronizeIncomingReadState(peerId)
+        self.postbox?.forceSynchronizeIncomingReadState(peerId, state: state, forceTokenId: forceTokenId)
     }
     
     public func confirmSynchronizedIncomingReadState(_ peerId: PeerId) {
@@ -2373,8 +2373,8 @@ final class PostboxImpl {
         self.synchronizeReadStateTable.set(peerId, operation: .Validate, operations: &self.currentUpdatedSynchronizeReadStateOperations)
     }
 
-    fileprivate func forceSynchronizeIncomingReadState(_ peerId: PeerId) {
-        self.synchronizeReadStateTable.set(peerId, operation: .Push(state: self.readStateTable.getCombinedState(peerId), thenSync: true), operations: &self.currentUpdatedSynchronizeReadStateOperations)
+    fileprivate func forceSynchronizeIncomingReadState(_ peerId: PeerId, state: CombinedPeerReadState, forceTokenId: PeerReadStateSynchronizationForceTokenId) {
+        self.synchronizeReadStateTable.set(peerId, operation: .ForcePush(state: state, thenSync: true, tokenId: forceTokenId), operations: &self.currentUpdatedSynchronizeReadStateOperations)
     }
 
     fileprivate func confirmSynchronizedIncomingReadState(_ peerId: PeerId) {

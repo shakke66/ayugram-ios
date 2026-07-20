@@ -61,28 +61,34 @@ func _internal_grvmApplyMaxReadIndex(account: Account, index: MessageIndex, mode
                 }
 
                 for peerId in forcePeerIds {
-                    var maxIncomingReadId: MessageId.Id?
-                    if let combinedPeerReadState = transaction.getCombinedPeerReadState(peerId),
-                       let cloudState = combinedPeerReadState.states.first(where: { namespace, _ in
+                    if let combinedPeerReadState = transaction.getCombinedPeerReadState(peerId) {
+                        var maxIncomingReadId: MessageId.Id?
+                        if let cloudState = combinedPeerReadState.states.first(where: { namespace, _ in
                            return namespace == Namespaces.Message.Cloud
                        })?.1 {
-                        switch cloudState {
-                        case let .idBased(incomingReadId, _, _, _, _):
-                            maxIncomingReadId = incomingReadId
-                        case let .indexBased(incomingReadIndex, _, _, _):
-                            if incomingReadIndex.id.namespace == Namespaces.Message.Cloud {
-                                maxIncomingReadId = incomingReadIndex.id.id
+                            switch cloudState {
+                            case let .idBased(incomingReadId, _, _, _, _):
+                                maxIncomingReadId = incomingReadId
+                            case let .indexBased(incomingReadIndex, _, _, _):
+                                if incomingReadIndex.id.namespace == Namespaces.Message.Cloud {
+                                    maxIncomingReadId = incomingReadIndex.id.id
+                                }
                             }
                         }
-                    }
 
-                    if let maxIncomingReadId = maxIncomingReadId {
-                        let _ = GRVMReadReceiptBypass.shared.register(
-                            accountPeerId: account.peerId,
-                            peerId: peerId,
-                            maxIncomingReadId: maxIncomingReadId
-                        )
-                        transaction.forceSynchronizeIncomingReadState(peerId)
+                        if let maxIncomingReadId = maxIncomingReadId {
+                            let forceTokenId = GRVMReadReceiptBypass.shared.register(
+                                accountPeerId: account.peerId,
+                                peerId: peerId,
+                                maxIncomingReadId: maxIncomingReadId,
+                                state: combinedPeerReadState
+                            )
+                            transaction.forceSynchronizeIncomingReadState(
+                                peerId,
+                                state: combinedPeerReadState,
+                                forceTokenId: forceTokenId
+                            )
+                        }
                     }
                 }
             }

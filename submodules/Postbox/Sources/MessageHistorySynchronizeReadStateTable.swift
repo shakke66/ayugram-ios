@@ -1,7 +1,18 @@
 import Foundation
 
+public struct PeerReadStateSynchronizationForceTokenId: Equatable {
+    public let high: Int64
+    public let low: Int64
+
+    public init(high: Int64, low: Int64) {
+        self.high = high
+        self.low = low
+    }
+}
+
 public enum PeerReadStateSynchronizationOperation: Equatable {
     case Push(state: CombinedPeerReadState?, thenSync: Bool)
+    case ForcePush(state: CombinedPeerReadState?, thenSync: Bool, tokenId: PeerReadStateSynchronizationForceTokenId)
     case Validate
 }
 
@@ -42,16 +53,44 @@ final class MessageHistorySynchronizeReadStateTable: Table {
         var operations: [PeerId: PeerReadStateSynchronizationOperation] = [:]
         self.valueBox.range(self.table, start: self.lowerBound(), end: self.upperBound(), values: { key, value in
             let peerId = PeerId(key.getInt64(0))
-            var operationValue: Int8 = 0
-            value.read(&operationValue, offset: 0, length: 1)
-            
             let operation: PeerReadStateSynchronizationOperation
-            if operationValue == 0 {
-                var syncValue: Int8 = 0
-                value.read(&syncValue, offset: 0, length: 1)
-                operation = .Push(state: getCombinedPeerReadState(peerId), thenSync: syncValue != 0)
-            } else {
+            if value.length < 1 {
                 operation = .Validate
+            } else {
+                var operationValue: Int8 = 0
+                value.read(&operationValue, offset: 0, length: 1)
+
+                switch operationValue {
+                case 0:
+                    if value.length == 2 {
+                        var syncValue: Int8 = 0
+                        value.read(&syncValue, offset: 0, length: 1)
+                        operation = .Push(state: getCombinedPeerReadState(peerId), thenSync: syncValue != 0)
+                    } else {
+                        operation = .Validate
+                    }
+                case 1:
+                    operation = .Validate
+                case 2:
+                    if value.length == 18 {
+                        var syncValue: Int8 = 0
+                        var high: Int64 = 0
+                        var low: Int64 = 0
+                        value.read(&syncValue, offset: 0, length: 1)
+                        value.read(&high, offset: 0, length: 8)
+                        value.read(&low, offset: 0, length: 8)
+                        let tokenId = PeerReadStateSynchronizationForceTokenId(high: high, low: low)
+                        if (syncValue == 0 || syncValue == 1) && !(high == 0 && low == 0) {
+                            operation = .ForcePush(state: getCombinedPeerReadState(peerId), thenSync: syncValue != 0, tokenId: tokenId)
+                        } else {
+                            operation = .Validate
+                        }
+                    } else {
+                        operation = .Validate
+                    }
+                default:
+                    operation = .Validate
+                }
             }
             
             operations[peerId] = operation
@@ -74,6 +113,15 @@ final class MessageHistorySynchronizeReadStateTable: Table {
                             buffer.write(&operationValue, offset: 0, length: 1)
                             var syncValue: Int8 = thenSync ? 1 : 0
                             buffer.write(&syncValue, offset: 0, length: 1)
+                        case let .ForcePush(_, thenSync, tokenId):
+                            var operationValue: Int8 = 2
+                            buffer.write(&operationValue, offset: 0, length: 1)
+                            var syncValue: Int8 = thenSync ? 1 : 0
+                            buffer.write(&syncValue, offset: 0, length: 1)
+                            var high = tokenId.high
+                            buffer.write(&high, offset: 0, length: 8)
+                            var low = tokenId.low
+                            buffer.write(&low, offset: 0, length: 8)
                         case .Validate:
                             var operationValue: Int8 = 1
                             buffer.write(&operationValue, offset: 0, length: 1)

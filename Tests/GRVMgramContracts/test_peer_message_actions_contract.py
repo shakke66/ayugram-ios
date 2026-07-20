@@ -1,5 +1,6 @@
 import ast
 import re
+import struct
 import textwrap
 import unittest
 from pathlib import Path
@@ -382,23 +383,170 @@ def callback_copy_text(data: bytes) -> str:
         return data.hex()
 
 
-def consume_bypass_token(
-    entries: list[dict[str, int]],
+def cloud_read_state(max_incoming_read_id: int, marked_unread: bool = False) -> tuple:
+    return (
+        (
+            "cloud",
+            (
+                "idBased",
+                max_incoming_read_id,
+                max_incoming_read_id,
+                max_incoming_read_id,
+                0,
+                marked_unread,
+            ),
+        ),
+    )
+
+
+def cloud_max_incoming_read_id(state: tuple | None) -> int | None:
+    if state is None:
+        return None
+    for namespace, read_state in state:
+        if namespace == "cloud":
+            return read_state[1]
+    return None
+
+
+class ReadReceiptBypassModel:
+    def __init__(self, nonce_candidates: list[tuple[int, int]]) -> None:
+        self._nonce_candidates = iter(nonce_candidates)
+        self.entries: dict[tuple[int, int], dict[str, Any]] = {}
+
+    def register(
+        self,
+        account_peer_id: int,
+        peer_id: int,
+        max_incoming_read_id: int,
+        state: tuple,
+        now: int,
+    ) -> tuple[int, int]:
+        self.entries = {
+            token_id: entry
+            for token_id, entry in self.entries.items()
+            if entry["expires_at"] > now
+        }
+        while True:
+            token_id = next(self._nonce_candidates)
+            if token_id != (0, 0) and token_id not in self.entries:
+                break
+        self.entries[token_id] = {
+            "account_peer_id": account_peer_id,
+            "peer_id": peer_id,
+            "max_incoming_read_id": max_incoming_read_id,
+            "state": state,
+            "expires_at": now + 30,
+        }
+        return token_id
+
+    def consume_if_matching(
+        self,
+        token_id: tuple[int, int],
+        account_peer_id: int,
+        peer_id: int,
+        max_incoming_read_id: int | None,
+        state: tuple | None,
+        now: int,
+    ) -> bool:
+        self.entries = {
+            entry_token_id: entry
+            for entry_token_id, entry in self.entries.items()
+            if entry["expires_at"] > now
+        }
+        entry = self.entries.pop(token_id, None)
+        return entry is not None and all(
+            (
+                entry["account_peer_id"] == account_peer_id,
+                entry["peer_id"] == peer_id,
+                entry["max_incoming_read_id"] == max_incoming_read_id,
+                entry["state"] == state,
+            )
+        )
+
+
+def push_operation(state: tuple | None, then_sync: bool = True) -> dict[str, Any]:
+    return {"kind": "push", "state": state, "then_sync": then_sync}
+
+
+def force_push_operation(
+    state: tuple | None,
+    token_id: tuple[int, int],
+    then_sync: bool = True,
+) -> dict[str, Any]:
+    return {
+        "kind": "forcePush",
+        "state": state,
+        "then_sync": then_sync,
+        "token_id": token_id,
+    }
+
+
+def process_read_operation(
+    operation: dict[str, Any],
+    registry: ReadReceiptBypassModel,
     account_peer_id: int,
     peer_id: int,
-    max_incoming_read_id: int,
+    live_state: tuple | None,
+    ghost_enabled: bool,
     now: int,
-) -> tuple[bool, list[dict[str, int]]]:
-    live = [entry for entry in entries if entry["expires_at"] > now]
-    for index, entry in enumerate(live):
-        if (
-            entry["account_peer_id"] == account_peer_id
-            and entry["peer_id"] == peer_id
-            and entry["max_incoming_read_id"] == max_incoming_read_id
-        ):
-            live.pop(index)
-            return True, live
-    return False, live
+) -> tuple[list[tuple[str, tuple | None]], bool]:
+    if operation["kind"] == "push":
+        if ghost_enabled:
+            return [], True
+        return [("stock", live_state)], False
+
+    state = operation["state"]
+    claimed = registry.consume_if_matching(
+        operation["token_id"],
+        account_peer_id,
+        peer_id,
+        cloud_max_incoming_read_id(state),
+        state,
+        now,
+    )
+    if claimed and state is not None:
+        return [("exact", state)], False
+    if ghost_enabled:
+        return [], True
+    return [("stock", live_state)], False
+
+
+def encode_synchronize_read_operation(operation: dict[str, Any]) -> bytes:
+    if operation["kind"] == "push":
+        return bytes((0, int(operation["then_sync"])))
+    if operation["kind"] == "validate":
+        return bytes((1,))
+    high, low = operation["token_id"]
+    return struct.pack("<BBqq", 2, int(operation["then_sync"]), high, low)
+
+
+def decode_synchronize_read_operation(data: bytes, state: tuple | None) -> dict[str, Any]:
+    if not data:
+        return {"kind": "validate"}
+    if data[0] == 0:
+        if len(data) != 2:
+            return {"kind": "validate"}
+        return push_operation(state, data[1] != 0)
+    if data[0] == 1:
+        return {"kind": "validate"}
+    if data[0] == 2:
+        if len(data) != 18 or data[1] not in (0, 1):
+            return {"kind": "validate"}
+        _, then_sync, high, low = struct.unpack("<BBqq", data)
+        if high == 0 and low == 0:
+            return {"kind": "validate"}
+        return force_push_operation(state, (high, low), bool(then_sync))
+    return {"kind": "validate"}
+
+
+def legacy_decode_synchronize_read_operation(
+    data: bytes, state: tuple | None
+) -> dict[str, Any]:
+    if not data:
+        return {"kind": "validate"}
+    if data[0] == 0 and len(data) >= 2:
+        return push_operation(state, data[1] != 0)
+    return {"kind": "validate"}
 
 
 def simulate_delete_scan(
@@ -443,10 +591,16 @@ class PeerMessageReadEngineContractTests(unittest.TestCase):
     manager_path = (
         "submodules/TelegramCore/Sources/State/ManagedSynchronizePeerReadStates.swift"
     )
+    synchronize_path = (
+        "submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift"
+    )
     reply_path = (
         "submodules/TelegramCore/Sources/TelegramEngine/Messages/ReplyThreadHistory.swift"
     )
     postbox_path = "submodules/Postbox/Sources/Postbox.swift"
+    synchronize_table_path = (
+        "submodules/Postbox/Sources/MessageHistorySynchronizeReadStateTable.swift"
+    )
     account_protocol_path = "submodules/AccountContext/Sources/AccountContext.swift"
     account_impl_path = "submodules/TelegramUI/Sources/AccountContext.swift"
 
@@ -515,49 +669,58 @@ class PeerMessageReadEngineContractTests(unittest.TestCase):
         self.assertNotIn("synchronizePeerReadState", local)
         self.assertNotIn(".complete()", local)
 
-    def test_force_read_requeues_current_and_migrated_state_before_commit(self) -> None:
+    def test_force_read_binds_each_peer_to_its_exact_state_and_nonce(self) -> None:
         apply = swift_block(source(self.read_path), "func _internal_grvmApplyMaxReadIndex(")
-        force = bounded_window(apply, "case .forceServer", before=100, after=4200)
+        force = bounded_window(apply, "case .forceServer", before=100, after=4800)
+        loop = swift_control_statement(
+            force, "GRVMReadReceiptBypass.shared.register(", keywords=("for",)
+        )
+        self.assertTrue(loop, "Force registration must stay inside the per-peer loop")
         assert_ordered_tokens(
             self,
-            force,
+            loop,
             [
-                "deferred {",
-                "account.postbox.transaction",
-                "associatedHistoryMessageId",
-                "_internal_applyMaxReadIndexInteractively(",
                 "transaction.getCombinedPeerReadState(peerId)",
-                "GRVMReadReceiptBypass.shared.register(",
+                "let forceTokenId = GRVMReadReceiptBypass.shared.register(",
                 "accountPeerId: account.peerId",
                 "peerId: peerId",
                 "maxIncomingReadId: maxIncomingReadId",
-                "transaction.forceSynchronizeIncomingReadState(peerId)",
+                "state: combinedPeerReadState",
+                "transaction.forceSynchronizeIncomingReadState(",
+                "peerId",
+                "state: combinedPeerReadState",
+                "forceTokenId: forceTokenId",
             ],
         )
         for token in (
             "var forcePeerIds = [index.id.peerId]",
             "associatedHistoryMessageId.peerId",
             "forcePeerIds.append",
-            "for peerId in forcePeerIds",
             "Namespaces.Message.Cloud",
             "case let .idBased",
             "case let .indexBased",
         ):
             self.assertIn(token, force)
-        token_gate = swift_control_statement(
-            force, "if let maxIncomingReadId", keywords=("if",)
-        )
-        self.assertIn("GRVMReadReceiptBypass.shared.register(", token_gate)
-        self.assertIn("transaction.forceSynchronizeIncomingReadState(peerId)", token_gate)
+        self.assertEqual(1, loop.count("GRVMReadReceiptBypass.shared.register("))
+        self.assertEqual(1, loop.count("transaction.forceSynchronizeIncomingReadState("))
         self.assertNotIn("afterCompleted", force)
         self.assertNotIn("completed:", force)
 
-    def test_force_sync_transaction_api_always_queues_current_combined_state(self) -> None:
+    def test_force_sync_transaction_api_queues_given_snapshot_and_token(self) -> None:
         postbox = source(self.postbox_path)
         public_api = swift_block(
             postbox, "public func forceSynchronizeIncomingReadState("
         )
-        self.assertIn("self.postbox?.forceSynchronizeIncomingReadState(peerId)", public_api)
+        for token in (
+            "_ peerId: PeerId",
+            "state: CombinedPeerReadState",
+            "forceTokenId: PeerReadStateSynchronizationForceTokenId",
+            "self.postbox?.forceSynchronizeIncomingReadState(",
+            "peerId",
+            "state: state",
+            "forceTokenId: forceTokenId",
+        ):
+            self.assertIn(normalized(token), normalized(public_api))
 
         implementation = swift_block(
             postbox, "fileprivate func forceSynchronizeIncomingReadState("
@@ -568,301 +731,431 @@ class PeerMessageReadEngineContractTests(unittest.TestCase):
             [
                 "self.synchronizeReadStateTable.set(",
                 "peerId",
-                ".Push(",
-                "state: self.readStateTable.getCombinedState(peerId)",
+                ".ForcePush(",
+                "state: state",
                 "thenSync: true",
+                "tokenId: forceTokenId",
                 "currentUpdatedSynchronizeReadStateOperations",
             ],
         )
+        self.assertNotIn("getCombinedState", implementation)
 
-    def test_bypass_token_is_exact_expiring_and_one_shot(self) -> None:
-        bypass = source(self.bypass_path)
+    def test_force_operation_identity_and_persistent_format_are_explicit(self) -> None:
+        table = source(self.synchronize_table_path)
+        token_type = swift_block(
+            table, "public struct PeerReadStateSynchronizationForceTokenId"
+        )
         for token in (
-            "Atomic",
-            "accountPeerId",
-            "peerId",
-            "maxIncomingReadId",
-            "expiresAt",
-            "tokenId",
+            "Equatable",
+            "public let high: Int64",
+            "public let low: Int64",
+            "public init(high: Int64, low: Int64)",
         ):
-            self.assertIn(token, bypass)
+            self.assertIn(normalized(token), normalized(token_type))
+
+        operation = swift_block(table, "public enum PeerReadStateSynchronizationOperation")
+        for token in (
+            "case Push(state: CombinedPeerReadState?, thenSync: Bool)",
+            "case Validate",
+            "case ForcePush(",
+            "state: CombinedPeerReadState?",
+            "thenSync: Bool",
+            "tokenId: PeerReadStateSynchronizationForceTokenId",
+        ):
+            self.assertIn(normalized(token), normalized(operation))
+
+        decoder = swift_block(table, "func get(")
+        self.assertGreaterEqual(decoder.find("value.length"), 0)
+        self.assertLess(decoder.find("value.length"), decoder.find("value.read("))
+        for token in (
+            "case 0",
+            ".Push(state: getCombinedPeerReadState(peerId)",
+            "case 1",
+            "case 2",
+            "value.length == 18",
+            "syncValue == 0 || syncValue == 1",
+            "PeerReadStateSynchronizationForceTokenId(high: high, low: low)",
+            ".ForcePush(",
+            "default",
+            ".Validate",
+        ):
+            self.assertIn(normalized(token), normalized(decoder))
+        self.assertRegex(
+            normalized(decoder),
+            r"(?:high==0&&low==0|low==0&&high==0)",
+        )
+
+        encoder = swift_block(table, "override func beforeCommit()")
+        force_encoder = swift_case_clause(
+            encoder, "case let .ForcePush", ("case let .Push", "case .Validate")
+        )
+        for token in (
+            "var operationValue: Int8 = 2",
+            "var syncValue: Int8 = thenSync ? 1 : 0",
+            "var high = tokenId.high",
+            "var low = tokenId.low",
+        ):
+            self.assertIn(normalized(token), normalized(force_encoder))
+        self.assertEqual(4, force_encoder.count("buffer.write("))
+        self.assertEqual(2, normalized(force_encoder).count("length:8"))
+
+    def test_operation_encoding_round_trips_and_old_decoder_fails_closed(self) -> None:
+        state = cloud_read_state(41, marked_unread=True)
+        operations = (
+            push_operation(state, False),
+            push_operation(state, True),
+            {"kind": "validate"},
+            force_push_operation(state, (7, -9), True),
+        )
+        self.assertEqual(b"\x00\x00", encode_synchronize_read_operation(operations[0]))
+        self.assertEqual(b"\x00\x01", encode_synchronize_read_operation(operations[1]))
+        self.assertEqual(b"\x01", encode_synchronize_read_operation(operations[2]))
+        for operation in operations:
+            with self.subTest(operation=operation["kind"]):
+                encoded = encode_synchronize_read_operation(operation)
+                self.assertEqual(
+                    operation,
+                    decode_synchronize_read_operation(encoded, state),
+                )
+
+        force_bytes = encode_synchronize_read_operation(operations[-1])
+        self.assertEqual(18, len(force_bytes))
+        for length in range(18):
+            self.assertEqual(
+                {"kind": "validate"},
+                decode_synchronize_read_operation(force_bytes[:length], state),
+            )
+        self.assertEqual(
+            {"kind": "validate"},
+            decode_synchronize_read_operation(force_bytes + b"\x00", state),
+        )
+        malformed_then_sync = bytearray(force_bytes)
+        malformed_then_sync[1] = 2
+        self.assertEqual(
+            {"kind": "validate"},
+            decode_synchronize_read_operation(bytes(malformed_then_sync), state),
+        )
+        self.assertEqual(
+            {"kind": "validate"},
+            decode_synchronize_read_operation(
+                encode_synchronize_read_operation(
+                    force_push_operation(state, (0, 0), True)
+                ),
+                state,
+            ),
+        )
+        self.assertEqual(
+            {"kind": "validate"},
+            decode_synchronize_read_operation(b"\x7f", state),
+        )
+        self.assertEqual(
+            {"kind": "validate"},
+            legacy_decode_synchronize_read_operation(force_bytes, state),
+        )
+        self.assertEqual(
+            push_operation(state, True),
+            legacy_decode_synchronize_read_operation(b"\x00\x01", state),
+        )
+
+    def test_bypass_source_uses_random_128_bit_token_first_consumption(self) -> None:
+        bypass = source(self.bypass_path)
+        entry = swift_block(bypass, "private struct Entry")
+        for token in (
+            "tokenId: PeerReadStateSynchronizationForceTokenId",
+            "accountPeerId: PeerId",
+            "peerId: PeerId",
+            "maxIncomingReadId: MessageId.Id",
+            "state: CombinedPeerReadState",
+            "expiresAt: Double",
+        ):
+            self.assertIn(normalized(token), normalized(entry))
+        for forbidden in ("nextTokenId", "Atomic<Int64>", "&+"):
+            self.assertNotIn(forbidden, bypass)
 
         register = swift_block(bypass, "func register(")
-        self.assertRegex(register, r"30(?:\.0)?")
-        self.assertIn("expiresAt", register)
-        self.assertIn("after", register)
-        self.assertIn("tokenId", register)
+        register_modify = swift_closure_matching(
+            register, r"(?:self\.)?entries\s*\.modify\s*\{"
+        )
+        for token in (
+            "state: CombinedPeerReadState",
+            "PeerReadStateSynchronizationForceTokenId",
+            "UInt64.random",
+            "entries.contains",
+            "entry.tokenId == tokenId",
+            "expiresAt",
+            "self.queue.after(30.0",
+        ):
+            self.assertIn(normalized(token), normalized(register))
+        self.assertTrue(register_modify)
+        self.assertIn("UInt64.random", register_modify)
+        self.assertIn("entries.contains", register_modify)
         self.assertRegex(
-            normalized(register),
-            r"(?:remove|invalidate).*tokenId|tokenId.*(?:remove|invalidate)",
+            normalized(register_modify),
+            r"(?:tokenId\.high!=0\|\|tokenId\.low!=0|"
+            r"tokenId\.high==0&&tokenId\.low==0)",
         )
 
         consume = swift_block(bypass, "func consumeIfMatching(")
-        consume_code = normalized(consume)
-        atomic_names = re.findall(
-            r"(?m)^[ \t]*(?:(?:private|fileprivate|internal|public|static)\s+)*"
-            r"(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)"
-            r"(?:\s*:[^=\n]+)?\s*=\s*Atomic(?:<[^>\n]+>)?\s*\(",
-            bypass,
-        )
-        self.assertTrue(atomic_names, "Missing Atomic collection declaration")
-        modified_atomic = next(
-            (
-                name
-                for name in atomic_names
-                if re.search(rf"(?:self\.)?{re.escape(name)}\.modify\{{", consume_code)
-            ),
-            "",
-        )
-        self.assertTrue(
-            modified_atomic,
-            "consumeIfMatching must mutate the declared Atomic collection",
-        )
-        modify = swift_closure_matching(
-            consume,
-            rf"(?:self\.)?{re.escape(modified_atomic)}\s*\.modify\s*\{{",
-        )
-        self.assertIn(".modify", modify)
-        modify_body = normalized(modify)
-        modify_parameter = re.search(
-            r"\.modify\{([A-Za-z_][A-Za-z0-9_]*)in", modify_body
-        )
-        self.assertIsNotNone(modify_parameter)
-        assert modify_parameter is not None
-        collection_name = modify_parameter.group(1)
-
-        match = swift_closure_matching(
-            modify,
-            r"\.firstIndex\s*(?:\(\s*where\s*:\s*)?\{",
-        )
-        match_body = normalized(match)
-        candidate_match = re.search(
-            r"\{\s*([A-Za-z_][A-Za-z0-9_]*)\s+in\b", match
-        )
-        candidate_name = (
-            candidate_match.group(1)
-            if candidate_match is not None
-            else "$0" if "$0." in match else ""
-        )
-        self.assertTrue(candidate_name, "Missing firstIndex candidate binding")
-        if "return" in match_body:
-            predicate_expression = match_body[match_body.rfind("return") + len("return") :]
-        else:
-            predicate_start = (
-                match_body.find(f"{candidate_name}in") + len(f"{candidate_name}in")
-                if candidate_name != "$0"
-                else match_body.find("{") + 1
-            )
-            predicate_expression = match_body[predicate_start:]
-            self.assertNotRegex(predicate_expression, r"(?:let|var)[A-Za-z_]")
-        comparison_positions: list[int] = []
-        for field in ("accountPeerId", "peerId", "maxIncomingReadId"):
-            comparison = re.search(
-                rf"{re.escape(candidate_name)}\.{field}=={field}", predicate_expression
-            ) or re.search(
-                rf"{field}=={re.escape(candidate_name)}\.{field}", predicate_expression
-            )
-            self.assertIsNotNone(comparison, f"Missing exact {field} comparison")
-            assert comparison is not None
-            comparison_positions.append(comparison.start())
-        comparison_span = predicate_expression[
-            min(comparison_positions) : max(comparison_positions) + 64
-        ]
-        self.assertGreaterEqual(
-            comparison_span.count("&&"),
-            2,
-            "The three bypass key comparisons must be conjunctive",
-        )
-        self.assertNotIn("||", predicate_expression)
-
-        match_offset = modify_body.find("firstIndex")
-        self.assertGreaterEqual(match_offset, 0)
-        self.assertEqual(
-            1,
-            modify_body.count("firstIndex"),
-            "Token removal must use the one exact matching index",
-        )
-        expiry_purge = modify_body[:match_offset]
-        self.assertTrue("removeAll" in expiry_purge or "filter" in expiry_purge)
-        expired_predicate = (
-            r"(?:[A-Za-z_$][A-Za-z0-9_$]*\.expiresAt<=(?:now|currentTime)|"
-            r"(?:now|currentTime)>=[A-Za-z_$][A-Za-z0-9_$]*\.expiresAt)"
-        )
-        live_predicate = (
-            r"(?:[A-Za-z_$][A-Za-z0-9_$]*\.expiresAt>(?:now|currentTime)|"
-            r"(?:now|currentTime)<[A-Za-z_$][A-Za-z0-9_$]*\.expiresAt)"
-        )
-        purges_expired = re.search(
-            rf"{re.escape(collection_name)}\.removeAll[^{{}}]*\{{"
-            rf"[^{{}}]*{expired_predicate}",
-            expiry_purge,
-        )
-        retains_live = re.search(
-            rf"{re.escape(collection_name)}={re.escape(collection_name)}\.filter"
-            rf"[^{{}}]*\{{[^{{}}]*{live_predicate}",
-            expiry_purge,
-        )
-        self.assertTrue(
-            purges_expired or retains_live,
-            "Expiry cleanup must remove expired entries before matching",
-        )
-
-        first_index_pattern = re.compile(
-            rf"(?P<kind>if|guard)let(?P<index>[A-Za-z_][A-Za-z0-9_]*)="
-            rf"{re.escape(collection_name)}\.firstIndex"
-        )
-        matching_indexes = list(
-            first_index_pattern.finditer(
-                modify_body[: match_offset + len("firstIndex")]
-            )
-        )
-        self.assertTrue(matching_indexes, "Missing exact firstIndex binding")
-        matching_index = matching_indexes[-1]
-        matched_tail = modify_body[matching_index.start() :]
-        predicate_offset = matched_tail.find("firstIndex")
-        predicate = _balanced_swift_block(matched_tail, predicate_offset)
-        self.assertTrue(predicate, "Missing balanced firstIndex predicate")
-        after_predicate = matched_tail[predicate_offset + len(predicate) :]
-        branch = _balanced_swift_block(after_predicate, 0)
-        self.assertTrue(branch, "Missing firstIndex success/failure branch")
-        after_branch = after_predicate[len(branch) :]
-        if matching_index.group("kind") == "if":
-            success = branch
-            self.assertIn("returnfalse", after_branch)
-        else:
-            self.assertIn("returnfalse", branch)
-            success = after_branch
-
-        removal = (
-            f"{collection_name}.remove(at:{matching_index.group('index')})"
-        )
-        self.assertIn(removal, success)
-        self.assertNotIn("removeAll", success)
-        self.assertIn("returntrue", success)
-        success_prefix = success[: success.find("returntrue")]
-        self.assertNotRegex(
-            success_prefix,
-            r"(?:^|[{};)])(?:if|guard)(?:false|true|let|var|[A-Za-z_])",
-        )
-        assert_ordered_tokens(
-            self,
-            success,
-            [removal, "return true"],
-        )
-        self.assertNotIn("primaryService", bypass)
-
-    def test_bypass_behavior_is_exact_expiring_and_one_shot(self) -> None:
-        entries = [
-            {
-                "token_id": 1,
-                "account_peer_id": 10,
-                "peer_id": 20,
-                "max_incoming_read_id": 30,
-                "expires_at": 200,
-            },
-            {
-                "token_id": 2,
-                "account_peer_id": 11,
-                "peer_id": 20,
-                "max_incoming_read_id": 30,
-                "expires_at": 200,
-            },
-            {
-                "token_id": 3,
-                "account_peer_id": 10,
-                "peer_id": 21,
-                "max_incoming_read_id": 30,
-                "expires_at": 200,
-            },
-            {
-                "token_id": 4,
-                "account_peer_id": 10,
-                "peer_id": 20,
-                "max_incoming_read_id": 31,
-                "expires_at": 200,
-            },
-            {
-                "token_id": 5,
-                "account_peer_id": 10,
-                "peer_id": 20,
-                "max_incoming_read_id": 30,
-                "expires_at": 100,
-            },
-        ]
-
-        for key in ((99, 20, 30), (10, 99, 30), (10, 20, 99)):
-            consumed, entries = consume_bypass_token(entries, *key, now=100)
-            self.assertFalse(consumed)
-            self.assertEqual({1, 2, 3, 4}, {entry["token_id"] for entry in entries})
-
-        consumed, entries = consume_bypass_token(entries, 10, 20, 30, now=100)
-        self.assertTrue(consumed)
-        self.assertEqual({2, 3, 4}, {entry["token_id"] for entry in entries})
-
-        consumed_again, entries = consume_bypass_token(entries, 10, 20, 30, now=100)
-        self.assertFalse(consumed_again)
-        self.assertEqual({2, 3, 4}, {entry["token_id"] for entry in entries})
-
-    def test_manager_consumes_cloud_target_before_force_ghost_normal_branches(self) -> None:
-        manager = source(self.manager_path)
-        push = swift_case_clause(manager, "case let .Push", ("case .Validate",))
         for token in (
-            "Namespaces.Message.Cloud",
-            ".idBased",
-            ".indexBased",
-            "GRVMReadReceiptBypass",
-            "consumeIfMatching",
-            "self.stateManager.accountPeerId",
-            "peerId",
-            "maxIncomingReadId",
-            "forceServerRead",
+            "tokenId: PeerReadStateSynchronizationForceTokenId",
+            "accountPeerId: PeerId",
+            "peerId: PeerId",
+            "maxIncomingReadId: MessageId.Id?",
+            "state: CombinedPeerReadState?",
+            "entries.removeAll",
+            "entry.tokenId == tokenId",
+            "let entry = entries.remove(at: index)",
+            "entry.accountPeerId == accountPeerId",
+            "entry.peerId == peerId",
+            "entry.maxIncomingReadId == maxIncomingReadId",
+            "entry.state == state",
+        ):
+            self.assertIn(normalized(token), normalized(consume))
+        consume_body = normalized(consume)
+        self.assertLess(consume_body.find("entries.removeAll"), consume_body.find("firstIndex"))
+        self.assertLess(consume_body.find("entries.remove(at:index)"), consume_body.find("entry.accountPeerId==accountPeerId"))
+        self.assertEqual(1, consume_body.count("firstIndex"))
+
+    def test_bypass_behavior_is_token_scoped_exact_and_one_shot(self) -> None:
+        state = cloud_read_state(30)
+        wrong_state = cloud_read_state(30, marked_unread=True)
+
+        missing = ReadReceiptBypassModel([])
+        self.assertFalse(missing.consume_if_matching((9, 9), 10, 20, 30, state, 100))
+
+        expired = ReadReceiptBypassModel([(1, 1)])
+        expired_token = expired.register(10, 20, 30, state, 100)
+        self.assertFalse(
+            expired.consume_if_matching(expired_token, 10, 20, 30, state, 130)
+        )
+        self.assertNotIn(expired_token, expired.entries)
+
+        wrong_token = ReadReceiptBypassModel([(1, 1), (2, 2)])
+        correct_token = wrong_token.register(10, 20, 30, state, 100)
+        other_token = wrong_token.register(10, 21, 31, cloud_read_state(31), 100)
+        self.assertFalse(
+            wrong_token.consume_if_matching(other_token, 10, 20, 30, state, 100)
+        )
+        self.assertNotIn(other_token, wrong_token.entries)
+        self.assertIn(correct_token, wrong_token.entries)
+
+        mismatches = (
+            (11, 20, 30, state),
+            (10, 21, 30, state),
+            (10, 20, 31, state),
+            (10, 20, 30, wrong_state),
+        )
+        for index, arguments in enumerate(mismatches, start=10):
+            registry = ReadReceiptBypassModel([(index, index)])
+            token_id = registry.register(10, 20, 30, state, 100)
+            self.assertFalse(
+                registry.consume_if_matching(token_id, *arguments, now=100)
+            )
+            self.assertNotIn(token_id, registry.entries)
+            self.assertFalse(
+                registry.consume_if_matching(token_id, 10, 20, 30, state, 100)
+            )
+
+        exact = ReadReceiptBypassModel([(30, 30)])
+        exact_token = exact.register(10, 20, 30, state, 100)
+        self.assertTrue(
+            exact.consume_if_matching(exact_token, 10, 20, 30, state, 100)
+        )
+        self.assertFalse(
+            exact.consume_if_matching(exact_token, 10, 20, 30, state, 100)
+        )
+
+    def test_main_migrated_and_repeated_forces_have_distinct_identity(self) -> None:
+        registry = ReadReceiptBypassModel(
+            [(0, 0), (1, 2), (1, 2), (3, 4), (5, 6)]
+        )
+        main_state = cloud_read_state(40)
+        migrated_state = cloud_read_state(25)
+        main_token = registry.register(10, 20, 40, main_state, 100)
+        migrated_token = registry.register(10, 21, 25, migrated_state, 100)
+        repeated_token = registry.register(10, 20, 40, main_state, 100)
+        self.assertEqual(3, len({main_token, migrated_token, repeated_token}))
+        self.assertNotEqual(
+            force_push_operation(main_state, main_token),
+            force_push_operation(main_state, repeated_token),
+        )
+
+    def test_restart_stale_nonce_cannot_claim_new_registration(self) -> None:
+        state = cloud_read_state(50)
+        before_restart = ReadReceiptBypassModel([(7, 8)])
+        stale_token = before_restart.register(10, 20, 50, state, 100)
+        stale_operation = force_push_operation(state, stale_token)
+
+        after_restart = ReadReceiptBypassModel([(9, 10)])
+        fresh_token = after_restart.register(10, 20, 50, state, 100)
+        rpc, confirmed = process_read_operation(
+            stale_operation, after_restart, 10, 20, state, True, 100
+        )
+        self.assertEqual([], rpc)
+        self.assertTrue(confirmed)
+        self.assertIn(fresh_token, after_restart.entries)
+
+        fresh_rpc, _ = process_read_operation(
+            force_push_operation(state, fresh_token),
+            after_restart,
+            10,
+            20,
+            state,
+            True,
+            100,
+        )
+        self.assertEqual([("exact", state)], fresh_rpc)
+
+    def test_exact_snapshot_remains_rpc_target_after_live_state_advances(self) -> None:
+        exact_state = cloud_read_state(60, marked_unread=True)
+        live_state = cloud_read_state(61, marked_unread=False)
+        registry = ReadReceiptBypassModel([(11, 12)])
+        token_id = registry.register(10, 20, 60, exact_state, 100)
+        rpc, confirmed = process_read_operation(
+            force_push_operation(exact_state, token_id),
+            registry,
+            10,
+            20,
+            live_state,
+            True,
+            100,
+        )
+        self.assertEqual([("exact", exact_state)], rpc)
+        self.assertFalse(confirmed)
+        self.assertNotEqual(live_state, rpc[0][1])
+
+    def test_active_stock_push_keeps_force_pending_for_one_exact_rpc(self) -> None:
+        state = cloud_read_state(70)
+        registry = ReadReceiptBypassModel([(13, 14)])
+        token_id = registry.register(10, 20, 70, state, 100)
+        active = push_operation(state)
+        incoming = force_push_operation(state, token_id)
+        self.assertNotEqual(active, incoming)
+        pending = incoming if active != incoming else None
+
+        old_rpc, old_confirmed = process_read_operation(
+            active, registry, 10, 20, state, True, 100
+        )
+        self.assertEqual([], old_rpc)
+        self.assertTrue(old_confirmed)
+        self.assertIn(token_id, registry.entries, "Stock Push must not consume force token")
+
+        self.assertIsNotNone(pending)
+        assert pending is not None
+        forced_rpc, forced_confirmed = process_read_operation(
+            pending, registry, 10, 20, cloud_read_state(71), True, 100
+        )
+        self.assertEqual([("exact", state)], forced_rpc)
+        self.assertFalse(forced_confirmed)
+        self.assertNotIn(token_id, registry.entries)
+
+    def test_force_mismatch_falls_back_closed_by_ghost_mode(self) -> None:
+        registered_state = cloud_read_state(80)
+        mismatched_state = cloud_read_state(80, marked_unread=True)
+        live_state = cloud_read_state(81)
+
+        ghost_registry = ReadReceiptBypassModel([(15, 16)])
+        ghost_token = ghost_registry.register(10, 20, 80, registered_state, 100)
+        ghost_rpc, ghost_confirmed = process_read_operation(
+            force_push_operation(mismatched_state, ghost_token),
+            ghost_registry,
+            10,
+            20,
+            live_state,
+            True,
+            100,
+        )
+        self.assertEqual([], ghost_rpc)
+        self.assertTrue(ghost_confirmed)
+        self.assertNotIn(ghost_token, ghost_registry.entries)
+
+        normal_registry = ReadReceiptBypassModel([(17, 18)])
+        normal_token = normal_registry.register(10, 20, 80, registered_state, 100)
+        normal_rpc, normal_confirmed = process_read_operation(
+            force_push_operation(mismatched_state, normal_token),
+            normal_registry,
+            10,
+            20,
+            live_state,
+            False,
+            100,
+        )
+        self.assertEqual([("stock", live_state)], normal_rpc)
+        self.assertFalse(normal_confirmed)
+        self.assertNotIn(normal_token, normal_registry.entries)
+
+    def test_manager_separates_stock_and_force_paths(self) -> None:
+        manager = source(self.manager_path)
+        push = swift_case_clause(
+            manager, "case let .Push", ("case .Validate", "case let .ForcePush")
+        )
+        force = swift_case_clause(
+            manager, "case let .ForcePush", ("case .Validate", "case let .Push")
+        )
+        self.assertTrue(push)
+        self.assertTrue(force)
+        self.assertNotIn("GRVMReadReceiptBypass", push)
+        self.assertNotIn("consumeIfMatching", push)
+        self.assertNotIn("exactPushState", push)
+        for token in (
+            "AyuGramHooks.shouldSuppressReadReceipts",
+            "transaction.confirmSynchronizedIncomingReadState(peerId)",
+            "synchronizePeerReadState(",
+            "push: true",
+            "validate: thenSync",
         ):
             self.assertIn(token, push)
-        self.assertNotIn(".Push(_, thenSync)", push)
-        push_body = normalized(push)
-        consume_call = swift_call(push, "consumeIfMatching")
-        self.assertEqual(1, push.count("consumeIfMatching("))
-        self.assertRegex(
-            normalized(consume_call),
-            r"consumeIfMatching\(accountPeerId:self\.stateManager\.accountPeerId,"
-            r"peerId:peerId,maxIncomingReadId:",
+
+        for token in (
+            "state: pushState",
+            "thenSync: thenSync",
+            "tokenId: tokenId",
+            "Namespaces.Message.Cloud",
+            "GRVMReadReceiptBypass.shared.consumeIfMatching(",
+            "tokenId: tokenId",
+            "accountPeerId: self.stateManager.accountPeerId",
+            "peerId: peerId",
+            "maxIncomingReadId: maxIncomingReadId",
+            "state: pushState",
+            "if forceServerRead, let pushState = pushState",
+            "exactPushState: pushState",
+            "validate: thenSync",
+            "else if AyuGramHooks.shouldSuppressReadReceipts",
+            "transaction.confirmSynchronizedIncomingReadState(peerId)",
+            "else",
+            "push: true",
+        ):
+            self.assertIn(normalized(token), normalized(force))
+        self.assertEqual(1, force.count("consumeIfMatching("))
+        self.assertEqual(1, force.count("exactPushState:"))
+
+    def test_exact_push_overload_selects_snapshot_before_rpc_and_keeps_full_state(self) -> None:
+        synchronize = source(self.synchronize_path)
+        exact = enclosing_swift_function(
+            synchronize, "exactPushState: CombinedPeerReadState"
         )
-        force_assignment = re.search(
-            r"let(forceServerRead)=[A-Za-z0-9_$.]*consumeIfMatching\(",
-            push_body,
+        self.assertTrue(exact)
+        for token in (
+            "exactPushState.states",
+            "Namespaces.Message.Cloud",
+            "Namespaces.Message.SecretIncoming",
+            "pushPeerReadState(",
+            "readState: readState",
+            "validatePeerReadState(",
+        ):
+            self.assertIn(token, exact)
+        rpc_offset = exact.find("pushPeerReadState(")
+        self.assertGreaterEqual(rpc_offset, 0)
+        before_rpc = exact[:rpc_offset]
+        self.assertNotIn("getPeerReadStates", before_rpc)
+        self.assertNotIn("getCombinedPeerReadState", before_rpc)
+        self.assertNotIn("postbox.transaction", before_rpc)
+
+        low_level = swift_block(
+            synchronize,
+            "private func pushPeerReadState(network: Network, postbox: Postbox, stateManager: AccountStateManager, peerId: PeerId, readState: PeerReadState)",
         )
-        self.assertIsNotNone(
-            force_assignment,
-            "The exact bypass result must be assigned to forceServerRead",
-        )
-        force_branch = swift_control_statement(
-            push, "if forceServerRead", keywords=("if",)
-        )
-        self.assertRegex(normalized(force_branch), r"^ifforceServerRead\b")
-        consume_offset = push_body.find("consumeIfMatching(")
-        force_offset = push_body.find("ifforceServerRead")
-        consume_tail = push_body[consume_offset + len(normalized(consume_call)) : force_offset]
-        self.assertNotRegex(consume_tail, r"forceServerRead(?:=|\+=|-=)")
-        assert_ordered_tokens(
-            self,
-            push,
-            ["Namespaces.Message.Cloud", "consumeIfMatching(", "if forceServerRead"],
-        )
-        assert_ordered_tokens(
-            self,
-            force_branch,
-            [
-                "if forceServerRead",
-                "synchronizePeerReadState(",
-                "else if AyuGramHooks.shouldSuppressReadReceipts?(self.stateManager.accountPeerId) == true",
-                "self.postbox.transaction",
-                "transaction.confirmSynchronizedIncomingReadState(peerId)",
-                "else",
-                "synchronizePeerReadState(",
-            ],
-        )
-        self.assertNotIn("signal = .complete()", push)
-        self.assertEqual(2, force_branch.count("synchronizePeerReadState("))
+        self.assertIn("markedUnread", low_level)
 
     def test_reply_thread_modes_preserve_local_updates_before_network_gate(self) -> None:
         reply_source = source(self.reply_path)

@@ -89,7 +89,18 @@ private final class SynchronizePeerReadStatesContextImpl {
                     case .Validate:
                         signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: self.stateManager, peerId: peerId, push: false, validate: true)
                         |> ignoreValues
-                    case let .Push(state: pushState, thenSync: thenSync):
+                    case let .Push(_, thenSync):
+                        if AyuGramHooks.shouldSuppressReadReceipts?(self.stateManager.accountPeerId) == true {
+                            signal = self.postbox.transaction { transaction -> Void in
+                                transaction.confirmSynchronizedIncomingReadState(peerId)
+                            }
+                            |> castError(PeerReadStateValidationError.self)
+                            |> ignoreValues
+                        } else {
+                            signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: self.stateManager, peerId: peerId, push: true, validate: thenSync)
+                            |> ignoreValues
+                        }
+                    case let .ForcePush(state: pushState, thenSync: thenSync, tokenId: tokenId):
                         var maxIncomingReadId: MessageId.Id?
                         if let pushState = pushState,
                            let cloudState = pushState.states.first(where: { namespace, _ in
@@ -106,12 +117,14 @@ private final class SynchronizePeerReadStatesContextImpl {
                         }
 
                         let forceServerRead = GRVMReadReceiptBypass.shared.consumeIfMatching(
+                            tokenId: tokenId,
                             accountPeerId: self.stateManager.accountPeerId,
                             peerId: peerId,
-                            maxIncomingReadId: maxIncomingReadId
+                            maxIncomingReadId: maxIncomingReadId,
+                            state: pushState
                         )
-                        if forceServerRead {
-                            signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: stateManager, peerId: peerId, push: true, validate: thenSync)
+                        if forceServerRead, let pushState = pushState {
+                            signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: self.stateManager, peerId: peerId, exactPushState: pushState, validate: thenSync)
                             |> ignoreValues
                         } else if AyuGramHooks.shouldSuppressReadReceipts?(self.stateManager.accountPeerId) == true {
                             // Ghost mode: don't push the read state to the server, but confirm the
@@ -126,7 +139,7 @@ private final class SynchronizePeerReadStatesContextImpl {
                             |> castError(PeerReadStateValidationError.self)
                             |> ignoreValues
                         } else {
-                            signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: stateManager, peerId: peerId, push: true, validate: thenSync)
+                            signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: self.stateManager, peerId: peerId, push: true, validate: thenSync)
                             |> ignoreValues
                         }
                     }
