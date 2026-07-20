@@ -405,6 +405,13 @@ class StringsTests(unittest.TestCase):
             },
         )
 
+    def test_parse_strings_handles_nested_block_comments(self) -> None:
+        source = '/* outer /* nested */ tail */ "A" = "one";\n'
+        self.assertEqual(
+            VALIDATOR.parse_strings_text(source, "fixture.strings"),
+            {"A": "one"},
+        )
+
     def test_parse_strings_rejects_duplicate_keys(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "GRVMgram.strings"
