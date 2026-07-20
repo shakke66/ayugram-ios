@@ -1885,10 +1885,18 @@ class ConsumeLifecycleContractTests(SourceContractTestCase):
             'decodeObjectArrayForKey("m").compactMap { $0 as? Media }',
             'decodeInt32ForKey("t", orElse: 0)',
             'encodeStringArray(self.resourceIds, forKey: "r")',
-            'encodeObjectArray(self.media, forKey: "m")',
             'encodeInt32(self.preparedAt, forKey: "t")',
             "areMediaArraysEqual(lhs.media, rhs.media)",
             "self.media = media",
+        )
+        encoding = swift_block(attribute, "public func encode(")
+        self.assertContains(
+            encoding,
+            'encoder.encodeGenericObjectArray(self.media.map { $0 as PostboxCoding }, forKey: "m")',
+        )
+        self.assertNotContains(
+            encoding,
+            'encoder.encodeObjectArray(self.media, forKey: "m")',
         )
         equality = swift_block(attribute, "public static func ==(")
         self.assertContainsAll(equality, "resourceIds", "preparedAt", "areMediaArraysEqual")

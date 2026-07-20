@@ -112,7 +112,10 @@ class GhostRuntimeContractTests(unittest.TestCase):
         self.assertIn("let requestId = self.presenceUpdateId", presence)
         self.assertIn("guard requestId == self.presenceUpdateId else", presence)
         self.assertIn(
-            "|> ignoreValues\n        |> then(Signal<Bool, MTRpcError>.single(true))",
+            "|> ignoreValues\n"
+            "        |> map { _ -> Bool in\n"
+            "        }\n"
+            "        |> then(Signal<Bool, MTRpcError>.single(true))",
             presence,
         )
         self.assertIn("requestSucceeded", presence)

@@ -20,7 +20,7 @@ public final class GRVMPreservedConsumableMediaAttribute: MessageAttribute, Equa
 
     public func encode(_ encoder: PostboxEncoder) {
         encoder.encodeStringArray(self.resourceIds, forKey: "r")
-        encoder.encodeObjectArray(self.media, forKey: "m")
+        encoder.encodeGenericObjectArray(self.media.map { $0 as PostboxCoding }, forKey: "m")
         encoder.encodeInt32(self.preparedAt, forKey: "t")
     }
 

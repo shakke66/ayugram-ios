@@ -72,6 +72,8 @@ private final class AccountPresenceManagerImpl {
         self.isPerformingUpdate.set(true)
         self.currentRequestDisposable.set((request
         |> ignoreValues
+        |> map { _ -> Bool in
+        }
         |> then(Signal<Bool, MTRpcError>.single(true))
         |> `catch` { _ -> Signal<Bool, NoError> in
             return .single(false)
