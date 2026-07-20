@@ -82,6 +82,11 @@ class FilterUIContractTests(unittest.TestCase):
         self.assertNotIn("settings.messageFilters", self.editor)
         self.assertNotIn("settings.reversedFilters", self.editor)
 
+    def test_filter_controllers_import_account_context_alert_adapter(self) -> None:
+        for source in (self.filters, self.editor):
+            self.assertIn("import PresentationDataUtils", source)
+            self.assertRegex(source, r"textAlertController\(\s*context:")
+
     def test_editor_uses_real_single_and_multiple_peer_pickers(self) -> None:
         for token in (
             "context.sharedContext.makePeerSelectionController(",

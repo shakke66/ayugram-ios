@@ -90,7 +90,11 @@ private enum AyuGramMainEntry: ItemListNodeEntry {
             })
         case .spyHistory:
             return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.mainDeleted], label: "", sectionId: self.section, style: .blocks, action: {
-                arguments.pushController(ayuGramDeletedMessagesController(context: arguments.context))
+                arguments.pushController(grvmDeletedMessagesController(
+                    context: arguments.context,
+                    peerId: nil,
+                    threadId: nil
+                ))
             })
         case .editHistory:
             return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.mainHistory], label: "", sectionId: self.section, style: .blocks, action: {

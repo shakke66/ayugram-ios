@@ -25,6 +25,9 @@ HISTORY_CONTROLLER = (
 DELETED_CONTROLLER = (
     ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramDeletedMessagesController.swift"
 )
+MAIN_CONTROLLER = (
+    ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramMainController.swift"
+)
 EDITED_CONTROLLER = (
     ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramEditedMessagesController.swift"
 )
@@ -249,6 +252,22 @@ class HistoryUIContractTests(unittest.TestCase):
         message_item = window(value, "case let .message(_, _, message):", 2500)
         self.assertNotIn("action: {}", message_item)
         self.assertIn("arguments.openMessage(message.key)", message_item)
+
+    def test_main_settings_deleted_archive_keeps_account_wide_scope(self) -> None:
+        value = MAIN_CONTROLLER.read_text(encoding="utf-8")
+        item_start = value.index("func item(")
+        section_start = value.index("case .spyHistory:", item_start)
+        section = value[section_start : value.index("case .editHistory:", section_start)]
+
+        for token in (
+            "grvmDeletedMessagesController(",
+            "context: arguments.context",
+            "peerId: nil",
+            "threadId: nil",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, section)
+        self.assertNotIn("ayuGramDeletedMessagesController(", section)
 
     def test_deleted_archive_navigation_is_late_bound_and_thread_aware(self) -> None:
         value = DELETED_CONTROLLER.read_text(encoding="utf-8")
