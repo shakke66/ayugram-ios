@@ -446,6 +446,7 @@ class PeerMessageReadEngineContractTests(unittest.TestCase):
     reply_path = (
         "submodules/TelegramCore/Sources/TelegramEngine/Messages/ReplyThreadHistory.swift"
     )
+    postbox_path = "submodules/Postbox/Sources/Postbox.swift"
     account_protocol_path = "submodules/AccountContext/Sources/AccountContext.swift"
     account_impl_path = "submodules/TelegramUI/Sources/AccountContext.swift"
 
@@ -514,23 +515,60 @@ class PeerMessageReadEngineContractTests(unittest.TestCase):
         self.assertNotIn("synchronizePeerReadState", local)
         self.assertNotIn(".complete()", local)
 
-    def test_force_read_is_deferred_and_registers_before_stock_mutation(self) -> None:
+    def test_force_read_requeues_current_and_migrated_state_before_commit(self) -> None:
         apply = swift_block(source(self.read_path), "func _internal_grvmApplyMaxReadIndex(")
-        force = bounded_window(apply, "case .forceServer", before=100, after=1800)
+        force = bounded_window(apply, "case .forceServer", before=100, after=4200)
         assert_ordered_tokens(
             self,
             force,
             [
                 "deferred {",
-                "GRVMReadReceiptBypass",
-                "accountPeerId: account.peerId",
-                "peerId: index.id.peerId",
-                "maxIncomingReadId: index.id.id",
+                "account.postbox.transaction",
+                "associatedHistoryMessageId",
                 "_internal_applyMaxReadIndexInteractively(",
+                "transaction.getCombinedPeerReadState(peerId)",
+                "GRVMReadReceiptBypass.shared.register(",
+                "accountPeerId: account.peerId",
+                "peerId: peerId",
+                "maxIncomingReadId: maxIncomingReadId",
+                "transaction.forceSynchronizeIncomingReadState(peerId)",
             ],
         )
+        for token in (
+            "var forcePeerIds = [index.id.peerId]",
+            "associatedHistoryMessageId.peerId",
+            "forcePeerIds.append",
+            "for peerId in forcePeerIds",
+            "Namespaces.Message.Cloud",
+            "case let .idBased",
+            "case let .indexBased",
+        ):
+            self.assertIn(token, force)
         self.assertNotIn("afterCompleted", force)
         self.assertNotIn("completed:", force)
+
+    def test_force_sync_transaction_api_always_queues_current_combined_state(self) -> None:
+        postbox = source(self.postbox_path)
+        public_api = swift_block(
+            postbox, "public func forceSynchronizeIncomingReadState("
+        )
+        self.assertIn("self.postbox?.forceSynchronizeIncomingReadState(peerId)", public_api)
+
+        implementation = swift_block(
+            postbox, "fileprivate func forceSynchronizeIncomingReadState("
+        )
+        assert_ordered_tokens(
+            self,
+            implementation,
+            [
+                "self.synchronizeReadStateTable.set(",
+                "peerId",
+                ".Push(",
+                "state: self.readStateTable.getCombinedState(peerId)",
+                "thenSync: true",
+                "currentUpdatedSynchronizeReadStateOperations",
+            ],
+        )
 
     def test_bypass_token_is_exact_expiring_and_one_shot(self) -> None:
         bypass = source(self.bypass_path)
