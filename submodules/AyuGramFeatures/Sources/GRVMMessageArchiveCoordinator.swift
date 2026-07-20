@@ -666,7 +666,9 @@ public final class GRVMMessageArchiveCoordinator {
 
                     return self.postbox.transaction { transaction -> Bool in
                         guard let freshMessage = transaction.getMessage(message.id),
-                              freshMessage.stableId == message.stableId else {
+                              freshMessage.stableId == message.stableId,
+                              let freshPrimaryResourceIds = grvmPrimaryMediaResourceIds(freshMessage.media),
+                              Set(freshPrimaryResourceIds) == Set(requiredPrimaryIds) else {
                             return false
                         }
                         if freshMessage.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) {
@@ -676,7 +678,7 @@ public final class GRVMMessageArchiveCoordinator {
                         attributes.removeAll(where: { $0 is GRVMPreservedConsumableMediaAttribute })
                         attributes.append(GRVMPreservedConsumableMediaAttribute(
                             resourceIds: terminalResourceIds,
-                            media: preparation.message.media,
+                            media: freshMessage.media,
                             preparedAt: Int32(Date().timeIntervalSince1970)
                         ))
                         transaction.updateMessage(freshMessage.id, update: { currentMessage in

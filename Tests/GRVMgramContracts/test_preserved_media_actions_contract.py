@@ -2718,6 +2718,36 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
             "insertedResourceIds",
         )
 
+    def test_prepare_revalidates_fresh_media_before_marker_write(self) -> None:
+        prepare = swift_block(
+            source("submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"),
+            "public func prepareConsumableMedia(",
+        )
+        marker_calls = swift_calls(prepare, "GRVMPreservedConsumableMediaAttribute")
+        self.assertTrue(marker_calls)
+        marker_call = marker_calls[-1]
+        marker_position = prepare.rfind(marker_call)
+        attach_start = prepare.rfind("return self.postbox.transaction", 0, marker_position)
+        self.assertGreaterEqual(attach_start, 0)
+        attach_and_rollback = prepare[attach_start:]
+
+        self.assertMatches(
+            attach_and_rollback,
+            r"(?s)guard\b.*?\blet\s+(?P<freshIds>[A-Za-z_]\w*)\s*=\s*"
+            r"grvmPrimaryMediaResourceIds\(freshMessage\.media\).*?"
+            r"Set\((?P=freshIds)\)\s*==\s*Set\(requiredPrimaryIds\).*?"
+            r"else\s*\{\s*return\s+false",
+        )
+        self.assertContains(marker_call, "media: freshMessage.media")
+        self.assertNotContains(marker_call, "media: preparation.message.media")
+        self.assertOrdered(
+            attach_and_rollback,
+            "grvmPrimaryMediaResourceIds(freshMessage.media)",
+            "GRVMPreservedConsumableMediaAttribute(",
+            "if !attached",
+            "rollbackConsumableMediaReservation(",
+        )
+
     def test_store_reservation_is_sentinel_idempotent_and_fail_closed(self) -> None:
         store = source("submodules/AyuGramLib/Sources/GRVMMessageArchiveStore.swift")
         reservation = swift_block(store, "public func reserveConsumableMedia(")
