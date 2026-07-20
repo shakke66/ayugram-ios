@@ -205,6 +205,27 @@ class PeerIdentitySourceContractTests(unittest.TestCase):
         self.assertIn("parseMagnitude(remainderDigits, maximum: maximumPeerId)", parser)
         self.assertNotIn("parseMagnitude(digits, maximum: Int64.max)", parser)
 
+    def test_parser_stages_peer_namespaces_and_preserves_ordered_deduplication(self) -> None:
+        parser = swift_block(self.peer_id, "public static func candidates(for query: String)")
+        self.assertIn("var namespacesAndIds: [(PeerId.Namespace, Int64)] = []", parser)
+
+        explicit = source_region(parser, "if isExplicit {", "} else if digits.count >= 5")
+        user = "namespacesAndIds.append((Namespaces.Peer.CloudUser, magnitude))"
+        group = "namespacesAndIds.append((Namespaces.Peer.CloudGroup, magnitude))"
+        channel = "namespacesAndIds.append((Namespaces.Peer.CloudChannel, magnitude))"
+        self.assertLess(explicit.index(user), explicit.index(group))
+        self.assertLess(explicit.index(group), explicit.index(channel))
+
+        deduplication = source_region(parser, "var result: [PeerId] = []", "return result")
+        for token in (
+            "var existingIds = Set<PeerId>()",
+            "for (namespace, magnitude) in namespacesAndIds",
+            "PeerId(namespace: namespace, id: PeerId.Id._internalFromInt64Value(magnitude))",
+            "if existingIds.insert(id).inserted",
+            "result.append(id)",
+        ):
+            self.assertIn(token, deduplication)
+
     def test_explicit_prefix_is_limited_to_positive_form(self) -> None:
         parser = swift_block(self.peer_id, "public static func candidates(for query: String)")
         self.assertIn("guard !isExplicit else", parser)

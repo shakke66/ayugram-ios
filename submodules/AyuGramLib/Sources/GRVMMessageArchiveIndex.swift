@@ -1,4 +1,5 @@
 import Postbox
+import SwiftSignalKit
 
 public struct GRVMMessageArchiveSnapshot: Equatable {
     public let deleted: Set<GRVMMessageKey>

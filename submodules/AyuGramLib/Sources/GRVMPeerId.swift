@@ -32,7 +32,7 @@ public enum GRVMNumericPeerLookup {
             return []
         }
 
-        var namespacesAndIds: [(Int32, Int64)] = []
+        var namespacesAndIds: [(PeerId.Namespace, Int64)] = []
         if isNegative {
             guard !isExplicit else {
                 return []

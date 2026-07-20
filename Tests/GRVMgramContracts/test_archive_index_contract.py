@@ -3,10 +3,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 INDEX = ROOT / "submodules/AyuGramLib/Sources/GRVMMessageArchiveIndex.swift"
+AYUGRAM_BUILD = ROOT / "submodules/AyuGramLib/BUILD"
 COORDINATOR = ROOT / "submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"
 
 
 class ArchiveIndexContractTests(unittest.TestCase):
+    def test_atomic_module_is_imported_and_declared(self) -> None:
+        source = INDEX.read_text(encoding="utf-8")
+        build = AYUGRAM_BUILD.read_text(encoding="utf-8")
+        self.assertIn("import SwiftSignalKit", source)
+        self.assertIn(
+            '"//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit"', build
+        )
+
     def test_snapshot_is_owned_by_one_atomic(self) -> None:
         source = INDEX.read_text(encoding="utf-8")
         self.assertEqual(1, source.count("Atomic<GRVMMessageArchiveSnapshot>"))
