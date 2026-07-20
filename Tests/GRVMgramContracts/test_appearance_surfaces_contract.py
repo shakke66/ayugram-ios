@@ -105,6 +105,9 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
         data = source(
             "submodules/TelegramPresentationData/Sources/ChatPresentationData.swift"
         )
+        build = source("submodules/TelegramPresentationData/BUILD")
+        self.assertIn("import Postbox", data)
+        self.assertIn('"//submodules/Postbox:Postbox"', build)
         for fragment in [
             "public let accountPeerId: PeerId?",
             "accountPeerId: PeerId? = nil",
