@@ -544,6 +544,11 @@ class PeerMessageReadEngineContractTests(unittest.TestCase):
             "case let .indexBased",
         ):
             self.assertIn(token, force)
+        token_gate = swift_control_statement(
+            force, "if let maxIncomingReadId", keywords=("if",)
+        )
+        self.assertIn("GRVMReadReceiptBypass.shared.register(", token_gate)
+        self.assertIn("transaction.forceSynchronizeIncomingReadState(peerId)", token_gate)
         self.assertNotIn("afterCompleted", force)
         self.assertNotIn("completed:", force)
 
