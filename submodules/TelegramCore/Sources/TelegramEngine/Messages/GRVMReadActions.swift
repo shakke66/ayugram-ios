@@ -18,25 +18,30 @@ func _internal_grvmApplyMaxReadIndex(account: Account, index: MessageIndex, mode
         )
     case .localOnly:
         guard index.id.namespace == Namespaces.Message.Cloud,
-              index.id.peerId.namespace == Namespaces.Peer.CloudUser
+              (index.id.peerId.namespace == Namespaces.Peer.CloudUser
                 || index.id.peerId.namespace == Namespaces.Peer.CloudGroup
-                || index.id.peerId.namespace == Namespaces.Peer.CloudChannel else {
+                || index.id.peerId.namespace == Namespaces.Peer.CloudChannel) else {
             return .single(())
         }
 
         return account.postbox.transaction { transaction -> Void in
+            let associatedHistoryMessageId = (transaction.getPeerCachedData(peerId: index.id.peerId) as? CachedChannelData)?.associatedHistoryMessageId
             _internal_applyMaxReadIndexInteractively(
                 transaction: transaction,
                 stateManager: account.stateManager,
                 index: index
             )
             transaction.confirmSynchronizedIncomingReadState(index.id.peerId)
+            if let associatedHistoryMessageId = associatedHistoryMessageId,
+               associatedHistoryMessageId.peerId != index.id.peerId {
+                transaction.confirmSynchronizedIncomingReadState(associatedHistoryMessageId.peerId)
+            }
         }
     case .forceServer:
         guard index.id.namespace == Namespaces.Message.Cloud,
-              index.id.peerId.namespace == Namespaces.Peer.CloudUser
+              (index.id.peerId.namespace == Namespaces.Peer.CloudUser
                 || index.id.peerId.namespace == Namespaces.Peer.CloudGroup
-                || index.id.peerId.namespace == Namespaces.Peer.CloudChannel else {
+                || index.id.peerId.namespace == Namespaces.Peer.CloudChannel) else {
             return .single(())
         }
 
