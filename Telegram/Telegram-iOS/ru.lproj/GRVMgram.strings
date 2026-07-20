@@ -96,6 +96,7 @@
 "GRVMgram.Filters.Clear.Title" = "Очистить фильтры";
 "GRVMgram.Filters.Clear.Text" = "Удалить все фильтры этой учётной записи?";
 "GRVMgram.Filters.Matching.Title" = "Подходящие фильтры";
+"GRVMgram.Filters.People" = "Пользователи";
 "GRVMgram.FilterEditor.AddTitle" = "Добавить фильтр";
 "GRVMgram.FilterEditor.EditTitle" = "Изменить фильтр";
 "GRVMgram.FilterEditor.Expression.Header" = "Регулярное выражение";

@@ -103,6 +103,7 @@ GRVMgram.Filters.InvalidFile.Text
 GRVMgram.Filters.Clear.Title
 GRVMgram.Filters.Clear.Text
 GRVMgram.Filters.Matching.Title
+GRVMgram.Filters.People
 GRVMgram.FilterEditor.AddTitle
 GRVMgram.FilterEditor.EditTitle
 GRVMgram.FilterEditor.Expression.Header
@@ -561,6 +562,18 @@ class GRVMgramLocalizationResourcesContractTests(unittest.TestCase):
         }
         for key, value in exact_english.items():
             self.assertEqual(self.english[key], value)
+
+    def test_current_people_header_and_count_results_are_natural(self) -> None:
+        self.assertEqual(self.english["GRVMgram.Filters.People"], "People")
+        self.assertEqual(self.russian["GRVMgram.Filters.People"], "Пользователи")
+        self.assertEqual(
+            self.english["GRVMgram.Deleted.ArchivedResources"],
+            "Archived resources: %d",
+        )
+        self.assertEqual(
+            self.english["GRVMgram.DeleteOwn.Result"],
+            "Messages deleted: %d.",
+        )
 
 
 if __name__ == "__main__":

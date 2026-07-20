@@ -96,6 +96,7 @@ public enum GRVMgramStringKey: String, CaseIterable {
     case filtersClearTitle = "GRVMgram.Filters.Clear.Title"
     case filtersClearText = "GRVMgram.Filters.Clear.Text"
     case filtersMatchingTitle = "GRVMgram.Filters.Matching.Title"
+    case filtersPeople = "GRVMgram.Filters.People"
 
     case filterEditorAddTitle = "GRVMgram.FilterEditor.AddTitle"
     case filterEditorEditTitle = "GRVMgram.FilterEditor.EditTitle"

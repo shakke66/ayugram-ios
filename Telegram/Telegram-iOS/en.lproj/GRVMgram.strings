@@ -96,6 +96,7 @@
 "GRVMgram.Filters.Clear.Title" = "Clear Filters";
 "GRVMgram.Filters.Clear.Text" = "Remove every filter from this account?";
 "GRVMgram.Filters.Matching.Title" = "Matching Filters";
+"GRVMgram.Filters.People" = "People";
 "GRVMgram.FilterEditor.AddTitle" = "Add Filter";
 "GRVMgram.FilterEditor.EditTitle" = "Edit Filter";
 "GRVMgram.FilterEditor.Expression.Header" = "Regular Expression";
@@ -248,7 +249,7 @@
 "GRVMgram.Deleted.Author" = "%1$@: %2$@";
 "GRVMgram.Deleted.Attachment" = "Attachment available";
 "GRVMgram.Deleted.MediaUnavailable" = "Media was not downloaded before deletion.";
-"GRVMgram.Deleted.ArchivedResources" = "%d archived resources";
+"GRVMgram.Deleted.ArchivedResources" = "Archived resources: %d";
 "GRVMgram.Deleted.Clear.Title" = "Clear Deleted";
 "GRVMgram.Deleted.Clear.Text" = "Permanently remove messages and saved media from this GRVMgram archive?";
 "GRVMgram.Deleted.Clear.Action" = "Clear";
@@ -401,7 +402,7 @@
 "GRVMgram.DeleteOwn.Title" = "Delete Own Messages?";
 "GRVMgram.DeleteOwn.Text" = "Delete all of your messages in this chat or topic? This cannot be undone.";
 "GRVMgram.DeleteOwn.Action" = "Delete";
-"GRVMgram.DeleteOwn.Result" = "Deleted %d message(s).";
+"GRVMgram.DeleteOwn.Result" = "Messages deleted: %d.";
 "GRVMgram.DeleteOwn.Error" = "Your messages could not be deleted. Please try again.";
 "GRVMgram.Read.Error" = "The read state could not be updated. Please try again.";
 "GRVMgram.Read.Unavailable" = "This read action is not available in this chat or topic.";
