@@ -42,6 +42,7 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
     guard let data = data else {
         return []
     }
+    let grvmStrings = GRVMgramStrings(presentationData.strings)
     
     var currentPeerInfoSection: InfoSection = .peerInfo
         
@@ -93,14 +94,14 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
                 UIPasteboard.general.string = grvmFormatPeerId(peerId, format: format)
             }
             let items: [ContextMenuItem] = [
-                .action(ContextMenuActionItem(text: "Copy Telegram ID", icon: { theme in
+                .action(ContextMenuActionItem(text: grvmStrings[.peerCopyTelegramId], icon: { theme in
                     return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.contextMenu.primaryColor)
                 }, action: { controller, _ in
                     controller?.dismiss {
                         copyAction(.telegram)
                     }
                 })),
-                .action(ContextMenuActionItem(text: "Copy Bot API ID", icon: { theme in
+                .action(ContextMenuActionItem(text: grvmStrings[.peerCopyBotApiId], icon: { theme in
                     return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.contextMenu.primaryColor)
                 }, action: { controller, _ in
                     controller?.dismiss {
@@ -711,9 +712,9 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
 
             var peerDate: (label: String, timestamp: Int32)?
             if let cachedData = data.cachedData as? CachedChannelData, let invitedOn = cachedData.invitedOn, invitedOn > 0 {
-                peerDate = ("Joined", invitedOn)
+                peerDate = (grvmStrings[.peerJoined], invitedOn)
             } else if channel.creationDate > 0 {
-                peerDate = ("Created", channel.creationDate)
+                peerDate = (grvmStrings[.peerCreated], channel.creationDate)
             }
             if let peerDate {
                 items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemPeerDate, label: peerDate.label, text: stringForFullDate(timestamp: peerDate.timestamp, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat), textColor: .primary, action: nil, requestLayout: { animated in
@@ -885,7 +886,7 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
             items[currentPeerInfoSection]!.append(makePeerIdItem(ItemDialogId, group.id))
         }
         if group.creationDate > 0 {
-            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemCreationDate, label: "Created", text: stringForFullDate(timestamp: group.creationDate, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat), textColor: .primary, action: nil, requestLayout: { animated in
+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemCreationDate, label: grvmStrings[.peerCreated], text: stringForFullDate(timestamp: group.creationDate, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat), textColor: .primary, action: nil, requestLayout: { animated in
                 interaction.requestLayout(animated)
             }))
         }

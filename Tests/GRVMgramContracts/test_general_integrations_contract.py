@@ -161,9 +161,14 @@ class GeneralTranslationContractTests(unittest.TestCase):
             "provider: provider",
         ):
             self.assertIn(token, self.chat_translation)
-        self.assertIn('["Telegram", "Google", "Yandex"]', self.general)
+        for key in (
+            ".translationTelegram",
+            ".translationGoogle",
+            ".translationYandex",
+        ):
+            self.assertIn(f"strings[{key}]", self.general)
         self.assertIn("(value + 1) % 3", self.general)
-        self.assertNotIn('"Native"', self.general)
+        self.assertNotIn("translationNative", self.general)
         self.assertIn("updateGRVMSettings(accountId: context.account.peerId", self.general)
 
 
@@ -192,7 +197,7 @@ class GeneralLinkContractTests(unittest.TestCase):
         self.assertIn("settings(accountPeerId: accountPeerId)", warning_hook)
         self.assertIn("disableExternalLinkWarning ?? false", warning_hook)
         self.assertIn("case disableExternalLinkWarning(PresentationTheme, Bool)", self.general)
-        self.assertIn('title: "Disable External Link Warning"', self.general)
+        self.assertIn("title: strings[.generalLinkWarning]", self.general)
         self.assertIn("arguments.updateBool(\\.disableExternalLinkWarning, v)", self.general)
 
         open_url_start = self.chat_controller.index("func openUrl(")

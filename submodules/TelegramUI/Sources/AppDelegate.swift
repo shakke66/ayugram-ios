@@ -1236,6 +1236,9 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
                 |> distinctUntilChanged
                 |> deliverOnMainQueue
             )
+            self.grvmScreenCapturePrivacyController?.setPresentationDataSignal(
+                sharedContext.presentationData
+            )
             self.bindGRVMLocalCrashLifecycle(sharedContext: sharedContext, accountManager: accountManager)
 
             let grvmActiveAccounts = sharedContext.activeAccountContexts
@@ -2404,21 +2407,31 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
             owner.finish()
             return
         }
+        guard let context = self.contextValue?.context else {
+            owner.finish()
+            return
+        }
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        let strings = GRVMgramStrings(presentationData.strings)
         let bundle = owner.bundle
         let formattedSize = ByteCountFormatter.string(
             fromByteCount: bundle.totalBytes,
             countStyle: .file
         )
-        let message = "The previous foreground session ended unexpectedly. \(bundle.fileCount) local log file(s) (\(formattedSize)) can be exported. Nothing is uploaded automatically."
+        let message = strings[.crashPromptText] + "\n\n" + strings.format(
+            .crashSummary,
+            Int32(bundle.fileCount),
+            formattedSize
+        )
         let controller = UIAlertController(
-            title: "Export Local Logs",
+            title: strings[.crashPromptTitle],
             message: message,
             preferredStyle: .alert
         )
-        controller.addAction(UIAlertAction(title: "Not Now", style: .cancel, handler: { _ in
+        controller.addAction(UIAlertAction(title: strings[.crashNotNow], style: .cancel, handler: { _ in
             owner.finish()
         }))
-        controller.addAction(UIAlertAction(title: "Export Local Logs", style: .default, handler: { [weak self] _ in
+        controller.addAction(UIAlertAction(title: strings[.crashExport], style: .default, handler: { [weak self] _ in
             Queue.mainQueue().async {
                 guard let self else {
                     owner.finish()

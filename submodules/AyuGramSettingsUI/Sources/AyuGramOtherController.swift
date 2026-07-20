@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 import Display
 import SwiftSignalKit
 import Postbox
@@ -16,69 +15,41 @@ import AyuGramLib
 private final class AyuGramOtherArguments {
     let context: AccountContext
     let updateBool: (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void
-    let openURL: (String) -> Void
-    let copyToClipboard: (String) -> Void
     let resetSettings: () -> Void
 
-    init(context: AccountContext, updateBool: @escaping (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void, openURL: @escaping (String) -> Void, copyToClipboard: @escaping (String) -> Void, resetSettings: @escaping () -> Void) {
+    init(context: AccountContext, updateBool: @escaping (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void, resetSettings: @escaping () -> Void) {
         self.context = context
         self.updateBool = updateBool
-        self.openURL = openURL
-        self.copyToClipboard = copyToClipboard
         self.resetSettings = resetSettings
     }
 }
 
 private enum AyuGramOtherSection: Int32 {
-    case support
     case other
 }
 
 private enum AyuGramOtherEntry: ItemListNodeEntry {
-    case supportHeader(PresentationTheme)
-    case boosty(PresentationTheme)
-    case ton(PresentationTheme)
-    case bitcoin(PresentationTheme)
-    case ethereum(PresentationTheme)
-    case solana(PresentationTheme)
-    case tron(PresentationTheme)
-    case supportInfo(PresentationTheme)
     case otherHeader(PresentationTheme)
     case streamerMode(PresentationTheme, Bool)
     case streamerModeInfo(PresentationTheme)
     case crashReporting(PresentationTheme, Bool)
     case crashReportingInfo(PresentationTheme)
     case exportLocalLogs(PresentationTheme)
-    case associateLinks(PresentationTheme, Bool)
     case resetSettings(PresentationTheme)
 
     var section: ItemListSectionId {
-        switch self {
-        case .supportHeader, .boosty, .ton, .bitcoin, .ethereum, .solana, .tron, .supportInfo:
-            return AyuGramOtherSection.support.rawValue
-        case .otherHeader, .streamerMode, .streamerModeInfo, .crashReporting, .crashReportingInfo, .exportLocalLogs, .associateLinks, .resetSettings:
-            return AyuGramOtherSection.other.rawValue
-        }
+        return AyuGramOtherSection.other.rawValue
     }
 
     var stableId: Int32 {
         switch self {
-        case .supportHeader: return 0
-        case .boosty: return 1
-        case .ton: return 2
-        case .bitcoin: return 3
-        case .ethereum: return 4
-        case .solana: return 5
-        case .tron: return 6
-        case .supportInfo: return 7
-        case .otherHeader: return 8
-        case .streamerMode: return 9
-        case .streamerModeInfo: return 10
-        case .crashReporting: return 11
-        case .crashReportingInfo: return 12
-        case .exportLocalLogs: return 13
-        case .associateLinks: return 14
-        case .resetSettings: return 15
+        case .otherHeader: return 0
+        case .streamerMode: return 1
+        case .streamerModeInfo: return 2
+        case .crashReporting: return 3
+        case .crashReportingInfo: return 4
+        case .exportLocalLogs: return 5
+        case .resetSettings: return 6
         }
     }
 
@@ -86,7 +57,6 @@ private enum AyuGramOtherEntry: ItemListNodeEntry {
         switch (lhs, rhs) {
         case let (.streamerMode(_, lv), .streamerMode(_, rv)): return lv == rv
         case let (.crashReporting(_, lv), .crashReporting(_, rv)): return lv == rv
-        case let (.associateLinks(_, lv), .associateLinks(_, rv)): return lv == rv
         default: return lhs.stableId == rhs.stableId
         }
     }
@@ -95,64 +65,39 @@ private enum AyuGramOtherEntry: ItemListNodeEntry {
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! AyuGramOtherArguments
+        let strings = GRVMgramStrings(presentationData.strings)
         switch self {
-        case .supportHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Support", sectionId: self.section)
-        case .boosty:
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Boosty", label: "", sectionId: self.section, style: .blocks, action: { arguments.openURL("https://boosty.to/ayugram") })
-        case .ton:
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "TON", label: "", sectionId: self.section, style: .blocks, action: { arguments.copyToClipboard("UQA4i8U8vP3mYUZSV3KqDQEHPwmhninEqCkkKc7BITQ652de") })
-        case .bitcoin:
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Bitcoin", label: "", sectionId: self.section, style: .blocks, action: { arguments.copyToClipboard("bc1qdk6qq4mzq5yap3fpy0qau3246w3m3uwac9f0xd") })
-        case .ethereum:
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Ethereum", label: "", sectionId: self.section, style: .blocks, action: { arguments.copyToClipboard("0x405589857C8DFAb45B2027c68ad1e58877FDa347") })
-        case .solana:
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Solana", label: "", sectionId: self.section, style: .blocks, action: { arguments.copyToClipboard("8ZHQpPxpsdRjsWoBcF1dmvRM5dB6zEhJ3jMBFZjYfyHs") })
-        case .tron:
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Tron", label: "", sectionId: self.section, style: .blocks, action: { arguments.copyToClipboard("TRpbajq38qU8joThgAfKJLyEPbNjzsdPJ1") })
-        case .supportInfo:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("Support the developers and get a unique badge!"), sectionId: self.section)
         case .otherHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Other", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.otherHeader], sectionId: self.section)
         case let .streamerMode(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Streamer Mode", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.streamerModeEnabled, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.streamerTitle], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.streamerModeEnabled, v) })
         case .streamerModeInfo:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("Hides app content while iOS reports screen recording, AirPlay, or screen sharing. It does not hide ordinary screenshots."), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain(strings[.streamerInfo]), sectionId: self.section)
         case let .crashReporting(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Crash Reporting", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.crashReportingEnabled, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.crashTitle], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.crashReportingEnabled, v) })
         case .crashReportingInfo:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("When enabled, you will be offered to export local logs after an unexpected app termination. Nothing is uploaded automatically."), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain(strings[.crashInfo]), sectionId: self.section)
         case .exportLocalLogs:
-            return ItemListActionItem(presentationData: presentationData, title: "Export Local Logs", kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+            return ItemListActionItem(presentationData: presentationData, title: strings[.crashExport], kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
                 AyuGramFeatures.exportLocalLogs?(arguments.context.account.peerId)
             })
-        case let .associateLinks(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Associate Links with AyuGram", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.associateLinks, v) })
         case .resetSettings:
-            return ItemListActionItem(presentationData: presentationData, title: "Reset Settings", kind: .destructive, alignment: .natural, sectionId: self.section, style: .blocks, action: { arguments.resetSettings() })
+            return ItemListActionItem(presentationData: presentationData, title: strings[.resetTitle], kind: .destructive, alignment: .natural, sectionId: self.section, style: .blocks, action: { arguments.resetSettings() })
         }
     }
 }
 
 private func ayuGramOtherEntries(settings: AyuGramSettings, presentationData: PresentationData) -> [AyuGramOtherEntry] {
-    var entries: [AyuGramOtherEntry] = []
-    entries.append(.supportHeader(presentationData.theme))
-    entries.append(.boosty(presentationData.theme))
-    entries.append(.ton(presentationData.theme))
-    entries.append(.bitcoin(presentationData.theme))
-    entries.append(.ethereum(presentationData.theme))
-    entries.append(.solana(presentationData.theme))
-    entries.append(.tron(presentationData.theme))
-    entries.append(.supportInfo(presentationData.theme))
-    entries.append(.otherHeader(presentationData.theme))
-    entries.append(.streamerMode(presentationData.theme, settings.streamerModeEnabled))
-    entries.append(.streamerModeInfo(presentationData.theme))
-    entries.append(.crashReporting(presentationData.theme, settings.crashReportingEnabled))
-    entries.append(.crashReportingInfo(presentationData.theme))
+    var entries: [AyuGramOtherEntry] = [
+        .otherHeader(presentationData.theme),
+        .streamerMode(presentationData.theme, settings.streamerModeEnabled),
+        .streamerModeInfo(presentationData.theme),
+        .crashReporting(presentationData.theme, settings.crashReportingEnabled),
+        .crashReportingInfo(presentationData.theme),
+    ]
     if settings.crashReportingEnabled {
         entries.append(.exportLocalLogs(presentationData.theme))
     }
-    entries.append(.associateLinks(presentationData.theme, settings.associateLinks))
     entries.append(.resetSettings(presentationData.theme))
     return entries
 }
@@ -164,18 +109,13 @@ public func ayuGramOtherController(context: AccountContext) -> ViewController {
         updateBool: { keyPath, value in
             let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in var s = s; s[keyPath: keyPath] = value; return s }.startStandalone()
         },
-        openURL: { url in
-            context.sharedContext.openExternalUrl(context: context, urlContext: .generic, url: url, forceExternal: true, presentationData: context.sharedContext.currentPresentationData.with { $0 }, navigationController: nil, dismissInput: {})
-        },
-        copyToClipboard: { text in
-            UIPasteboard.general.string = text
-        },
         resetSettings: {
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let strings = GRVMgramStrings(presentationData.strings)
             presentControllerImpl?(textAlertController(
                 context: context,
-                title: "Reset Settings",
-                text: "Reset settings for this account?",
+                title: strings[.resetTitle],
+                text: strings[.resetText],
                 actions: [
                     TextAlertAction(
                         type: .genericAction,
@@ -184,7 +124,7 @@ public func ayuGramOtherController(context: AccountContext) -> ViewController {
                     ),
                     TextAlertAction(
                         type: .destructiveAction,
-                        title: "Reset",
+                        title: strings[.resetAction],
                         action: {
                             let _ = updateGRVMSettings(
                                 accountId: context.account.peerId,
@@ -201,9 +141,10 @@ public func ayuGramOtherController(context: AccountContext) -> ViewController {
 
     let signal = combineLatest(context.sharedContext.presentationData, grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager))
     |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let strings = GRVMgramStrings(presentationData.strings)
         let entries = ayuGramOtherEntries(settings: settings, presentationData: presentationData)
         return (
-            ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text("Other"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
+            ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(strings[.otherTitle]), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
             (ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks), arguments)
         )
     }

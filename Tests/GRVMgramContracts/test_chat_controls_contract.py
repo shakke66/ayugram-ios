@@ -324,7 +324,7 @@ class ChatControlsContractTests(unittest.TestCase):
         edited = item[edited_start:next_start]
 
         for block, key_path, reset in [
-            (deleted, r"\.deletedMessageMark", r'"\u{1F9F9}"'),
+            (deleted, r"\.deletedMessageMark", "strings[.deletedMarkDefault]"),
             (edited, r"\.editedMessageMark", '""'),
         ]:
             with self.subTest(key_path=key_path):

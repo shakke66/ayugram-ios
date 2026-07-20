@@ -9,6 +9,20 @@ OTHER_PATH = ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramOtherController
 APPEARANCE_PATH = ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramAppearanceController.swift"
 CONTROLLER_PATH = ROOT / "submodules/TelegramUI/Sources/GRVMScreenCapturePrivacyController.swift"
 APP_DELEGATE_PATH = ROOT / "submodules/TelegramUI/Sources/AppDelegate.swift"
+ENGLISH_PATH = ROOT / "Telegram/Telegram-iOS/en.lproj/GRVMgram.strings"
+RUSSIAN_PATH = ROOT / "Telegram/Telegram-iOS/ru.lproj/GRVMgram.strings"
+
+
+def localized_value(path: Path, key: str) -> str:
+    source = path.read_text(encoding="utf-8")
+    match = re.search(
+        rf'^"{re.escape(key)}"\s*=\s*"((?:\\.|[^"\\])*)";$',
+        source,
+        re.MULTILINE,
+    )
+    if match is None:
+        raise AssertionError(f"missing localization key {key} in {path}")
+    return match.group(1)
 
 
 class StreamerPrivacyContractTests(unittest.TestCase):
@@ -31,9 +45,18 @@ class StreamerPrivacyContractTests(unittest.TestCase):
         self.assertIn("ItemListSwitchItem", source)
         self.assertIn("streamerModeEnabled", source)
         self.assertIn("updateGRVMSettings(accountId: context.account.peerId", source)
-        self.assertRegex(source, r"recording|AirPlay|screen sharing")
-        self.assertRegex(source, r"does not hide|doesn't hide|not hide")
-        self.assertRegex(source, r"screenshots?")
+        self.assertIn("strings[.streamerTitle]", source)
+        self.assertIn("strings[.streamerInfo]", source)
+
+        english = localized_value(ENGLISH_PATH, "GRVMgram.Streamer.Info")
+        self.assertRegex(english, r"recording|AirPlay|screen sharing")
+        self.assertRegex(english, r"does not hide|doesn't hide|not hide")
+        self.assertRegex(english, r"screenshots?")
+
+        russian = localized_value(RUSSIAN_PATH, "GRVMgram.Streamer.Info")
+        self.assertRegex(russian, r"запис|AirPlay|демонстра")
+        self.assertRegex(russian, r"не скры")
+        self.assertRegex(russian, r"снимк")
         self.assertNotIn("showStreamerToggleInDrawer", source)
 
     def test_obsolete_drawer_producer_is_removed(self) -> None:

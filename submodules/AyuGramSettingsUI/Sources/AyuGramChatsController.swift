@@ -165,58 +165,59 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! AyuGramChatsArguments
+        let strings = GRVMgramStrings(presentationData.strings)
         switch self {
         case .stickersHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Stickers & Emoji", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.stickersHeader], sectionId: self.section)
         case let .onlyAddedStickers(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Show Only Added Stickers", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showOnlyAddedStickers, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.stickersOnlyAdded], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showOnlyAddedStickers, v) })
         case let .showChannelReactions(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Show Channel Reactions", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showChannelReactions, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.stickersChannelReactions], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showChannelReactions, v) })
         case let .showGroupReactions(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Show Group Reactions", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showGroupReactions, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.stickersGroupReactions], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showGroupReactions, v) })
         case let .recentStickersCount(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Recent Stickers Count", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.stickersRecent], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.recentStickersCount, [20, 50, 100, 200][(([20, 50, 100, 200].firstIndex(of: value) ?? -1) + 1) % 4])
             })
         case .channelsHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Groups & Channels", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.channelsHeader], sectionId: self.section)
         case let .quickAdmin(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Quick Admin Shortcuts", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.quickAdminShortcuts, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.channelsQuickAdmin], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.quickAdminShortcuts, v) })
         case let .messageShot(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Message Shot Feature", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.messageShotFeature, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.channelsMessageShot], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.messageShotFeature, v) })
         case let .channelBottomButton(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Channel Bottom Button", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.channelsBottomButton], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.channelBottomButton, (value + 1) % 3)
             })
         case .messagesHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Messages", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.messagesHeader], sectionId: self.section)
         case let .showDeletedMark(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Show Deleted Mark", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showDeletedMark, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.deletedMarkVisible], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showDeletedMark, v) })
         case let .showEditedMark(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Show Edited Mark", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEditedMark, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.editedMarkVisible], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEditedMark, v) })
         case let .replaceWithIcons(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Replace with Icons", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.replaceMarksWithIcons, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesIcons], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.replaceMarksWithIcons, v) })
         case let .deletedMark(theme, value):
             return ItemListSingleLineInputItem(
                 context: arguments.context,
                 presentationData: presentationData,
-                title: NSAttributedString(string: "Deleted Mark", textColor: theme.list.itemPrimaryTextColor),
+                title: NSAttributedString(string: strings[.deletedMark], textColor: theme.list.itemPrimaryTextColor),
                 text: value,
-                placeholder: "",
+                placeholder: strings[.deletedMarkPrompt],
                 type: .regular(capitalization: false, autocorrection: false),
                 clearType: .always,
                 sectionId: self.section,
                 textUpdated: { value in arguments.updateString(\.deletedMessageMark, value) },
                 action: {},
-                cleared: { arguments.updateString(\.deletedMessageMark, "\u{1F9F9}") }
+                cleared: { arguments.updateString(\.deletedMessageMark, strings[.deletedMarkDefault]) }
             )
         case let .editedMark(theme, value):
             return ItemListSingleLineInputItem(
                 context: arguments.context,
                 presentationData: presentationData,
-                title: NSAttributedString(string: "Edited Mark", textColor: theme.list.itemPrimaryTextColor),
-                text: value,
-                placeholder: "",
+                title: NSAttributedString(string: strings[.editedMark], textColor: theme.list.itemPrimaryTextColor),
+                text: value.isEmpty ? strings[.editedMarkDefault] : value,
+                placeholder: strings[.editedMarkPrompt],
                 type: .regular(capitalization: false, autocorrection: false),
                 clearType: .always,
                 sectionId: self.section,
@@ -225,77 +226,82 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
                 cleared: { arguments.updateString(\.editedMessageMark, "") }
             )
         case let .hideFastShare(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Hide Fast Share Button", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideFastShareButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesFastShare], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideFastShareButton, v) })
         case let .disableColoredReplies(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Disable Colored Replies", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableColoredReplies, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesColoredReplies], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableColoredReplies, v) })
         case let .messageWidth(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Message Width", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.messagesWidth], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateDouble(\.messageWidthMultiplier, [1.0, 1.25, 1.5, 2.0][(([1.0, 1.25, 1.5, 2.0].firstIndex(where: { abs($0 - value) < 0.001 }) ?? -1) + 1) % 4])
             })
         case let .semiTransparentDeleted(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Semi-transparent Deleted", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.semiTransparentDeletedMessages, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesTranslucent], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.semiTransparentDeletedMessages, v) })
         case .contextMenuHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Context Menu Elements", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.contextHeader], sectionId: self.section)
         case let .showReactionsPanel(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Reactions Panel", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextReactions], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showReactionsPanelInContextMenu, (value + 1) % 3)
             })
         case let .showViewsPanel(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Views Panel", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextViews], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showViewsPanelInContextMenu, (value + 1) % 3)
             })
         case let .showHideMessage(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Hide Message", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextHide], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showHideMessageInContextMenu, (value + 1) % 3)
             })
         case let .showUserMessages(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "User's Messages", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextUserMessages], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showUserMessagesInContextMenu, (value + 1) % 3)
             })
         case let .showMessageDetails(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Message Details", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextDetails], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showMessageDetailsInContextMenu, (value + 1) % 3)
             })
         case let .showRepeatMessage(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Repeat Message", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextRepeat], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showRepeatMessageInContextMenu, (value + 1) % 3)
             })
         case .messageFieldHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Message Field Elements", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.fieldHeader], sectionId: self.section)
         case let .showAttach(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Attachment", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAttachButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldAttach], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAttachButton, v) })
         case let .showAttachPopup(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Attachment Popup", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAttachPopup, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldAttachPopup], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAttachPopup, v) })
         case let .showCommands(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Commands", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showCommandsButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldCommands], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showCommandsButton, v) })
         case let .showTTL(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "TTL", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showTTLButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldTtl], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showTTLButton, v) })
         case let .showEmoji(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Emoji & Stickers", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEmojiButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldEmoji], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEmojiButton, v) })
         case let .showEmojiPopup(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Emoji & Stickers Popup", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEmojiPopup, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldEmojiPopup], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEmojiPopup, v) })
         case let .showVoice(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Voice Recording", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showVoiceButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldVoice], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showVoiceButton, v) })
         case let .showGift(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Gift", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showGiftButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldGift], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showGiftButton, v) })
         case let .showAiEditor(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "AI Editor", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAiEditorButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldAi], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAiEditorButton, v) })
         }
     }
 }
 
 private func ayuGramChatsEntries(settings: AyuGramSettings, presentationData: PresentationData) -> [AyuGramChatsEntry] {
+    let strings = GRVMgramStrings(presentationData.strings)
     let recentStickersLabel = "\(settings.recentStickersCount)"
-    let channelBottomLabels = ["Hidden", "Mute/Unmute", "Discuss"]
-    let channelBottomLabel = settings.channelBottomButton < Int32(channelBottomLabels.count) ? channelBottomLabels[Int(settings.channelBottomButton)] : "Hidden"
+    let channelBottomLabels = [
+        strings[.channelsBottomHide],
+        strings[.channelsBottomMute],
+        strings[.channelsBottomDiscuss],
+    ]
+    let channelBottomLabel = settings.channelBottomButton < Int32(channelBottomLabels.count) ? channelBottomLabels[Int(settings.channelBottomButton)] : strings[.channelsBottomHide]
     let messageWidthLabel = String(format: "%.2f", settings.messageWidthMultiplier)
-    let contextMenuLabels = ["Hidden", "Shown", "With Modifier"]
-    let reactionsPanelLabel = settings.showReactionsPanelInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showReactionsPanelInContextMenu)] : "Hidden"
-    let viewsPanelLabel = settings.showViewsPanelInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showViewsPanelInContextMenu)] : "Hidden"
-    let hideMessageLabel = settings.showHideMessageInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showHideMessageInContextMenu)] : "Hidden"
-    let userMessagesLabel = settings.showUserMessagesInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showUserMessagesInContextMenu)] : "Hidden"
-    let messageDetailsLabel = settings.showMessageDetailsInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showMessageDetailsInContextMenu)] : "Hidden"
-    let repeatMessageLabel = settings.showRepeatMessageInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showRepeatMessageInContextMenu)] : "Hidden"
+    let contextMenuLabels = [strings[.commonHidden], strings[.commonShown], strings[.commonWithModifier]]
+    let reactionsPanelLabel = settings.showReactionsPanelInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showReactionsPanelInContextMenu)] : strings[.commonHidden]
+    let viewsPanelLabel = settings.showViewsPanelInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showViewsPanelInContextMenu)] : strings[.commonHidden]
+    let hideMessageLabel = settings.showHideMessageInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showHideMessageInContextMenu)] : strings[.commonHidden]
+    let userMessagesLabel = settings.showUserMessagesInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showUserMessagesInContextMenu)] : strings[.commonHidden]
+    let messageDetailsLabel = settings.showMessageDetailsInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showMessageDetailsInContextMenu)] : strings[.commonHidden]
+    let repeatMessageLabel = settings.showRepeatMessageInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showRepeatMessageInContextMenu)] : strings[.commonHidden]
 
     var entries: [AyuGramChatsEntry] = []
     entries.append(.stickersHeader(presentationData.theme))
@@ -358,9 +364,10 @@ public func ayuGramChatsController(context: AccountContext) -> ViewController {
 
     let signal = combineLatest(context.sharedContext.presentationData, grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager))
     |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let strings = GRVMgramStrings(presentationData.strings)
         let entries = ayuGramChatsEntries(settings: settings, presentationData: presentationData)
         return (
-            ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text("Chats"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
+            ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(strings[.chatsTitle]), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
             (ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks), arguments)
         )
     }

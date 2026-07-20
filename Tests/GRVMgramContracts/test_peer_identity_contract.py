@@ -284,8 +284,9 @@ class PeerIdentitySourceContractTests(unittest.TestCase):
             ".botAPI",
             "default:",
             ".telegram",
-            '"Copy Telegram ID"',
-            '"Copy Bot API ID"',
+            "let grvmStrings = GRVMgramStrings(presentationData.strings)",
+            "text: grvmStrings[.peerCopyTelegramId]",
+            "text: grvmStrings[.peerCopyBotApiId]",
             "longTapAction:",
             "contextAction:",
         ):
@@ -344,13 +345,18 @@ class PeerIdentitySourceContractTests(unittest.TestCase):
             "if let peer = data.peer, let members = data.members",
         )
 
-        for forbidden in ("creationDate", "invitedOn", 'label: "Created"', 'label: "Joined"'):
+        for forbidden in (
+            "creationDate",
+            "invitedOn",
+            "grvmStrings[.peerCreated]",
+            "grvmStrings[.peerJoined]",
+        ):
             self.assertNotIn(forbidden, user_branch)
         for token in (
             "let invitedOn = cachedData.invitedOn, invitedOn > 0",
-            'peerDate = ("Joined", invitedOn)',
+            "peerDate = (grvmStrings[.peerJoined], invitedOn)",
             "channel.creationDate > 0",
-            'peerDate = ("Created", channel.creationDate)',
+            "peerDate = (grvmStrings[.peerCreated], channel.creationDate)",
             "stringForFullDate(timestamp: peerDate.timestamp",
             "dateTimeFormat: presentationData.dateTimeFormat",
         ):
@@ -358,7 +364,7 @@ class PeerIdentitySourceContractTests(unittest.TestCase):
         self.assertLess(channel_branch.index("invitedOn > 0"), channel_branch.index("channel.creationDate > 0"))
         for token in (
             "group.creationDate > 0",
-            'label: "Created"',
+            "label: grvmStrings[.peerCreated]",
             "stringForFullDate(timestamp: group.creationDate",
             "dateTimeFormat: presentationData.dateTimeFormat",
         ):

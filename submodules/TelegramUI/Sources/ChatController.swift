@@ -2280,7 +2280,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             let bypassConfirmation = strongSelf.bypassNextStickerConfirmation
             strongSelf.bypassNextStickerConfirmation = false
             if !bypassConfirmation && AyuGramHooks.shouldConfirmStickers?(strongSelf.context.account.peerId) == true {
-                let alertController = textAlertController(context: strongSelf.context, title: nil, text: "Send sticker?", actions: [
+                let grvmStrings = GRVMgramStrings(strongSelf.presentationData.strings)
+                let alertController = textAlertController(context: strongSelf.context, title: nil, text: grvmStrings[.confirmSendSticker], actions: [
                     TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
                     TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: { [weak self] in
                         guard let strongSelf = self else {
@@ -2459,7 +2460,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 let bypassConfirmation = strongSelf.bypassNextGIFConfirmation
                 strongSelf.bypassNextGIFConfirmation = false
                 if !bypassConfirmation && AyuGramHooks.shouldConfirmGIF?(strongSelf.context.account.peerId) == true {
-                    let alertController = textAlertController(context: strongSelf.context, title: nil, text: "Send GIF?", actions: [
+                    let grvmStrings = GRVMgramStrings(strongSelf.presentationData.strings)
+                    let alertController = textAlertController(context: strongSelf.context, title: nil, text: grvmStrings[.confirmSendGif], actions: [
                         TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
                         TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: { [weak self] in
                             guard let strongSelf = self else {
@@ -8408,11 +8410,12 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         includeAddFilter: Bool = true,
         includeOtherItems: Bool = true
     ) -> [ContextMenuItem] {
+        let strings = GRVMgramStrings(self.presentationData.strings)
         var items: [ContextMenuItem] = []
         let matchingIds = AyuGramHooks.matchingMessageFilterIds?(self.context.account.peerId, message) ?? []
         let matchingFilterIds = Set(matchingIds.compactMap { UUID(uuidString: $0) })
         if includeOtherItems, !matchingFilterIds.isEmpty {
-            items.append(.action(ContextMenuActionItem(text: "View Filters", icon: { theme in
+            items.append(.action(ContextMenuActionItem(text: strings[.menuViewFilters], icon: { theme in
                 return generateTintedImage(
                     image: UIImage(bundleImageName: "Chat/Context Menu/Search"),
                     color: theme.actionSheet.primaryTextColor
@@ -8427,7 +8430,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         }
 
         if includeAddFilter {
-            items.append(.action(ContextMenuActionItem(text: "Add Filter", icon: { theme in
+            items.append(.action(ContextMenuActionItem(text: strings[.menuAddFilter], icon: { theme in
                 return generateTintedImage(
                     image: UIImage(bundleImageName: "Chat/Context Menu/Add"),
                     color: theme.actionSheet.primaryTextColor
@@ -8451,16 +8454,16 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
 
         var authors: [(peerId: PeerId, label: String)] = []
         if let authorId = message.author?.id {
-            authors.append((authorId, "Author"))
+            authors.append((authorId, strings[.shadowAuthor]))
         }
         if let forwardedAuthorId = message.forwardInfo?.author?.id,
            !authors.contains(where: { $0.peerId == forwardedAuthorId }) {
-            authors.append((forwardedAuthorId, "Forwarded Author"))
+            authors.append((forwardedAuthorId, strings[.shadowForwardedAuthor]))
         }
         for author in authors where includeOtherItems {
             let isBanned = shadowBanPeerIds.contains(author.peerId)
-            let action = isBanned ? "Unshadow Ban" : "Shadow Ban"
-            let title = authors.count == 1 ? action : "\(action) \(author.label)"
+            let action = isBanned ? strings[.shadowUnban] : strings[.shadowTitle]
+            let title = authors.count == 1 ? action : strings.format(.shadowActionWithRole, action, author.label)
             items.append(.action(ContextMenuActionItem(text: title, icon: { theme in
                 return generateTintedImage(
                     image: UIImage(bundleImageName: "Chat/Context Menu/Restrict"),
@@ -8496,13 +8499,14 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     }
 
     func grvmFilteredVisibilityContextMenuItems(peerId: PeerId) -> [ContextMenuItem] {
+        let strings = GRVMgramStrings(self.presentationData.strings)
         let isShowing = AyuGramHooks.isShowingFilteredMessages?(
             self.context.account.peerId,
             peerId
         ) ?? false
         return [
             .action(ContextMenuActionItem(
-                text: isShowing ? "Hide Filtered" : "Show Filtered",
+                text: isShowing ? strings[.filtersHideFiltered] : strings[.filtersShowFiltered],
                 icon: { theme in
                     return generateTintedImage(
                         image: UIImage(bundleImageName: "Chat/Context Menu/Search"),
@@ -8611,13 +8615,14 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             guard let self else {
                 return []
             }
+            let strings = GRVMgramStrings(self.presentationData.strings)
 
             var items: [ContextMenuItem] = []
             if peerId != context.account.peerId,
                (unreadCount > 0 || AyuGramHooks.shouldSuppressReadReceipts?(context.account.peerId) == true)
             {
                 items.append(.action(ContextMenuActionItem(
-                    text: "Read All Locally",
+                    text: strings[.menuReadAllLocal],
                     icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Read"), color: theme.contextMenu.primaryColor)
                     },
@@ -8627,7 +8632,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     }
                 )))
                 items.append(.action(ContextMenuActionItem(
-                    text: "Read All on Server",
+                    text: strings[.menuReadAllServer],
                     icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Read"), color: theme.contextMenu.primaryColor)
                     },
@@ -8639,7 +8644,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
 
             items.append(.action(ContextMenuActionItem(
-                text: "Jump to Beginning",
+                text: strings[.menuJumpBeginning],
                 icon: { theme in
                     return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/GoToMessage"), color: theme.contextMenu.primaryColor)
                 },
@@ -8659,7 +8664,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
             if canDeleteOwnMessages {
                 items.append(.action(ContextMenuActionItem(
-                    text: "Delete Own Messages",
+                    text: strings[.menuDeleteOwn],
                     textColor: .destructive,
                     icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.contextMenu.destructiveColor)
@@ -8672,11 +8677,11 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                         let alert = textAlertController(
                             context: self.context,
                             updatedPresentationData: self.updatedPresentationData,
-                            title: "Delete Own Messages",
-                            text: "Delete all messages you sent in this chat?",
+                            title: strings[.deleteOwnTitle],
+                            text: strings[.deleteOwnText],
                             actions: [
                                 TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_Cancel, action: {}),
-                                TextAlertAction(type: .destructiveAction, title: "Delete", action: { [weak self] in
+                                TextAlertAction(type: .destructiveAction, title: strings[.deleteOwnAction], action: { [weak self] in
                                     guard let self else {
                                         return
                                     }

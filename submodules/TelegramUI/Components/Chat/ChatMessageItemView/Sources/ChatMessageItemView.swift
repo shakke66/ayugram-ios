@@ -888,10 +888,11 @@ open class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol {
                     }
 
                     let presentationData = item.context.sharedContext.currentPresentationData.with { $0 }
+                    let grvmStrings = GRVMgramStrings(presentationData.strings)
                     let actionSheet = ActionSheetController(presentationData: presentationData)
                     actionSheet.setItemGroups([
                         ActionSheetItemGroup(items: [
-                            ActionSheetButtonItem(title: "Copy Callback Data", action: { [weak actionSheet] in
+                            ActionSheetButtonItem(title: grvmStrings[.menuCopyCallback], action: { [weak actionSheet] in
                                 actionSheet?.dismissAnimated()
                                 UIPasteboard.general.string = callbackText
                             })

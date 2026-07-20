@@ -13,11 +13,12 @@ public func grvmArchiveContextMenuItems(
     peerId: PeerId?,
     threadId: Int64?
 ) -> [ContextMenuItem] {
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    let strings = GRVMgramStrings(presentationData.strings)
     return [.action(ContextMenuActionItem(
-        text: "GRVMgram Archives",
+        text: strings[.chatMenuTitle],
         icon: { _ in nil },
         action: { [weak sourceController] controller, _ in
-            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
             let items: [ContextMenuItem] = [
                 .action(ContextMenuActionItem(
                     text: presentationData.strings.Common_Back,
@@ -29,7 +30,7 @@ public func grvmArchiveContextMenuItems(
                 )),
                 .separator,
                 .action(ContextMenuActionItem(
-                    text: "View Deleted",
+                    text: strings[.chatMenuViewDeleted],
                     icon: { _ in nil },
                     action: { [weak sourceController] _, dismiss in
                         dismiss(.default)
@@ -41,22 +42,22 @@ public func grvmArchiveContextMenuItems(
                     }
                 )),
                 .action(ContextMenuActionItem(
-                    text: "Clear Deleted",
+                    text: strings[.chatMenuClearDeleted],
                     textColor: .destructive,
                     icon: { _ in nil },
                     action: { [weak sourceController] _, dismiss in
                         dismiss(.default)
                         let alert = standardTextAlertController(
                             theme: AlertControllerTheme(presentationData: presentationData),
-                            title: "Clear Deleted",
-                            text: "Permanently remove the GRVMgram deleted-message archive for this chat?",
+                            title: strings[.deletedClearTitle],
+                            text: strings[.deletedClearText],
                             actions: [
                                 TextAlertAction(
                                     type: .genericAction,
                                     title: presentationData.strings.Common_Cancel,
                                     action: {}
                                 ),
-                                TextAlertAction(type: .destructiveAction, title: "Clear", action: {
+                                TextAlertAction(type: .destructiveAction, title: strings[.deletedClearAction], action: {
                                     let cleanup = AyuGramFeatures.clearDeleted?(
                                         context.account.peerId, peerId, threadId
                                     ) ?? .fail(.archiveUnavailable)

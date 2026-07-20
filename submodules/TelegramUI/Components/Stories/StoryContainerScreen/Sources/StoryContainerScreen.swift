@@ -1116,16 +1116,18 @@ private final class StoryContainerScreenComponent: Component {
             }
 
             self.isAwaitingGhostStoryChoice = true
+            let presentationData = component.context.sharedContext.currentPresentationData.with { $0 }
+            let grvmStrings = GRVMgramStrings(presentationData.strings)
             controller.present(textAlertController(
                 context: component.context,
                 updatedPresentationData: nil,
-                title: nil,
-                text: "Enable Ghost Mode before marking this story as viewed?",
+                title: grvmStrings[.storyGhostTitle],
+                text: grvmStrings[.storyGhostText],
                 actions: [
-                    TextAlertAction(type: .defaultAction, title: "Enable Ghost Mode", action: { [weak self] in
+                    TextAlertAction(type: .defaultAction, title: grvmStrings[.storyGhostEnable], action: { [weak self] in
                         self?.grvmEnableGhostForStory(id: id)
                     }),
-                    TextAlertAction(type: .genericAction, title: "View Normally", action: { [weak self] in
+                    TextAlertAction(type: .genericAction, title: grvmStrings[.storyGhostOpen], action: { [weak self] in
                         self?.grvmFinishStoryGhostChoice(id: id)
                     })
                 ],

@@ -29,11 +29,10 @@ private enum AyuEditedEntry: ItemListNodeEntry {
     }
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
+        let strings = GRVMgramStrings(presentationData.strings)
         return ItemListTextItem(
             presentationData: presentationData,
-            text: .plain(
-                "GRVMgram History is available from the context menu of a specific edited message."
-            ),
+            text: .plain(strings[.historyInfo]),
             sectionId: self.section
         )
     }
@@ -43,9 +42,10 @@ private enum AyuEditedEntry: ItemListNodeEntry {
 public func ayuGramEditedMessagesController(context: AccountContext) -> ViewController {
     let signal = context.sharedContext.presentationData
     |> map { presentationData -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let strings = GRVMgramStrings(presentationData.strings)
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),
-            title: .text("GRVMgram History"),
+            title: .text(strings[.historyTitle]),
             leftNavigationButton: nil,
             rightNavigationButton: nil,
             backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)

@@ -210,8 +210,8 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
         self.assertNotIn("shouldSendWithoutSound?()", runtime)
 
         core = source("submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift")
-        for label in ('"Never"', '"InGhost"', '"Always"'):
-            self.assertIn(label, core)
+        for key in ("commonNever", "commonInGhost", "commonAlways"):
+            self.assertIn(f"strings[.{key}]", core)
         self.assertIn("settings.sendWithoutSoundOption = value", core)
         self.assertIn("ItemListDisclosureItem", swift_block(core, "case let .sendWithoutSoundMode("))
         self.assertNotIn("toggleSendWithoutSound", core)

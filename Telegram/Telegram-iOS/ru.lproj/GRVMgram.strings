@@ -314,7 +314,7 @@
 "GRVMgram.MessageDetails.PeerID" = "Peer ID: %@";
 "GRVMgram.MessageDetails.Namespace" = "Пространство имён: %d";
 "GRVMgram.MessageDetails.MessageID" = "ID сообщения: %d";
-"GRVMgram.MessageDetails.StableID" = "Стабильный ID: %d";
+"GRVMgram.MessageDetails.StableID" = "Стабильный ID: %@";
 "GRVMgram.MessageDetails.Date" = "Дата: %1$@ (%2$d)";
 "GRVMgram.MessageDetails.ThreadID" = "ID темы: %@";
 "GRVMgram.MessageDetails.Author" = "Автор: %1$@ (%2$@)";
@@ -387,7 +387,7 @@
 "GRVMgram.Crash.Title" = "Экспорт локальных логов";
 "GRVMgram.Crash.Info" = "Если активный сеанс завершается неожиданно, GRVMgram может предложить экспортировать локальные логи приложения Telegram. Ничего не загружается автоматически.";
 "GRVMgram.Crash.Prompt.Title" = "Предыдущий сеанс завершился неожиданно";
-"GRVMgram.Crash.Prompt.Text" = "Предыдущий активный сеанс завершился неожиданно. Экспортировать локальные логи приложения Telegram?";
+"GRVMgram.Crash.Prompt.Text" = "Предыдущий активный сеанс завершился неожиданно. Экспортировать локальные логи приложения Telegram? Ничего не загружается автоматически.";
 "GRVMgram.Crash.Export" = "Экспортировать локальные логи";
 "GRVMgram.Crash.NotNow" = "Не сейчас";
 "GRVMgram.Crash.NoReports" = "Доступных локальных логов нет.";

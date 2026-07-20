@@ -67,6 +67,7 @@ ALLOWED_LEGACY_STORAGE_PATHS = {
 }
 ALLOWED_SETTINGS_UI_LITERALS = {
     "",
+    "\\n",
     "default",
     "Black",
     "BlackClassic",
@@ -83,6 +84,10 @@ ALLOWED_SETTINGS_UI_LITERALS = {
     "Menlo",
     "Courier",
     "Courier-Bold",
+    "%.2f",
+    "public.json",
+    "grvmgram-filters-",
+    "json",
     "associateLinks",
 }
 FORBIDDEN_CROSS_UI_LITERALS = {

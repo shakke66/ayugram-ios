@@ -704,6 +704,12 @@ class StringsTests(unittest.TestCase):
 
 
 class BrandingTests(unittest.TestCase):
+    def test_repository_has_no_public_ayugram_branding(self) -> None:
+        VALIDATOR.validate_public_branding(REPOSITORY_ROOT)
+
+    def test_repository_settings_ui_has_no_hard_coded_text(self) -> None:
+        VALIDATOR.validate_settings_ui_literals(REPOSITORY_ROOT)
+
     def test_brand_scan_skips_literal_parser_without_ayugram_text(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

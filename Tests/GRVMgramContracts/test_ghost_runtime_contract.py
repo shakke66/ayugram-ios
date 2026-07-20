@@ -201,9 +201,9 @@ class GhostRuntimeContractTests(unittest.TestCase):
             "submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift"
         )
         self.assertIn("ItemListDisclosureItem", ui)
-        self.assertIn('"GRVMgram.Ghost.LockedComponents"', ui)
-        self.assertIn('fallback: "Locked Components"', ui)
-        self.assertIn(r'"\(settings.ghostLockedComponents.count)/5"', ui)
+        self.assertIn("strings[.ghostLockedComponents]", ui)
+        self.assertIn("strings.format(.ghostLockedCount", ui)
+        self.assertIn(".ghostComponentReadReceipts", ui)
         self.assertIn("ayuGramGhostLockedComponentsController", ui)
 
         locks = swift_block(
@@ -424,8 +424,8 @@ class GhostRuntimeContractTests(unittest.TestCase):
             "submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift"
         )
         entries = swift_block(ui_source, "private func ayuGramCoreEntries(")
-        for label in ("Never", "InGhost", "Always"):
-            self.assertIn(f'"{label}"', entries)
+        for key in ("commonNever", "commonInGhost", "commonAlways"):
+            self.assertIn(f"strings[.{key}]", entries)
         self.assertIn("settings.sendWithoutSoundOption", entries)
         self.assertIn(".sendWithoutSoundMode(", entries)
         self.assertNotIn(".sendWithoutSound(", entries)
@@ -461,8 +461,11 @@ class GhostRuntimeContractTests(unittest.TestCase):
         self.assertIn("self.didHandleGhostStorySuggestion = true", gate)
         self.assertIn("AyuGramHooks.shouldSuggestGhostForStories?(accountPeerId)", gate)
         self.assertIn("AyuGramHooks.shouldSuppressStoryRead?(accountPeerId)", gate)
-        self.assertIn('title: "Enable Ghost Mode"', gate)
-        self.assertIn('title: "View Normally"', gate)
+        self.assertIn("let grvmStrings = GRVMgramStrings(presentationData.strings)", gate)
+        self.assertIn("title: grvmStrings[.storyGhostTitle]", gate)
+        self.assertIn("text: grvmStrings[.storyGhostText]", gate)
+        self.assertIn("title: grvmStrings[.storyGhostEnable]", gate)
+        self.assertIn("title: grvmStrings[.storyGhostOpen]", gate)
         self.assertIn("dismissOnOutsideTap: false", gate)
         missing_controller = swift_block(
             gate, "guard let controller = self.environment?.controller()"

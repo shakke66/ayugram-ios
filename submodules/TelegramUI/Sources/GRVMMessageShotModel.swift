@@ -171,13 +171,14 @@ public struct GRVMMessageShotModel {
         dateTimeFormat: PresentationDateTimeFormat,
         nameDisplayOrder: PresentationPersonNameOrder
     ) -> Signal<Result<GRVMMessageShotModel, GRVMMessageShotModelError>, NoError> {
+        let grvmStrings = GRVMgramStrings(strings)
         return postbox.transaction { transaction -> Result<GRVMMessageShotModel, GRVMMessageShotModelError> in
             do {
                 let chatTitle: String
                 if let peer = transaction.getPeer(peerId) {
                     chatTitle = EnginePeer(peer).displayTitle(strings: strings, displayOrder: nameDisplayOrder)
                 } else {
-                    chatTitle = "Chat"
+                    chatTitle = grvmStrings[.messageShotChat]
                 }
 
                 var messages: [GRVMMessageShotMessage] = []
@@ -195,6 +196,7 @@ public struct GRVMMessageShotModel {
                         message: message,
                         chatTitle: chatTitle,
                         strings: strings,
+                        grvmStrings: grvmStrings,
                         dateTimeFormat: dateTimeFormat,
                         nameDisplayOrder: nameDisplayOrder
                     ))
@@ -225,6 +227,7 @@ public struct GRVMMessageShotModel {
         message: Message,
         chatTitle: String,
         strings: PresentationStrings,
+        grvmStrings: GRVMgramStrings,
         dateTimeFormat: PresentationDateTimeFormat,
         nameDisplayOrder: PresentationPersonNameOrder
     ) -> GRVMMessageShotMessage {
@@ -279,7 +282,7 @@ public struct GRVMMessageShotModel {
             } else if let quote = replyAttribute.quote {
                 reply = .quote(
                     peerId: nil,
-                    authorName: "Quoted reply",
+                    authorName: grvmStrings[.messageShotQuotedReply],
                     text: quote.text,
                     entities: quote.entities,
                     thumbnailData: self.immediateThumbnailData(media: quote.media),
@@ -298,7 +301,7 @@ public struct GRVMMessageShotModel {
             if let quote = quotedAttribute.quote {
                 reply = .quote(
                     peerId: quotedAttribute.peerId,
-                    authorName: quotedAttribute.authorName ?? "Quoted reply",
+                    authorName: quotedAttribute.authorName ?? grvmStrings[.messageShotQuotedReply],
                     text: quote.text,
                     entities: quote.entities,
                     thumbnailData: self.immediateThumbnailData(media: quote.media),
@@ -324,9 +327,9 @@ public struct GRVMMessageShotModel {
                 case let .builtin(value):
                     return GRVMMessageShotReaction(value: value, count: Int(reaction.count), isCustom: false, isSelected: reaction.isSelected)
                 case let MessageReaction.Reaction.custom(fileId):
-                    return GRVMMessageShotReaction(value: "Custom \(fileId)", count: Int(reaction.count), isCustom: true, isSelected: reaction.isSelected)
+                    return GRVMMessageShotReaction(value: grvmStrings.format(.messageShotCustomReaction, String(fileId)), count: Int(reaction.count), isCustom: true, isSelected: reaction.isSelected)
                 case .stars:
-                    return GRVMMessageShotReaction(value: "Stars", count: Int(reaction.count), isCustom: false, isSelected: reaction.isSelected)
+                    return GRVMMessageShotReaction(value: grvmStrings[.messageShotStars], count: Int(reaction.count), isCustom: false, isSelected: reaction.isSelected)
                 }
             }
         }
@@ -342,7 +345,7 @@ public struct GRVMMessageShotModel {
             text: message.text,
             entities: entities,
             reply: reply,
-            media: self.mapMedia(message.media, isSpoiler: hasMediaSpoiler),
+            media: self.mapMedia(message.media, isSpoiler: hasMediaSpoiler, strings: grvmStrings),
             reactions: reactions,
             containsSpoilers: hasTextSpoilers || hasMediaSpoiler
         )
@@ -357,7 +360,11 @@ public struct GRVMMessageShotModel {
         return nil
     }
 
-    private static func mapMedia(_ media: [Media], isSpoiler: Bool) -> [GRVMMessageShotMedia] {
+    private static func mapMedia(
+        _ media: [Media],
+        isSpoiler: Bool,
+        strings: GRVMgramStrings
+    ) -> [GRVMMessageShotMedia] {
         return media.map { item in
             if let image = item as? TelegramMediaImage {
                 let dimensions = image.representations.last.map {
@@ -366,7 +373,7 @@ public struct GRVMMessageShotModel {
                 if let data = image.immediateThumbnailData {
                     return .thumbnail(kind: .image, data: data, dimensions: dimensions, isSpoiler: isSpoiler)
                 }
-                return .placeholder(kind: .image, title: "Photo unavailable", isSpoiler: isSpoiler)
+                return .placeholder(kind: .image, title: strings[.messageShotPhotoUnavailable], isSpoiler: isSpoiler)
             } else if let file = item as? TelegramMediaFile {
                 let kind: GRVMMessageShotMediaKind
                 if file.isVideo {
@@ -388,9 +395,9 @@ public struct GRVMMessageShotModel {
                 if let data = file.immediateThumbnailData {
                     return .thumbnail(kind: kind, data: data, dimensions: dimensions, isSpoiler: isSpoiler)
                 }
-                return .placeholder(kind: kind, title: file.fileName ?? "File unavailable", isSpoiler: isSpoiler)
+                return .placeholder(kind: kind, title: file.fileName ?? strings[.messageShotFileUnavailable], isSpoiler: isSpoiler)
             }
-            return .placeholder(kind: .unsupported, title: "Media unavailable", isSpoiler: isSpoiler)
+            return .placeholder(kind: .unsupported, title: strings[.messageShotMediaUnavailable], isSpoiler: isSpoiler)
         }
     }
 

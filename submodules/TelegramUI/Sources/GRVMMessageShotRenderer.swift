@@ -102,12 +102,20 @@ public final class GRVMMessageShotRenderer {
     private let options: GRVMMessageShotOptions
     private let theme: PresentationTheme
     private let wallpaper: TelegramWallpaper
+    private let strings: GRVMgramStrings
 
-    public init(model: GRVMMessageShotModel, options: GRVMMessageShotOptions, theme: PresentationTheme, wallpaper: TelegramWallpaper) {
+    public init(
+        model: GRVMMessageShotModel,
+        options: GRVMMessageShotOptions,
+        theme: PresentationTheme,
+        wallpaper: TelegramWallpaper,
+        strings: GRVMgramStrings
+    ) {
         self.model = model
         self.options = options
         self.theme = theme
         self.wallpaper = wallpaper
+        self.strings = strings
     }
 
     public func render(size: CGSize? = nil, scale: CGFloat = GRVMMessageShotRenderer.defaultScale) throws -> UIImage {
@@ -281,7 +289,7 @@ public final class GRVMMessageShotRenderer {
                     let decorations = [
                         item.message.header.authorRank,
                         item.message.header.authorSignature,
-                        item.message.header.boostCount.map { "Boost \($0)" }
+                        item.message.header.boostCount.map { self.strings.format(.messageShotBoost, String($0)) }
                     ].compactMap { $0 }
                     if !decorations.isEmpty {
                         title += " | " + decorations.joined(separator: " | ")
@@ -374,8 +382,8 @@ public final class GRVMMessageShotRenderer {
             hasMedia = hasReplyMedia
         case .unavailable:
             accent = palette.secondaryText
-            title = "Reply"
-            body = "Message unavailable"
+            title = self.strings[.messageShotReply]
+            body = self.strings[.messageShotMessageUnavailable]
             entities = []
             thumbnailData = nil
             hasMedia = false
@@ -403,7 +411,7 @@ public final class GRVMMessageShotRenderer {
         guard let data = thumbnailData,
               let decodedData = decodeTinyThumbnail(data: data),
               let image = UIImage(data: decodedData) else {
-            self.drawText("Reply media unavailable", in: frame.insetBy(dx: 2.0, dy: 2.0), font: UIFont.systemFont(ofSize: 8.0), color: palette.secondaryText, alignment: .center)
+            self.drawText(self.strings[.messageShotReplyMediaUnavailable], in: frame.insetBy(dx: 2.0, dy: 2.0), font: UIFont.systemFont(ofSize: 8.0), color: palette.secondaryText, alignment: .center)
             return
         }
         let imageRect = Self.aspectFillRect(imageSize: image.size, bounds: frame)
@@ -427,7 +435,7 @@ public final class GRVMMessageShotRenderer {
                 image.draw(in: imageRect)
                 UIGraphicsGetCurrentContext()?.restoreGState()
             } else {
-                self.drawText("Media unavailable", in: frame.insetBy(dx: 10.0, dy: 10.0), font: UIFont.systemFont(ofSize: 14.0), color: palette.secondaryText, alignment: .center)
+                self.drawText(self.strings[.messageShotMediaUnavailable], in: frame.insetBy(dx: 10.0, dy: 10.0), font: UIFont.systemFont(ofSize: 14.0), color: palette.secondaryText, alignment: .center)
             }
         case let .placeholder(_, title, isSpoiler):
             if !options.revealSpoilers && isSpoiler {

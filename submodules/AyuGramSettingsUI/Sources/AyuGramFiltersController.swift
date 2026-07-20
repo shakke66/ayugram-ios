@@ -101,11 +101,18 @@ private final class AyuGramFilterTransferController: NSObject, UIDocumentPickerD
             let enabledCount = backup.filters.filter(\.isEnabled).count
             let reversedCount = backup.filters.filter(\.isReversed).count
             let chatScopedCount = backup.filters.filter { $0.peerId != nil }.count
-            let summary = "Filters: \(backup.filters.count)\nEnabled: \(enabledCount)\nReversed: \(reversedCount)\nChat-scoped: \(chatScopedCount)"
             let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+            let strings = GRVMgramStrings(presentationData.strings)
+            let summary = strings.format(
+                .filtersImportSummary,
+                Int32(backup.filters.count),
+                Int32(enabledCount),
+                Int32(reversedCount),
+                Int32(chatScopedCount)
+            )
             self.presentAlert(textAlertController(
                 context: self.context,
-                title: "Import Filters",
+                title: strings[.filtersImportTitle],
                 text: summary,
                 actions: [
                     TextAlertAction(
@@ -115,7 +122,7 @@ private final class AyuGramFilterTransferController: NSObject, UIDocumentPickerD
                     ),
                     TextAlertAction(
                         type: .defaultAction,
-                        title: "Replace",
+                        title: strings[.filtersImportReplace],
                         action: { [weak self] in
                             self?.replaceFilters(backup.filters)
                         }
@@ -167,10 +174,11 @@ private final class AyuGramFilterTransferController: NSObject, UIDocumentPickerD
 
     private func presentInvalidFileAlert() {
         let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+        let strings = GRVMgramStrings(presentationData.strings)
         self.presentAlert(textAlertController(
             context: self.context,
-            title: "Invalid Filter File",
-            text: "Choose a version 2 JSON filter backup smaller than 1 MiB.",
+            title: strings[.filtersInvalidFileTitle],
+            text: strings[.filtersInvalidFileText],
             actions: [
                 TextAlertAction(
                     type: .defaultAction,
@@ -329,17 +337,18 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! AyuGramFiltersArguments
+        let strings = GRVMgramStrings(presentationData.strings)
         switch self {
         case .masterHeader:
             return ItemListSectionHeaderItem(
                 presentationData: presentationData,
-                text: "Message Filters",
+                text: strings[.filtersHeader],
                 sectionId: self.section
             )
         case let .enableFilters(_, value):
             return ItemListSwitchItem(
                 presentationData: presentationData,
-                title: "Enable Filters",
+                title: strings[.filtersEnable],
                 value: value,
                 sectionId: self.section,
                 style: .blocks,
@@ -348,7 +357,7 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
         case let .enableFiltersInChats(_, value):
             return ItemListSwitchItem(
                 presentationData: presentationData,
-                title: "Enable Filters in Chats",
+                title: strings[.filtersInChats],
                 value: value,
                 sectionId: self.section,
                 style: .blocks,
@@ -357,16 +366,16 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
         case .filtersHeader:
             return ItemListSectionHeaderItem(
                 presentationData: presentationData,
-                text: "Filters",
+                text: strings[.filtersTitle],
                 sectionId: self.section
             )
         case let .filter(_, _, filter, editing, revealed):
             var details: [String] = []
-            details.append(filter.isReversed ? "Reversed" : "Normal")
-            details.append(filter.isCaseInsensitive ? "Case Insensitive" : "Case Sensitive")
-            details.append(filter.peerId.map { "Chat \($0)" } ?? "All Chats")
+            details.append(filter.isReversed ? strings[.filtersStateReversed] : strings[.filtersStateNormal])
+            details.append(filter.isCaseInsensitive ? strings[.filtersCaseInsensitive] : strings[.filtersCaseSensitive])
+            details.append(filter.peerId.map { strings.format(.filtersScopeChat, String($0)) } ?? strings[.filtersScopeAllChats])
             if !filter.excludedPeerIds.isEmpty {
-                details.append("\(filter.excludedPeerIds.count) Excluded")
+                details.append(strings.format(.filtersExcludedCount, Int32(filter.excludedPeerIds.count)))
             }
             return LocalizationListItem(
                 presentationData: presentationData,
@@ -402,13 +411,13 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
         case .empty:
             return ItemListTextItem(
                 presentationData: presentationData,
-                text: .plain("No filters"),
+                text: .plain(strings[.filtersEmpty]),
                 sectionId: self.section
             )
         case .addFilter:
             return ItemListActionItem(
                 presentationData: presentationData,
-                title: "Add Filter",
+                title: strings[.filtersAdd],
                 kind: .generic,
                 alignment: .natural,
                 sectionId: self.section,
@@ -420,13 +429,13 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
         case .transferHeader:
             return ItemListSectionHeaderItem(
                 presentationData: presentationData,
-                text: "Backup",
+                text: strings[.filtersBackupHeader],
                 sectionId: self.section
             )
         case .importFilters:
             return ItemListActionItem(
                 presentationData: presentationData,
-                title: "Import",
+                title: strings[.commonImport],
                 kind: .generic,
                 alignment: .natural,
                 sectionId: self.section,
@@ -438,7 +447,7 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
         case let .exportFilters(_, filters):
             return ItemListActionItem(
                 presentationData: presentationData,
-                title: "Export",
+                title: strings[.commonExport],
                 kind: .generic,
                 alignment: .natural,
                 sectionId: self.section,
@@ -450,7 +459,7 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
         case .clearFilters:
             return ItemListActionItem(
                 presentationData: presentationData,
-                title: "Clear",
+                title: strings[.filtersClear],
                 kind: .destructive,
                 alignment: .natural,
                 sectionId: self.section,
@@ -460,13 +469,13 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
         case .shadowHeader:
             return ItemListSectionHeaderItem(
                 presentationData: presentationData,
-                text: "People",
+                text: strings[.filtersPeople],
                 sectionId: self.section
             )
         case let .hideFromBlocked(_, value):
             return ItemListSwitchItem(
                 presentationData: presentationData,
-                title: "Hide from Blocked Users",
+                title: strings[.filtersBlocked],
                 value: value,
                 sectionId: self.section,
                 style: .blocks,
@@ -475,7 +484,7 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
         case .shadowBan:
             return ItemListDisclosureItem(
                 presentationData: presentationData,
-                title: "Shadow Ban",
+                title: strings[.shadowTitle],
                 label: "",
                 sectionId: self.section,
                 style: .blocks,
@@ -613,10 +622,11 @@ public func ayuGramFiltersController(
         },
         clearFilters: {
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let strings = GRVMgramStrings(presentationData.strings)
             presentControllerImpl?(textAlertController(
                 context: context,
-                title: "Clear Filters",
-                text: "Remove every filter from this account?",
+                title: strings[.filtersClearTitle],
+                text: strings[.filtersClearText],
                 actions: [
                     TextAlertAction(
                         type: .genericAction,
@@ -645,6 +655,7 @@ public func ayuGramFiltersController(
         statePromise.get()
     )
     |> map { presentationData, settings, state -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let strings = GRVMgramStrings(presentationData.strings)
         let visibleFilters: [AyuMessageFilter]
         if let matchingFilterIds {
             visibleFilters = settings.filters.filter { matchingFilterIds.contains($0.id) }
@@ -678,7 +689,7 @@ public func ayuGramFiltersController(
         return (
             ItemListControllerState(
                 presentationData: ItemListPresentationData(presentationData),
-                title: .text(matchingFilterIds == nil ? "Filters" : "Matching Filters"),
+                title: .text(matchingFilterIds == nil ? strings[.filtersTitle] : strings[.filtersMatchingTitle]),
                 leftNavigationButton: nil,
                 rightNavigationButton: rightNavigationButton,
                 backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)

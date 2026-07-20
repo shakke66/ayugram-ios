@@ -111,58 +111,64 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! AyuGramGeneralArguments
+        let strings = GRVMgramStrings(presentationData.strings)
         switch self {
         case .translationHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Message Translation", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.translationHeader], sectionId: self.section)
         case let .translationProvider(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Translation Provider", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.translationProvider], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.translationProvider, (value + 1) % 3)
             })
         case .generalHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "General", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.generalHeader], sectionId: self.section)
         case let .hideStories(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Hide Stories", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideStories, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalHideStories], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideStories, v) })
         case let .disableSimilarChannels(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Disable Similar Channels", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableSimilarChannels, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalSimilarChannels], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableSimilarChannels, v) })
         case let .disableNotificationDelay(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Disable Notification Delay", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableNotificationDelay, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalNotificationDelay], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableNotificationDelay, v) })
         case let .showSeconds(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Show Seconds in Messages", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showSecondsInMessages, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalSeconds], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showSecondsInMessages, v) })
         case let .showDialogId(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Show Dialog ID", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.generalPeerId], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showDialogId, (value + 1) % 3)
             })
         case let .filterZalgo(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Zalgo Filter", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.filterZalgo, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalZalgo], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.filterZalgo, v) })
         case let .improveLinkPreviews(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Improve Link Previews", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.improveLinkPreviews, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalLinkPreviews], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.improveLinkPreviews, v) })
         case let .disableExternalLinkWarning(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Disable External Link Warning", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableExternalLinkWarning, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalLinkWarning], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableExternalLinkWarning, v) })
         case .webviewHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Webview", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.webviewHeader], sectionId: self.section)
         case let .spoofAndroid(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Spoof Platform as Android", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.spoofWebviewAsAndroid, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.webviewAndroid], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.spoofWebviewAsAndroid, v) })
         case let .increaseWebviewHeight(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Increase Webview Height", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.increaseWebviewHeight, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.webviewHeight], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.increaseWebviewHeight, v) })
         case let .increaseWebviewWidth(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Increase Webview Width", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.increaseWebviewWidth, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.webviewWidth], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.increaseWebviewWidth, v) })
         case .confirmHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Confirmations", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.confirmationsHeader], sectionId: self.section)
         case let .confirmSticker(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "For Stickers", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendSticker, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.confirmationsSticker], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendSticker, v) })
         case let .confirmGIF(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "For GIFs", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendGIF, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.confirmationsGif], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendGIF, v) })
         case let .confirmVoice(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "For Voice Messages", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendVoice, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.confirmationsVoice], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendVoice, v) })
         }
     }
 }
 
 private func ayuGramGeneralEntries(settings: AyuGramSettings, presentationData: PresentationData) -> [AyuGramGeneralEntry] {
-    let providerNames = ["Telegram", "Google", "Yandex"]
-    let providerLabel = settings.translationProvider < Int32(providerNames.count) ? providerNames[Int(settings.translationProvider)] : "Telegram"
-    let dialogIdLabels = ["Off", "Telegram API", "Bot API"]
-    let dialogIdLabel = settings.showDialogId < Int32(dialogIdLabels.count) ? dialogIdLabels[Int(settings.showDialogId)] : "Off"
+    let strings = GRVMgramStrings(presentationData.strings)
+    let providerNames = [
+        strings[.translationTelegram],
+        strings[.translationGoogle],
+        strings[.translationYandex],
+    ]
+    let providerLabel = settings.translationProvider < Int32(providerNames.count) ? providerNames[Int(settings.translationProvider)] : strings[.translationTelegram]
+    let dialogIdLabels = [strings[.commonOff], strings[.peerIdApi], strings[.peerIdBotApi]]
+    let dialogIdLabel = settings.showDialogId < Int32(dialogIdLabels.count) ? dialogIdLabels[Int(settings.showDialogId)] : strings[.commonOff]
 
     var entries: [AyuGramGeneralEntry] = []
     entries.append(.translationHeader(presentationData.theme))
@@ -200,9 +206,10 @@ public func ayuGramGeneralController(context: AccountContext) -> ViewController 
 
     let signal = combineLatest(context.sharedContext.presentationData, grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager))
     |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let strings = GRVMgramStrings(presentationData.strings)
         let entries = ayuGramGeneralEntries(settings: settings, presentationData: presentationData)
         return (
-            ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text("General"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
+            ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(strings[.generalTitle]), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
             (ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks), arguments)
         )
     }

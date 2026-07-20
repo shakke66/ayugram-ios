@@ -10,6 +10,8 @@ FEATURES_PATH = ROOT / "submodules/AyuGramFeatures/Sources/AyuGramFeatures.swift
 OTHER_PATH = (
     ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramOtherController.swift"
 )
+ENGLISH_PATH = ROOT / "Telegram/Telegram-iOS/en.lproj/GRVMgram.strings"
+RUSSIAN_PATH = ROOT / "Telegram/Telegram-iOS/ru.lproj/GRVMgram.strings"
 
 
 def source(path: Path) -> str:
@@ -297,19 +299,29 @@ class CrashLifecycleContractTests(unittest.TestCase):
             "guard !self.grvmCrashOfferHandled",
             "self.grvmCrashOfferHandled = true",
             "ByteCountFormatter.string",
-            'UIAlertAction(title: "Not Now"',
-            'UIAlertAction(title: "Export Local Logs"',
+            "let strings = GRVMgramStrings(presentationData.strings)",
+            'let message = strings[.crashPromptText] + "\\n\\n" + strings.format(',
+            ".crashSummary,",
+            "title: strings[.crashPromptTitle]",
+            "UIAlertAction(title: strings[.crashNotNow]",
+            "UIAlertAction(title: strings[.crashExport]",
             "preferredStyle: .alert",
             "completionWithItemsHandler",
             "popoverPresentationController?.sourceView",
             "popoverPresentationController?.sourceRect",
             "owner.finish()",
             "self.grvmCrashExportInFlight = false",
-            "Nothing is uploaded automatically.",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, text)
-        self.assertIn("unexpectedly", text.lower())
+        self.assertIn(
+            '"GRVMgram.Crash.Prompt.Text" = "The previous foreground session ended unexpectedly. Export local Telegram app logs? Nothing is uploaded automatically.";',
+            source(ENGLISH_PATH),
+        )
+        self.assertIn(
+            '"GRVMgram.Crash.Prompt.Text" = "Предыдущий активный сеанс завершился неожиданно. Экспортировать локальные логи приложения Telegram? Ничего не загружается автоматически.";',
+            source(RUSSIAN_PATH),
+        )
 
     def test_pending_unexpected_session_retries_after_inactive_staging(self) -> None:
         state = {
@@ -795,7 +807,7 @@ class CrashLifecycleContractTests(unittest.TestCase):
         self.assertIn("accountPeerId: PeerId", offer)
 
         action_index = offer.find(
-            'UIAlertAction(title: "Export Local Logs", style: .default'
+            "UIAlertAction(title: strings[.crashExport], style: .default"
         )
         account_index = offer.find(
             "self.grvmCrashPrimaryAccountPeerId == accountPeerId", action_index
@@ -863,17 +875,21 @@ class ResetContractTests(unittest.TestCase):
         text = source(OTHER_PATH)
         for fragment in (
             "case exportLocalLogs(PresentationTheme)",
-            'title: "Export Local Logs"',
+            "title: strings[.crashExport]",
             "if settings.crashReportingEnabled {",
             "entries.append(.exportLocalLogs",
             "AyuGramFeatures.exportLocalLogs?(arguments.context.account.peerId)",
-            "Nothing is uploaded automatically.",
+            "text: .plain(strings[.crashInfo])",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, text)
         self.assertLess(
             text.find("if settings.crashReportingEnabled {"),
             text.find("entries.append(.exportLocalLogs"),
+        )
+        self.assertIn(
+            '"GRVMgram.Crash.Info" = "When a foreground session ends unexpectedly, GRVMgram can offer to export local Telegram app logs. Nothing is uploaded automatically.";',
+            source(ENGLISH_PATH),
         )
 
     def test_reset_requires_destructive_confirmation_and_resets_one_account(self) -> None:

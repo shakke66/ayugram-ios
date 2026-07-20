@@ -1,11 +1,15 @@
 import UIKit
 import SwiftSignalKit
+import TelegramPresentationData
 
 public final class GRVMScreenCapturePrivacyController {
     private weak var window: UIWindow?
     private let settingsDisposable = MetaDisposable()
+    private let presentationDataDisposable = MetaDisposable()
     private var notificationToken: NSObjectProtocol?
     private var coverView: UIView?
+    private weak var coverLabel: UILabel?
+    private var strings: GRVMgramStrings?
     private var isEnabled = false
     private var isDisposed = false
 
@@ -39,6 +43,19 @@ public final class GRVMScreenCapturePrivacyController {
             }
             self.isEnabled = enabled
             self.refreshCaptureState()
+        }))
+    }
+
+    func setPresentationDataSignal(_ presentationData: Signal<PresentationData, NoError>) {
+        self.presentationDataDisposable.set((presentationData
+        |> deliverOnMainQueue).start(next: { [weak self] presentationData in
+            guard let self, !self.isDisposed else {
+                return
+            }
+            let strings = GRVMgramStrings(presentationData.strings)
+            self.strings = strings
+            self.coverView?.accessibilityLabel = strings[.streamerCoverAccessibility]
+            self.coverLabel?.text = strings[.streamerCover]
         }))
     }
 
@@ -76,19 +93,11 @@ public final class GRVMScreenCapturePrivacyController {
             coverView.isUserInteractionEnabled = true
             coverView.isAccessibilityElement = true
             coverView.accessibilityViewIsModal = true
-            coverView.accessibilityLabel = NSLocalizedString(
-                "GRVMgram.StreamerPrivacy.Cover",
-                value: "GRVMgram Privacy. App content is hidden while the screen is being shared or recorded.",
-                comment: "Accessibility label for the screen-capture privacy cover"
-            )
+            coverView.accessibilityLabel = self.strings?[.streamerCoverAccessibility]
 
             let label = UILabel()
             label.translatesAutoresizingMaskIntoConstraints = false
-            label.text = NSLocalizedString(
-                "GRVMgram.StreamerPrivacy.Cover",
-                value: "GRVMgram Privacy\nApp content is hidden while the screen is being shared or recorded.",
-                comment: "Text displayed over app content during public iOS screen capture"
-            )
+            label.text = self.strings?[.streamerCover]
             label.textColor = .white
             label.font = UIFont.preferredFont(forTextStyle: .headline)
             label.adjustsFontForContentSizeCategory = true
@@ -104,6 +113,7 @@ public final class GRVMScreenCapturePrivacyController {
             ])
 
             self.coverView = coverView
+            self.coverLabel = label
             window.addSubview(coverView)
             UIAccessibility.post(notification: .screenChanged, argument: coverView)
         } else if let coverView = self.coverView {
@@ -122,8 +132,10 @@ public final class GRVMScreenCapturePrivacyController {
             self.notificationToken = nil
         }
         self.settingsDisposable.dispose()
+        self.presentationDataDisposable.dispose()
         self.coverView?.removeFromSuperview()
         self.coverView = nil
+        self.coverLabel = nil
     }
 
     deinit {

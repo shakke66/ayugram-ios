@@ -57,11 +57,12 @@ private enum AyuGramShadowBanEntry: ItemListNodeEntry {
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! AyuGramShadowBanArguments
+        let strings = GRVMgramStrings(presentationData.strings)
         switch self {
         case .header:
             return ItemListSectionHeaderItem(
                 presentationData: presentationData,
-                text: "Shadow Ban",
+                text: strings[.shadowTitle],
                 sectionId: self.section
             )
         case let .peer(_, _, peerId):
@@ -80,13 +81,13 @@ private enum AyuGramShadowBanEntry: ItemListNodeEntry {
         case .empty:
             return ItemListTextItem(
                 presentationData: presentationData,
-                text: .plain("No shadow-banned peers"),
+                text: .plain(strings[.shadowEmpty]),
                 sectionId: self.section
             )
         case .add:
             return ItemListActionItem(
                 presentationData: presentationData,
-                title: "Add Peer",
+                title: strings[.shadowAdd],
                 kind: .generic,
                 alignment: .natural,
                 sectionId: self.section,
@@ -118,12 +119,14 @@ public func ayuGramShadowBanController(context: AccountContext) -> ViewControlle
 
     let arguments = AyuGramShadowBanArguments(
         addPeer: {
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let strings = GRVMgramStrings(presentationData.strings)
             let controller = context.sharedContext.makePeerSelectionController(
                 PeerSelectionControllerParams(
                     context: context,
                     filter: [],
                     hasContactSelector: false,
-                    title: "Select Peer"
+                    title: strings[.shadowAddPrompt]
                 )
             )
             controller.peerSelected = { [weak controller] peer, _ in
@@ -153,10 +156,11 @@ public func ayuGramShadowBanController(context: AccountContext) -> ViewControlle
         grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager)
     )
     |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let strings = GRVMgramStrings(presentationData.strings)
         return (
             ItemListControllerState(
                 presentationData: ItemListPresentationData(presentationData),
-                title: .text("Shadow Ban"),
+                title: .text(strings[.shadowTitle]),
                 leftNavigationButton: nil,
                 rightNavigationButton: nil,
                 backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)

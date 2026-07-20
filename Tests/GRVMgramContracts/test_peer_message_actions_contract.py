@@ -2179,17 +2179,18 @@ class PeerMessageCallbackCopyContractTests(unittest.TestCase):
         callback = bounded_window(method, "case let .callback(_, data)", 100, 4000)
         for token in (
             "item.context.sharedContext.currentPresentationData",
+            "let grvmStrings = GRVMgramStrings(presentationData.strings)",
             "ActionSheetController(presentationData:",
-            'title: "Copy Callback Data"',
+            "title: grvmStrings[.menuCopyCallback]",
             "UIPasteboard.general.string",
             "ActionSheetButtonItem",
-            "Cancel",
+            "presentationData.strings.Common_Cancel",
         ):
             self.assertIn(token, callback)
         assert_ordered_tokens(
             self,
             callback,
-            ['title: "Copy Callback Data"', "UIPasteboard.general.string"],
+            ["title: grvmStrings[.menuCopyCallback]", "UIPasteboard.general.string"],
         )
         self.assertEqual(1, callback.count("UIPasteboard.general.string"))
         self.assertNotIn("requestMessageActionCallback", method)

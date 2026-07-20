@@ -11,6 +11,26 @@ import PresentationDataUtils
 import AccountContext
 import AyuGramLib
 
+private let grvmAppIconTitleKeys: [String: GRVMgramStringKey] = [
+    "default": .appIconDefault,
+    "Black": .appIconBlack,
+    "BlackClassic": .appIconBlackClassic,
+    "BlackFilled": .appIconBlackFilled,
+    "Blue": .appIconBlue,
+    "BlueClassic": .appIconBlueClassic,
+    "BlueFilled": .appIconBlueFilled,
+    "WhiteFilled": .appIconWhiteFilled,
+    "New1": .appIconNew1,
+    "New2": .appIconNew2,
+    "Premium": .appIconPremium,
+    "PremiumBlack": .appIconPremiumBlack,
+    "PremiumTurbo": .appIconPremiumTurbo,
+]
+
+private func grvmAppIconTitle(_ name: String, strings: GRVMgramStrings) -> String {
+    return grvmAppIconTitleKeys[name].map { strings[$0] } ?? name
+}
+
 private final class AyuGramAppearanceArguments {
     let context: AccountContext
     let updateBool: (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void
@@ -30,13 +50,14 @@ private func grvmAppIconPicker(
     updateString: @escaping (WritableKeyPath<AyuGramSettings, String>, String) -> Void
 ) -> ViewController {
     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    let strings = GRVMgramStrings(presentationData.strings)
     let controller = ActionSheetController(presentationData: presentationData)
     let icons = context.sharedContext.applicationBindings.getAvailableAlternateIcons()
     let currentName = context.sharedContext.applicationBindings.getAlternateIconName()
     var requestInFlight = false
 
     let iconItems: [ActionSheetItem] = icons.map { icon in
-        let title = icon.isDefault ? "Default" : icon.name
+        let title = grvmAppIconTitle(icon.isDefault ? "default" : icon.name, strings: strings)
         let isCurrent = icon.isDefault ? currentName == nil : icon.name == currentName
         let storedName = icon.isDefault ? "default" : icon.name
         return ActionSheetButtonItem(
@@ -79,7 +100,6 @@ private enum AyuGramAppearanceSection: Int32 {
     case appIcon
     case appearance
     case folders
-    case drawer
 }
 
 private enum AyuGramAppearanceEntry: ItemListNodeEntry {
@@ -100,15 +120,12 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
     case foldersHeader(PresentationTheme)
     case hideFolderCounters(PresentationTheme, Bool)
     case hideAllChats(PresentationTheme, Bool)
-    case drawerHeader(PresentationTheme)
-    case ghostInDrawer(PresentationTheme, Bool)
 
     var section: ItemListSectionId {
         switch self {
         case .appIconHeader, .appIcon, .hideNotificationBadge, .hideNotificationCounters: return AyuGramAppearanceSection.appIcon.rawValue
         case .appearanceHeader, .md3Switches, .removeBubbleTail, .disableCustomBg, .codeFont, .avatarCorners, .messageBubbleRadius, .singleCornerRadius, .hidePremiumStatuses, .adaptiveCoverColor: return AyuGramAppearanceSection.appearance.rawValue
         case .foldersHeader, .hideFolderCounters, .hideAllChats: return AyuGramAppearanceSection.folders.rawValue
-        case .drawerHeader, .ghostInDrawer: return AyuGramAppearanceSection.drawer.rawValue
         }
     }
 
@@ -131,8 +148,6 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
         case .foldersHeader: return 14
         case .hideFolderCounters: return 15
         case .hideAllChats: return 16
-        case .drawerHeader: return 17
-        case .ghostInDrawer: return 18
         }
     }
 
@@ -146,7 +161,6 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
         case let (.disableCustomBg(_, lv), .disableCustomBg(_, rv)): return lv == rv
         case let (.hideFolderCounters(_, lv), .hideFolderCounters(_, rv)): return lv == rv
         case let (.hideAllChats(_, lv), .hideAllChats(_, rv)): return lv == rv
-        case let (.ghostInDrawer(_, lv), .ghostInDrawer(_, rv)): return lv == rv
         case let (.codeFont(_, lv), .codeFont(_, rv)): return lv == rv
         case let (.avatarCorners(_, _, lv), .avatarCorners(_, _, rv)): return lv == rv
         case let (.messageBubbleRadius(_, _, lv), .messageBubbleRadius(_, _, rv)): return lv == rv
@@ -161,11 +175,12 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! AyuGramAppearanceArguments
+        let strings = GRVMgramStrings(presentationData.strings)
         switch self {
         case .appIconHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "App Icon", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.appIconHeader], sectionId: self.section)
         case let .appIcon(_, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "App Icon", label: value == "default" ? "Default" : value, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.appIconTitle], label: grvmAppIconTitle(value, strings: strings), sectionId: self.section, style: .blocks, action: {
                 arguments.context.sharedContext.mainWindow?.present(
                     grvmAppIconPicker(
                         context: arguments.context,
@@ -175,47 +190,43 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
                 )
             })
         case let .hideNotificationBadge(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Hide Notification Badge", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideNotificationBadge, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.appearanceHideBadge], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideNotificationBadge, v) })
         case let .hideNotificationCounters(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Hide Notification Counters", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideNotificationCounters, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.appearanceHideCounters], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideNotificationCounters, v) })
         case .appearanceHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Appearance", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.appearanceHeader], sectionId: self.section)
         case let .md3Switches(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "MD3 Style Switches", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.md3StyleSwitches, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.appearanceMd3], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.md3StyleSwitches, v) })
         case let .removeBubbleTail(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Remove Message Tail", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.removeMessageBubbleTail, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.appearanceTail], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.removeMessageBubbleTail, v) })
         case let .disableCustomBg(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Disable Custom Backgrounds", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableCustomBackgrounds, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.appearanceBackgrounds], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableCustomBackgrounds, v) })
         case let .codeFont(_, value):
             let presets = ["", "Menlo", "Courier", "Courier-Bold"]
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Code Font", label: value.isEmpty ? "Default" : value, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.appearanceCodeFont], label: value.isEmpty ? strings[.commonDefault] : value, sectionId: self.section, style: .blocks, action: {
                 let idx = presets.firstIndex(of: value) ?? -1
                 arguments.updateString(\.codeFontName, presets[(idx + 1) % presets.count])
             })
         case let .avatarCorners(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Avatar Corners", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.appearanceAvatarCorners], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.avatarCorners, [0, 23, 50][(([0, 23, 50].firstIndex(of: value) ?? -1) + 1) % 3])
             })
         case let .messageBubbleRadius(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: "Message Bubble Radius", label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.appearanceBubbleRadius], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.messageBubbleRadius, [0, 8, 16, 24][(([0, 8, 16, 24].firstIndex(of: value) ?? -1) + 1) % 4])
             })
         case let .singleCornerRadius(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Single Corner Radius (forums)", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.singleCornerRadius, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.appearanceSingleCorner], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.singleCornerRadius, v) })
         case let .hidePremiumStatuses(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Hide Premium Statuses", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hidePremiumStatuses, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.appearancePremiumStatuses], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hidePremiumStatuses, v) })
         case let .adaptiveCoverColor(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Adaptive Saved Music Color", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.adaptiveCoverColor, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.appearanceAdaptiveSavedMusicColor], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.adaptiveCoverColor, v) })
         case .foldersHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Folders", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.appearanceFolders], sectionId: self.section)
         case let .hideFolderCounters(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Hide Folder Counters", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideFolderCounters, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.appearanceFolderCounters], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideFolderCounters, v) })
         case let .hideAllChats(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Hide \"All Chats\"", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideAllChatsFolder, v) })
-        case .drawerHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Drawer", sectionId: self.section)
-        case let .ghostInDrawer(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: "Ghost Mode Toggle", value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showGhostToggleInDrawer, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.appearanceAllChats], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideAllChatsFolder, v) })
         }
     }
 }
@@ -239,8 +250,6 @@ private func ayuGramAppearanceEntries(settings: AyuGramSettings, presentationDat
     entries.append(.foldersHeader(presentationData.theme))
     entries.append(.hideFolderCounters(presentationData.theme, settings.hideFolderCounters))
     entries.append(.hideAllChats(presentationData.theme, settings.hideAllChatsFolder))
-    entries.append(.drawerHeader(presentationData.theme))
-    entries.append(.ghostInDrawer(presentationData.theme, settings.showGhostToggleInDrawer))
     return entries
 }
 
@@ -260,9 +269,10 @@ public func ayuGramAppearanceController(context: AccountContext) -> ViewControll
 
     let signal = combineLatest(context.sharedContext.presentationData, grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager))
     |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let strings = GRVMgramStrings(presentationData.strings)
         let entries = ayuGramAppearanceEntries(settings: settings, presentationData: presentationData)
         return (
-            ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text("Appearance"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
+            ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(strings[.appearanceTitle]), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
             (ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks), arguments)
         )
     }

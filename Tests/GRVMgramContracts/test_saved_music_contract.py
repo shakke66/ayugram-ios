@@ -200,13 +200,16 @@ class SavedMusicColorContractTests(unittest.TestCase):
             "case .foldersHeader: return 14",
             "case .hideFolderCounters: return 15",
             "case .hideAllChats: return 16",
-            "case .drawerHeader: return 17",
-            "case .ghostInDrawer: return 18",
             "arguments.updateBool(\\.adaptiveCoverColor, v)",
             "settings.adaptiveCoverColor",
         ]:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, text)
+
+        self.assertNotIn("case drawer", text)
+        self.assertNotIn("drawerHeader", text)
+        self.assertNotIn("ghostInDrawer", text)
+        self.assertNotIn("showGhostToggleInDrawer", text)
 
         switch_entry = "entries.append(.adaptiveCoverColor"
         folders_entry = "entries.append(.foldersHeader"

@@ -70,6 +70,7 @@ private enum GRVMDeletedEntry: ItemListNodeEntry {
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! GRVMDeletedArguments
+        let strings = GRVMgramStrings(presentationData.strings)
         switch self {
         case let .search(_, query):
             return ItemListSingleLineInputItem(
@@ -98,20 +99,22 @@ private enum GRVMDeletedEntry: ItemListNodeEntry {
                 sectionId: self.section
             )
         case let .message(_, _, message):
-            var body = message.text
-            if body.isEmpty {
-                body = message.mediaSummary.isEmpty ? "[empty]" : "[\(message.mediaSummary)]"
+            let body: String
+            if message.text.isEmpty && message.mediaSummary.isEmpty {
+                body = strings[.deletedMessageEmpty]
+            } else if message.text.isEmpty {
+                body = strings.format(.deletedMedia, message.mediaSummary)
             } else if !message.mediaSummary.isEmpty {
-                body = "[\(message.mediaSummary)] \(body)"
+                body = strings.format(.deletedMediaWithText, message.mediaSummary, message.text)
+            } else {
+                body = message.text
             }
-            let author = [message.senderName, message.peerTitle]
+            let who = [message.senderName, message.peerTitle]
                 .filter { !$0.isEmpty }
                 .joined(separator: " - ")
-            if !author.isEmpty {
-                body = "\(author): \(body)"
-            }
+            var display = who.isEmpty ? body : strings.format(.deletedAuthor, who, body)
             if !message.resourceIds.isEmpty {
-                body += " [\(message.resourceIds.count) archived resources]"
+                display += " " + strings.format(.deletedArchivedResources, Int32(message.resourceIds.count))
             }
             let formatter = DateFormatter()
             formatter.dateStyle = .short
@@ -119,7 +122,7 @@ private enum GRVMDeletedEntry: ItemListNodeEntry {
             return ItemListDisclosureItem(
                 presentationData: presentationData,
                 icon: nil,
-                title: body,
+                title: display,
                 label: formatter.string(from: Date(timeIntervalSince1970: TimeInterval(message.deletedAt))),
                 sectionId: self.section,
                 style: .blocks,
@@ -151,18 +154,19 @@ func grvmClearDeletedErrorController(
     _ error: GRVMClearDeletedError,
     presentationData: PresentationData
 ) -> AlertController {
+    let strings = GRVMgramStrings(presentationData.strings)
     let text: String
     switch error {
     case .archiveUnavailable:
-        text = "The deleted-message archive is unavailable. Please try again."
+        text = strings[.deletedClearArchiveUnavailable]
     case let .mediaRemovalFailed(count):
-        text = "Failed to remove \(count) archived media file(s). The cleanup can be retried."
+        text = strings.format(.deletedClearMediaRemovalFailed, Int32(count))
     case .databaseFinalizationFailed:
-        text = "The deleted-message archive could not be finalized. Please try again."
+        text = strings[.deletedClearDatabaseFinalizationFailed]
     }
     return standardTextAlertController(
         theme: AlertControllerTheme(presentationData: presentationData),
-        title: "Clear Failed",
+        title: strings[.deletedClearErrorTitle],
         text: text,
         actions: [
             TextAlertAction(
@@ -260,23 +264,24 @@ public func grvmDeletedMessagesController(
 
     let signal = combineLatest(context.sharedContext.presentationData, messages)
     |> map { presentationData, result -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let strings = GRVMgramStrings(presentationData.strings)
         let (query, messages) = result
         let clear = ItemListNavigationButton(
-            content: .text("Clear"),
+            content: .text(strings[.deletedClearAction]),
             style: .regular,
             enabled: !messages.isEmpty,
             action: { [weak controller] in
                 let alert = standardTextAlertController(
                     theme: AlertControllerTheme(presentationData: presentationData),
-                    title: "Clear Deleted",
-                    text: "Permanently remove the GRVMgram deleted-message archive for this chat?",
+                    title: strings[.deletedClearTitle],
+                    text: strings[.deletedClearText],
                     actions: [
                         TextAlertAction(
                             type: .genericAction,
                             title: presentationData.strings.Common_Cancel,
                             action: {}
                         ),
-                        TextAlertAction(type: .destructiveAction, title: "Clear", action: {
+                        TextAlertAction(type: .destructiveAction, title: strings[.deletedClearAction], action: {
                             let cleanup = AyuGramFeatures.clearDeleted?(
                                 context.account.peerId, peerId, threadId
                             ) ?? .fail(.archiveUnavailable)
@@ -297,7 +302,7 @@ public func grvmDeletedMessagesController(
         )
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),
-            title: .text("GRVMgram Deleted Messages"),
+            title: .text(strings[.deletedTitle]),
             leftNavigationButton: nil,
             rightNavigationButton: clear,
             backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)
@@ -319,7 +324,7 @@ public func grvmDeletedMessagesController(
     return controller!
 }
 
-@available(*, deprecated, message: "Use grvmDeletedMessagesController(context:peerId:threadId:)")
+@available(*, deprecated)
 /// Compatibility entry point for the former global archive screen.
 public func ayuGramDeletedMessagesController(context: AccountContext) -> ViewController {
     return grvmDeletedMessagesController(context: context)

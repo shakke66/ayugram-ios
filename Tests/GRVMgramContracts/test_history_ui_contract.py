@@ -178,7 +178,7 @@ class HistoryUIContractTests(unittest.TestCase):
             "content.media",
             "stringWithAppliedEntities(",
             'case .todo:',
-            '"Todo"',
+            "strings[.historyMediaTodo]",
             "legacyMediaSummary",
             "legacyResourceIds",
             "ChatList_Search_NoResults",
@@ -409,8 +409,8 @@ class HistoryUIContractTests(unittest.TestCase):
         value = ARCHIVE_MENU_ITEMS.read_text(encoding="utf-8")
 
         for token in (
-            'text: "View Deleted"',
-            'text: "Clear Deleted"',
+            "text: strings[.chatMenuViewDeleted]",
+            "text: strings[.chatMenuClearDeleted]",
             "grvmDeletedMessagesController(",
             "peerId: peerId",
             "threadId: threadId",
@@ -425,7 +425,8 @@ class HistoryUIContractTests(unittest.TestCase):
         legacy = LEGACY_DB.read_text(encoding="utf-8")
 
         self.assertNotIn("AyuDeletedMessagesDB", edited)
-        self.assertIn("GRVMgram History", edited)
+        self.assertIn("strings[.historyInfo]", edited)
+        self.assertIn("strings[.historyTitle]", edited)
         self.assertIn("@available(*, deprecated", legacy)
         self.assertIn("public enum AyuDeletedMessagesDB", legacy)
         for token in (

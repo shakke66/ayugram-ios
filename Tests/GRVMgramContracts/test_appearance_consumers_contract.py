@@ -31,7 +31,8 @@ class AppearanceConsumerContractTests(unittest.TestCase):
             "requestInFlight = false",
             "guard success else",
             "updateString(\\.selectedAppIcon, storedName)",
-            'let title = icon.isDefault ? "Default" : icon.name',
+            'let title = grvmAppIconTitle(icon.isDefault ? "default" : icon.name, strings: strings)',
+            '"default": .appIconDefault',
             r'"\u{2713} \(title)"',
         ]:
             with self.subTest(fragment=fragment):

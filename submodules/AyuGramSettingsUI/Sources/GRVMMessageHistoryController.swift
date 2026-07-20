@@ -93,34 +93,37 @@ private enum GRVMHistoryEntry: ItemListNodeEntry {
     }
 }
 
-private func grvmHistoryMediaLabel(_ media: GRVMEditableMediaContent) -> String {
+private func grvmHistoryMediaLabel(
+    _ media: GRVMEditableMediaContent,
+    strings: GRVMgramStrings
+) -> String {
     switch media {
     case .todo:
-        return "Todo"
+        return strings[.historyMediaTodo]
     case .poll:
-        return "Poll"
+        return strings[.historyMediaPoll]
     case .webpage:
-        return "Link preview"
+        return strings[.historyMediaLinkPreview]
     case let .file(file):
         for attribute in file.attributes {
             if case let .fileName(name) = attribute {
                 return name
             }
         }
-        return "File"
+        return strings[.historyMediaFile]
     case .image:
-        return "Photo"
+        return strings[.historyMediaPhoto]
     case let .game(game):
-        return game.title.isEmpty ? "Game" : game.title
+        return game.title.isEmpty ? strings[.historyMediaGame] : game.title
     case .paidContent:
-        return "Paid media"
+        return strings[.historyMediaPaid]
     case let .contact(contact):
         let name = "\(contact.firstName) \(contact.lastName)".trimmingCharacters(in: .whitespaces)
-        return name.isEmpty ? "Contact" : name
+        return name.isEmpty ? strings[.historyMediaContact] : name
     case .map:
-        return "Location"
+        return strings[.historyMediaLocation]
     case let .invoice(invoice):
-        return invoice.title.isEmpty ? "Invoice" : invoice.title
+        return invoice.title.isEmpty ? strings[.historyMediaInvoice] : invoice.title
     case let .other(type, _):
         return type
     }
@@ -130,20 +133,23 @@ private func grvmHistoryAttributedText(
     _ version: GRVMHistoryVersion,
     presentationData: ItemListPresentationData
 ) -> NSAttributedString {
+    let strings = GRVMgramStrings(presentationData.strings)
     let dateFormatter = DateFormatter()
     dateFormatter.dateStyle = .short
     dateFormatter.timeStyle = .short
     let date = dateFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(version.timestamp)))
-    let label = version.isCurrent ? "Current" : "Version \(version.version)"
+    let label = version.isCurrent
+        ? strings[.historyCurrent]
+        : strings.format(.historyRevision, version.version)
     let result = NSMutableAttributedString(
-        string: "\(label) - \(date)\n",
+        string: strings.format(.historyEntryHeader, label, date),
         font: Font.semibold(14.0),
         textColor: presentationData.theme.list.itemSecondaryTextColor
     )
 
     if version.content.text.isEmpty {
         result.append(NSAttributedString(
-            string: "[empty]",
+            string: strings[.historyEmpty],
             font: Font.regular(16.0),
             textColor: presentationData.theme.list.itemPrimaryTextColor
         ))
@@ -164,12 +170,12 @@ private func grvmHistoryAttributedText(
         ))
     }
 
-    var mediaParts = version.content.media.map(grvmHistoryMediaLabel)
+    var mediaParts = version.content.media.map { grvmHistoryMediaLabel($0, strings: strings) }
     if mediaParts.isEmpty, !version.legacyMediaSummary.isEmpty {
         mediaParts.append(version.legacyMediaSummary)
     }
     if version.content.media.isEmpty, !version.legacyResourceIds.isEmpty {
-        mediaParts.append("Archived resources: \(version.legacyResourceIds.count)")
+        mediaParts.append(strings.format(.historyArchivedResources, Int32(version.legacyResourceIds.count)))
     }
     if !mediaParts.isEmpty {
         result.append(NSAttributedString(
@@ -238,9 +244,10 @@ public func grvmMessageHistoryController(
     let arguments = GRVMHistoryArguments(context: context)
     let signal = combineLatest(context.sharedContext.presentationData, versions)
     |> map { presentationData, versions -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let strings = GRVMgramStrings(presentationData.strings)
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),
-            title: .text("GRVMgram History"),
+            title: .text(strings[.historyTitle]),
             leftNavigationButton: nil,
             rightNavigationButton: nil,
             backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)

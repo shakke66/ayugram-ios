@@ -25,6 +25,7 @@ public final class GRVMMessageShotController: ViewController {
     private let chatTheme: PresentationTheme
     private let chatWallpaper: TelegramWallpaper
     private let strings: PresentationStrings
+    private let grvmStrings: GRVMgramStrings
     private let dateTimeFormat: PresentationDateTimeFormat
     private let nameDisplayOrder: PresentationPersonNameOrder
     private let completion: () -> Void
@@ -41,7 +42,7 @@ public final class GRVMMessageShotController: ViewController {
     private let previewImageView = UIImageView()
     private let controlsScrollView = UIScrollView()
     private let controlsStack = UIStackView()
-    private let themeControl = UISegmentedControl(items: ["Current", "Light", "Dark"])
+    private let themeControl: UISegmentedControl
     private let showBackgroundSwitch = UISwitch()
     private let showDateSwitch = UISwitch()
     private let showReactionsSwitch = UISwitch()
@@ -70,6 +71,7 @@ public final class GRVMMessageShotController: ViewController {
         nameDisplayOrder: PresentationPersonNameOrder,
         completion: @escaping () -> Void
     ) {
+        let grvmStrings = GRVMgramStrings(strings)
         self.context = context
         self.peerId = peerId
         self.threadId = threadId
@@ -78,11 +80,17 @@ public final class GRVMMessageShotController: ViewController {
         self.chatTheme = chatTheme
         self.chatWallpaper = chatWallpaper
         self.strings = strings
+        self.grvmStrings = grvmStrings
+        self.themeControl = UISegmentedControl(items: [
+            grvmStrings[.messageShotThemeCurrent],
+            grvmStrings[.messageShotThemeLight],
+            grvmStrings[.messageShotThemeDark],
+        ])
         self.dateTimeFormat = dateTimeFormat
         self.nameDisplayOrder = nameDisplayOrder
         self.completion = completion
         super.init(navigationBarPresentationData: NavigationBarPresentationData(presentationData: presentationData, style: .glass))
-        self.title = "Message Shot"
+        self.title = self.grvmStrings[.messageShotTitle]
     }
 
     required init(coder aDecoder: NSCoder) {
@@ -114,7 +122,7 @@ public final class GRVMMessageShotController: ViewController {
 
         self.previewImageView.translatesAutoresizingMaskIntoConstraints = false
         self.previewImageView.contentMode = .scaleAspectFit
-        self.previewImageView.accessibilityLabel = "Message Shot preview"
+        self.previewImageView.accessibilityLabel = self.grvmStrings[.messageShotPreviewAccessibility]
         self.previewScrollView.addSubview(self.previewImageView)
 
         self.controlsScrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -132,24 +140,24 @@ public final class GRVMMessageShotController: ViewController {
         self.themeControl.addTarget(self, action: #selector(self.optionControlChanged), for: .valueChanged)
         self.controlsStack.addArrangedSubview(self.themeControl)
 
-        self.controlsStack.addArrangedSubview(self.makeSwitchRow(title: "Background", control: self.showBackgroundSwitch))
-        self.controlsStack.addArrangedSubview(self.makeSwitchRow(title: "Date separators", control: self.showDateSwitch))
-        self.configureSwitchRow(self.showReactionsRow, title: "Reactions", control: self.showReactionsSwitch)
+        self.controlsStack.addArrangedSubview(self.makeSwitchRow(title: self.grvmStrings[.messageShotBackground], control: self.showBackgroundSwitch))
+        self.controlsStack.addArrangedSubview(self.makeSwitchRow(title: self.grvmStrings[.messageShotDate], control: self.showDateSwitch))
+        self.configureSwitchRow(self.showReactionsRow, title: self.grvmStrings[.messageShotReactions], control: self.showReactionsSwitch)
         self.controlsStack.addArrangedSubview(self.showReactionsRow)
-        self.controlsStack.addArrangedSubview(self.makeSwitchRow(title: "Author headers", control: self.showHeaderSwitch))
-        self.configureSwitchRow(self.showHeaderDecorationsRow, title: "Header decorations", control: self.showHeaderDecorationsSwitch)
+        self.controlsStack.addArrangedSubview(self.makeSwitchRow(title: self.grvmStrings[.messageShotHeader], control: self.showHeaderSwitch))
+        self.configureSwitchRow(self.showHeaderDecorationsRow, title: self.grvmStrings[.messageShotDecorations], control: self.showHeaderDecorationsSwitch)
         self.controlsStack.addArrangedSubview(self.showHeaderDecorationsRow)
-        self.configureSwitchRow(self.colorfulRepliesRow, title: "Colorful replies", control: self.colorfulRepliesSwitch)
+        self.configureSwitchRow(self.colorfulRepliesRow, title: self.grvmStrings[.messageShotReplies], control: self.colorfulRepliesSwitch)
         self.controlsStack.addArrangedSubview(self.colorfulRepliesRow)
-        self.configureSwitchRow(self.revealSpoilersRow, title: "Reveal spoilers", control: self.revealSpoilersSwitch)
+        self.configureSwitchRow(self.revealSpoilersRow, title: self.grvmStrings[.messageShotSpoilers], control: self.revealSpoilersSwitch)
         self.controlsStack.addArrangedSubview(self.revealSpoilersRow)
 
         let actions = UIStackView(arrangedSubviews: [self.copyButton, self.saveButton])
         actions.axis = .horizontal
         actions.distribution = .fillEqually
         actions.spacing = 12.0
-        self.copyButton.setTitle("Copy", for: .normal)
-        self.saveButton.setTitle("Save", for: .normal)
+        self.copyButton.setTitle(self.grvmStrings[.messageShotCopy], for: .normal)
+        self.saveButton.setTitle(self.grvmStrings[.messageShotSave], for: .normal)
         self.copyButton.tintColor = accentColor
         self.saveButton.tintColor = accentColor
         self.copyButton.titleLabel?.font = UIFont.systemFont(ofSize: 17.0, weight: .semibold)
@@ -242,7 +250,7 @@ public final class GRVMMessageShotController: ViewController {
                 self.requestRender()
             case .failure:
                 self.activityIndicator.stopAnimating()
-                self.presentError("The selected messages are unavailable.")
+                self.presentError(self.grvmStrings[.messageShotSelectedUnavailable])
             }
         }))
     }
@@ -322,7 +330,8 @@ public final class GRVMMessageShotController: ViewController {
             model: model,
             options: options,
             theme: self.chatTheme,
-            wallpaper: self.chatWallpaper
+            wallpaper: self.chatWallpaper,
+            strings: self.grvmStrings
         )
         GRVMMessageShotController.renderQueue.async { [weak self] in
             let result: Result<UIImage, Error> = autoreleasepool {
@@ -348,7 +357,7 @@ public final class GRVMMessageShotController: ViewController {
                     self.setActionsEnabled(true)
                 case .failure:
                     self.previewImageView.image = nil
-                    self.presentError("The Message Shot could not be rendered.")
+                    self.presentError(self.grvmStrings[.messageShotRenderFailed])
                 }
             }
         }
@@ -388,9 +397,9 @@ public final class GRVMMessageShotController: ViewController {
             case .denied, .restricted:
                 self.presentPhotoAccessDenied()
             case .notDetermined:
-                self.presentError("Photo access was not granted.")
+                self.presentError(self.grvmStrings[.messageShotPhotoAccessNotGranted])
             @unknown default:
-                self.presentError("Photo access was not granted.")
+                self.presentError(self.grvmStrings[.messageShotPhotoAccessNotGranted])
             }
         }
     }
@@ -438,16 +447,16 @@ public final class GRVMMessageShotController: ViewController {
                     self.completion()
                     self.dismiss()
                 } else {
-                    self.presentError(error?.localizedDescription ?? "The image could not be saved.")
+                    self.presentError(error?.localizedDescription ?? self.grvmStrings[.messageShotSaveFailed])
                 }
             }
         })
     }
 
     private func presentPhotoAccessDenied() {
-        let controller = textAlertController(context: self.context, title: "Photos Access", text: "Allow Photos access in Settings to save the Message Shot.", actions: [
-            TextAlertAction(type: .defaultAction, title: "Cancel", action: {}),
-            TextAlertAction(type: .genericAction, title: "Settings", action: {
+        let controller = textAlertController(context: self.context, title: self.grvmStrings[.messageShotPhotosTitle], text: self.grvmStrings[.messageShotPhotosText], actions: [
+            TextAlertAction(type: .defaultAction, title: self.strings.Common_Cancel, action: {}),
+            TextAlertAction(type: .genericAction, title: self.strings.Settings_Title, action: {
                 guard let url = URL(string: UIApplication.openSettingsURLString) else {
                     return
                 }
@@ -458,7 +467,7 @@ public final class GRVMMessageShotController: ViewController {
     }
 
     private func presentError(_ text: String) {
-        let controller = textAlertController(context: self.context, title: "Message Shot", text: text, actions: [TextAlertAction(type: .defaultAction, title: "OK", action: {})])
+        let controller = textAlertController(context: self.context, title: self.grvmStrings[.messageShotTitle], text: text, actions: [TextAlertAction(type: .defaultAction, title: self.strings.Common_OK, action: {})])
         self.present(controller, in: .window(.root))
     }
 }

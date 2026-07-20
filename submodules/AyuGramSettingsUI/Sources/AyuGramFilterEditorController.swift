@@ -120,18 +120,19 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! AyuGramFilterEditorArguments
+        let strings = GRVMgramStrings(presentationData.strings)
         switch self {
         case .expressionHeader:
             return ItemListSectionHeaderItem(
                 presentationData: presentationData,
-                text: "Regular Expression",
+                text: strings[.filterEditorExpressionHeader],
                 sectionId: self.section
             )
         case let .expression(_, value):
             return ItemListMultilineInputItem(
                 presentationData: presentationData,
                 text: value,
-                placeholder: "Pattern",
+                placeholder: strings[.filterEditorExpressionPlaceholder],
                 maxLength: nil,
                 sectionId: self.section,
                 style: .blocks,
@@ -142,13 +143,13 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
         case .optionsHeader:
             return ItemListSectionHeaderItem(
                 presentationData: presentationData,
-                text: "Options",
+                text: strings[.filterEditorOptionsHeader],
                 sectionId: self.section
             )
         case let .enabled(_, value):
             return ItemListSwitchItem(
                 presentationData: presentationData,
-                title: "Enabled",
+                title: strings[.filterEditorEnabled],
                 value: value,
                 sectionId: self.section,
                 style: .blocks,
@@ -157,7 +158,7 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
         case let .reversed(_, value):
             return ItemListSwitchItem(
                 presentationData: presentationData,
-                title: "Reversed",
+                title: strings[.filterEditorReversed],
                 value: value,
                 sectionId: self.section,
                 style: .blocks,
@@ -166,7 +167,7 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
         case let .caseInsensitive(_, value):
             return ItemListSwitchItem(
                 presentationData: presentationData,
-                title: "Case Insensitive",
+                title: strings[.filterEditorCaseInsensitive],
                 value: value,
                 sectionId: self.section,
                 style: .blocks,
@@ -175,14 +176,14 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
         case .scopeHeader:
             return ItemListSectionHeaderItem(
                 presentationData: presentationData,
-                text: "Chat Scope",
+                text: strings[.filterEditorScopeHeader],
                 sectionId: self.section
             )
         case let .chat(_, peerId):
             return ItemListDisclosureItem(
                 presentationData: presentationData,
-                title: "Chat",
-                label: peerId.map { String($0) } ?? "All Chats",
+                title: strings[.filterEditorScopeChat],
+                label: peerId.map { String($0) } ?? strings[.filterEditorScopeAllChats],
                 sectionId: self.section,
                 style: .blocks,
                 action: arguments.selectChat
@@ -190,7 +191,7 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
         case .clearChat:
             return ItemListActionItem(
                 presentationData: presentationData,
-                title: "Use All Chats",
+                title: strings[.filterEditorScopeUseAllChats],
                 kind: .generic,
                 alignment: .natural,
                 sectionId: self.section,
@@ -200,8 +201,8 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
         case let .excludedChats(_, count):
             return ItemListDisclosureItem(
                 presentationData: presentationData,
-                title: "Excluded Chats",
-                label: count == 0 ? "None" : "\(count)",
+                title: strings[.filterEditorExcludedChats],
+                label: count == 0 ? strings[.filterEditorNone] : "\(count)",
                 sectionId: self.section,
                 style: .blocks,
                 action: arguments.selectExcludedChats
@@ -209,7 +210,7 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
         case .clearExcludedChats:
             return ItemListActionItem(
                 presentationData: presentationData,
-                title: "Clear Excluded Chats",
+                title: strings[.filterEditorClearExcluded],
                 kind: .generic,
                 alignment: .natural,
                 sectionId: self.section,
@@ -297,12 +298,14 @@ public func ayuGramFilterEditorController(
             }
         },
         selectChat: {
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let strings = GRVMgramStrings(presentationData.strings)
             let controller = context.sharedContext.makePeerSelectionController(
                 PeerSelectionControllerParams(
                     context: context,
                     filter: [],
                     hasContactSelector: false,
-                    title: "Select Chat"
+                    title: strings[.filterEditorSelectChat]
                 )
             )
             controller.peerSelected = { [weak controller] peer, _ in
@@ -323,12 +326,14 @@ public func ayuGramFilterEditorController(
             }
         },
         selectExcludedChats: {
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let strings = GRVMgramStrings(presentationData.strings)
             let controller = context.sharedContext.makePeerSelectionController(
                 PeerSelectionControllerParams(
                     context: context,
                     filter: [],
                     hasContactSelector: false,
-                    title: "Exclude Chats",
+                    title: strings[.filterEditorExcludeChats],
                     multipleSelection: true,
                     immediatelyActivateMultipleSelection: true
                 )
@@ -359,11 +364,12 @@ public func ayuGramFilterEditorController(
         guard !expression.isEmpty,
               (try? NSRegularExpression(pattern: expression, options: options)) != nil else {
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let strings = GRVMgramStrings(presentationData.strings)
             presentControllerImpl?(
                 textAlertController(
                     context: context,
-                    title: "Invalid Filter",
-                    text: "Enter a valid non-empty regular expression.",
+                    title: strings[.filterEditorInvalidTitle],
+                    text: strings[.filterEditorInvalidText],
                     actions: [
                         TextAlertAction(
                             type: .defaultAction,
@@ -401,6 +407,7 @@ public func ayuGramFilterEditorController(
         statePromise.get()
     )
     |> map { presentationData, state -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let strings = GRVMgramStrings(presentationData.strings)
         let rightNavigationButton = ItemListNavigationButton(
             content: .text(presentationData.strings.Common_Done),
             style: .bold,
@@ -412,7 +419,7 @@ public func ayuGramFilterEditorController(
         return (
             ItemListControllerState(
                 presentationData: ItemListPresentationData(presentationData),
-                title: .text(filter == nil ? "Add Filter" : "Edit Filter"),
+                title: .text(filter == nil ? strings[.filterEditorAddTitle] : strings[.filterEditorEditTitle]),
                 leftNavigationButton: nil,
                 rightNavigationButton: rightNavigationButton,
                 backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)

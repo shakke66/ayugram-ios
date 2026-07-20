@@ -218,7 +218,11 @@ class ContextMenuSemanticsContractTests(unittest.TestCase):
         filters = swift_block(self.chat, "func grvmMessageFilterContextMenuItems(")
         self.assertIn("initialExpression: message.text", filters)
         self.assertIn("initialPeerId: message.id.peerId", filters)
-        for token in ("View Filters", "Show Filtered", "Shadow Ban"):
+        for token in (
+            "strings[.menuViewFilters]",
+            "strings[.filtersShowFiltered]",
+            "strings[.shadowTitle]",
+        ):
             self.assertIn(token, self.chat)
 
         menu = swift_block(

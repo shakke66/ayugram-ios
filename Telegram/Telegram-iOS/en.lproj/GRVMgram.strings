@@ -314,7 +314,7 @@
 "GRVMgram.MessageDetails.PeerID" = "Peer ID: %@";
 "GRVMgram.MessageDetails.Namespace" = "Namespace: %d";
 "GRVMgram.MessageDetails.MessageID" = "Message ID: %d";
-"GRVMgram.MessageDetails.StableID" = "Stable ID: %d";
+"GRVMgram.MessageDetails.StableID" = "Stable ID: %@";
 "GRVMgram.MessageDetails.Date" = "Date: %1$@ (%2$d)";
 "GRVMgram.MessageDetails.ThreadID" = "Thread ID: %@";
 "GRVMgram.MessageDetails.Author" = "Author: %1$@ (%2$@)";
@@ -387,7 +387,7 @@
 "GRVMgram.Crash.Title" = "Local Log Export";
 "GRVMgram.Crash.Info" = "When a foreground session ends unexpectedly, GRVMgram can offer to export local Telegram app logs. Nothing is uploaded automatically.";
 "GRVMgram.Crash.Prompt.Title" = "Previous Session Ended Unexpectedly";
-"GRVMgram.Crash.Prompt.Text" = "The previous foreground session ended unexpectedly. Export local Telegram app logs?";
+"GRVMgram.Crash.Prompt.Text" = "The previous foreground session ended unexpectedly. Export local Telegram app logs? Nothing is uploaded automatically.";
 "GRVMgram.Crash.Export" = "Export Local Logs";
 "GRVMgram.Crash.NotNow" = "Not Now";
 "GRVMgram.Crash.NoReports" = "No local logs are available.";

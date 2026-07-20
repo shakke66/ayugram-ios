@@ -497,7 +497,7 @@ class MessageShotRendererContractTests(unittest.TestCase):
             [
                 "decodeTinyThumbnail(data: data)",
                 "UIImage(data: decodedData)",
-                '"Reply media unavailable"',
+                "self.strings[.messageShotReplyMediaUnavailable]",
             ],
         )
         self.assertNotIn("self.drawReplyThumbnail(thumbnailData: thumbnailData", reply.split("if hasMedia")[0])
@@ -695,7 +695,11 @@ class MessageShotControllerContractTests(unittest.TestCase):
             controller,
             [
                 "private let previewScrollView = UIScrollView()",
-                "private let themeControl = UISegmentedControl(items: [\"Current\", \"Light\", \"Dark\"])",
+                "private let themeControl: UISegmentedControl",
+                "self.themeControl = UISegmentedControl(items: [",
+                "grvmStrings[.messageShotThemeCurrent]",
+                "grvmStrings[.messageShotThemeLight]",
+                "grvmStrings[.messageShotThemeDark]",
                 "private let showBackgroundSwitch = UISwitch()",
                 "private let showDateSwitch = UISwitch()",
                 "private let showReactionsSwitch = UISwitch()",

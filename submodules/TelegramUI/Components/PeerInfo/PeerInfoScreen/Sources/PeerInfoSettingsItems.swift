@@ -251,7 +251,8 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
         interaction.openSettings(.language)
     }))
 
-    items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 7, text: "AyuGram Settings", icon: PresentationResourcesSettings.appearance, action: {
+    let grvmStrings = GRVMgramStrings(presentationData.strings)
+    items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 7, text: grvmStrings[.settingsTitle], icon: PresentationResourcesSettings.appearance, action: {
         interaction.openSettings(.ayuGramSettings)
     }))
     

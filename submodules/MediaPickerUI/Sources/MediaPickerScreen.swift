@@ -3113,7 +3113,8 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                     }
                     var items: [ContextMenuItem] = []
                     if selectedItems.count == 1, self.sendAsSticker != nil, price == nil, !hasSpoilers, let selectedItem = selectedItems.first, let editingContext = self.interaction?.editingState, self.isStaticStickerItem(selectedItem, editingContext: editingContext) {
-                        items.append(.action(ContextMenuActionItem(text: Bundle.main.localizedString(forKey: "GRVMgram.Menu.SendAsSticker", value: "Send as Sticker", table: nil), icon: { theme in
+                        let grvmStrings = GRVMgramStrings(strings)
+                        items.append(.action(ContextMenuActionItem(text: grvmStrings[.menuSendAsSticker], icon: { theme in
                             return generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Text/AccessoryIconStickers"), color: theme.contextMenu.primaryColor)
                         }, action: { [weak self] _, f in
                             f(.default)
