@@ -97,6 +97,13 @@ FORBIDDEN_CROSS_UI_LITERALS = {
     "Send voice message?",
     "Enable Ghost Mode to view stories privately",
     "AyuGram Settings",
+    "Burn media?",
+    "This permanently marks the media as viewed on Telegram.",
+    "Preserved media is unavailable.",
+    "Forward Local Copy",
+    "Read Message",
+    "This message can't be forwarded as a local copy.",
+    "The local media is unavailable.",
 }
 REQUIRED_LOCALIZATION_KEYS = {
     "GRVMgram.Brand.Name",

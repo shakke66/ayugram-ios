@@ -1194,6 +1194,28 @@ class BrandingTests(unittest.TestCase):
             with self.assertRaisesRegex(VALIDATOR.ValidationError, "hard-coded UI text"):
                 VALIDATOR.validate_public_branding(root)
 
+    def test_task9_and_task10_hard_coded_copy_is_rejected(self) -> None:
+        literals = (
+            "Burn media?",
+            "This permanently marks the media as viewed on Telegram.",
+            "Preserved media is unavailable.",
+            "Forward Local Copy",
+            "Read Message",
+            "This message can't be forwarded as a local copy.",
+            "The local media is unavailable.",
+        )
+        for literal in literals:
+            with self.subTest(literal=literal), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                write(
+                    root / "submodules/TelegramUI/Sources/Bad.swift",
+                    f"let copy = {json.dumps(literal)}\n",
+                )
+                with self.assertRaisesRegex(
+                    VALIDATOR.ValidationError, "hard-coded UI text"
+                ):
+                    VALIDATOR.validate_public_branding(root)
+
     def test_cross_module_prompt_is_allowed_in_grvmgram_resources(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

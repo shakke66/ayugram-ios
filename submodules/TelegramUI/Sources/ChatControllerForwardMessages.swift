@@ -63,6 +63,7 @@ extension ChatControllerImpl {
                 attemptSelectionImpl?(peer, reason)
             }, multipleSelection: true, forwardedMessageIds: localCopy == nil ? messages.map { $0.id } : nil, selectForumThreads: true))
             let context = self.context
+            let grvmStrings = GRVMgramStrings(self.presentationData.strings)
             var preparedLocalCopy: GRVMPreservedMediaEnqueuePayload?
             var preparingLocalCopy = false
             var localCopyThreadIds: [EnginePeer.Id: Int64] = [:]
@@ -134,9 +135,9 @@ extension ChatControllerImpl {
                         preparingLocalCopy = false
                         switch error {
                         case .unsupported:
-                            self?.controllerInteraction?.displayUndo(.info(title: nil, text: "This message can't be forwarded as a local copy.", timeout: nil, customUndoText: nil))
+                            self?.controllerInteraction?.displayUndo(.info(title: nil, text: grvmStrings[.forwardLocalCopyUnsupported], timeout: nil, customUndoText: nil))
                         case .unavailable:
-                            self?.controllerInteraction?.displayUndo(.info(title: nil, text: "The local media is unavailable.", timeout: nil, customUndoText: nil))
+                            self?.controllerInteraction?.displayUndo(.info(title: nil, text: grvmStrings[.forwardLocalCopyUnavailable], timeout: nil, customUndoText: nil))
                         }
                     })
                     return

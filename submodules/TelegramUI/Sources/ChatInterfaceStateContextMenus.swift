@@ -188,13 +188,14 @@ private func grvmBurnMessage(
     controllerInteraction: ChatControllerInteraction
 ) {
     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    let strings = GRVMgramStrings(presentationData.strings)
     let alert = textAlertController(
         context: context,
-        title: "Burn media?",
-        text: "This permanently marks the media as viewed on Telegram.",
+        title: strings[.burnTitle],
+        text: strings[.burnText],
         actions: [
             TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
-            TextAlertAction(type: .destructiveAction, title: "Burn", action: {
+            TextAlertAction(type: .destructiveAction, title: strings[.burnAction], action: {
                 let preparation = AyuGramHooks.prepareConsumableMedia?(
                     context.account.peerId,
                     message
@@ -244,11 +245,13 @@ private func grvmReplayMessage(
     guard message.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) else {
         return
     }
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    let strings = GRVMgramStrings(presentationData.strings)
     let displayUndo = {
         Queue.mainQueue().async {
             controllerInteraction.displayUndo(.info(
                 title: nil,
-                text: "Preserved media is unavailable.",
+                text: strings[.replayRestoreFailed],
                 timeout: nil,
                 customUndoText: nil
             ))
@@ -1249,12 +1252,13 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         var actions: [ContextMenuItem] = []
         var contextMoreActions: [ContextMenuItem] = []
         let contextMenuSettings = AyuGramHooks.chatAppearance(accountPeerId: context.account.peerId).contextMenu
+        let grvmStrings = GRVMgramStrings(chatPresentationInterfaceState.strings)
 
         if messages.count == 1 {
             let message = messages[0]
             if grvmCanBurnMessage(messages: messages) {
                 actions.append(.action(ContextMenuActionItem(
-                    text: "Burn",
+                    text: grvmStrings[.menuBurn],
                     textColor: .destructive,
                     icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.actionSheet.destructiveActionTextColor)
@@ -1271,7 +1275,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
             if replayAvailable {
                 actions.append(.action(ContextMenuActionItem(
-                    text: "Replay",
+                    text: grvmStrings[.menuReplay],
                     icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Resend"), color: theme.actionSheet.primaryTextColor)
                     },
@@ -1287,7 +1291,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
             if localCopyAvailable {
                 actions.append(.action(ContextMenuActionItem(
-                    text: "Forward Local Copy",
+                    text: grvmStrings[.menuForwardLocalCopy],
                     icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.actionSheet.primaryTextColor)
                     },
@@ -1309,7 +1313,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         {
             // The route is restricted to .peer and .replyThread histories; .scheduledMessages and .customChatContents stay hidden.
             actions.append(.action(ContextMenuActionItem(
-                text: "Read Message",
+                text: grvmStrings[.menuReadMessage],
                 icon: { theme in
                     return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Read"), color: theme.actionSheet.primaryTextColor)
                 },

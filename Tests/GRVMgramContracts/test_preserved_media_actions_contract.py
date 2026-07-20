@@ -3366,6 +3366,61 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             force_sites,
         )
 
+    def test_task9_and_task10_public_copy_uses_typed_selected_language_strings(self) -> None:
+        context_menu = source(
+            "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift"
+        )
+        forward = source(
+            "submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift"
+        )
+        burn = swift_block(context_menu, "func grvmBurnMessage(")
+        replay = swift_block(context_menu, "func grvmReplayMessage(")
+        burn_item, _ = action_item_containing(context_menu, "grvmBurnMessage")
+        replay_item, _ = action_item_containing(context_menu, "grvmReplayMessage")
+        local_copy_item, _ = action_item_containing(
+            context_menu, "grvmForwardLocalCopy"
+        )
+        read_item, _ = action_item_containing(context_menu, "grvmApplyMaxReadIndex")
+
+        self.assertContainsAll(
+            burn,
+            "GRVMgramStrings(presentationData.strings)",
+            "strings[.burnTitle]",
+            "strings[.burnText]",
+            "strings[.burnAction]",
+        )
+        self.assertContainsAll(
+            replay,
+            "GRVMgramStrings(presentationData.strings)",
+            "strings[.replayRestoreFailed]",
+        )
+        self.assertContains(burn_item, "grvmStrings[.menuBurn]")
+        self.assertContains(replay_item, "grvmStrings[.menuReplay]")
+        self.assertContains(
+            local_copy_item, "grvmStrings[.menuForwardLocalCopy]"
+        )
+        self.assertContains(read_item, "grvmStrings[.menuReadMessage]")
+        self.assertContainsAll(
+            forward,
+            "GRVMgramStrings(self.presentationData.strings)",
+            "grvmStrings[.forwardLocalCopyUnsupported]",
+            "grvmStrings[.forwardLocalCopyUnavailable]",
+        )
+
+        combined = context_menu + forward
+        for literal in (
+            '"Burn media?"',
+            '"This permanently marks the media as viewed on Telegram."',
+            '"Burn"',
+            '"Preserved media is unavailable."',
+            '"Replay"',
+            '"Forward Local Copy"',
+            '"Read Message"',
+            '"This message can\'t be forwarded as a local copy."',
+            '"The local media is unavailable."',
+        ):
+            self.assertNotContains(combined, literal)
+
     def test_replay_fixture_keeps_normal_receipts_and_disables_every_replay_edge(self) -> None:
         self.assertTrue(all(replay_flow(True).values()))
         self.assertFalse(any(replay_flow(False).values()))
