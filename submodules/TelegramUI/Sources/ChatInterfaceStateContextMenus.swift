@@ -306,17 +306,29 @@ private func grvmCanForwardLocalCopy(
     guard candidate else {
         return .single(false)
     }
-    if message.media.isEmpty {
+    let marker = message.attributes.first(where: {
+        $0 is GRVMPreservedConsumableMediaAttribute
+    }) as? GRVMPreservedConsumableMediaAttribute
+    let media: [Media]
+    if message.media.contains(where: { $0 is TelegramMediaExpiredContent }) {
+        guard let marker else {
+            return .single(false)
+        }
+        media = marker.media
+    } else {
+        media = message.media
+    }
+    if media.isEmpty {
         return .single(!message.text.isEmpty)
     }
-    guard message.media.count == 1 else {
+    guard media.count == 1 else {
         return .single(false)
     }
     let resource: MediaResource
-    if let image = message.media[0] as? TelegramMediaImage,
+    if let image = media[0] as? TelegramMediaImage,
        let representation = largestImageRepresentation(image.representations) {
         resource = representation.resource
-    } else if let file = message.media[0] as? TelegramMediaFile {
+    } else if let file = media[0] as? TelegramMediaFile {
         resource = file.resource
     } else {
         return .single(false)

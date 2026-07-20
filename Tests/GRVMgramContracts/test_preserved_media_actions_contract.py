@@ -3735,6 +3735,73 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             local_copy_temp_cleanup(("temp-created", "return-resource")),
         )
 
+    def test_local_copy_availability_uses_marker_media_only_when_visible_media_expired(self) -> None:
+        context_menu = source(
+            "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift"
+        )
+        eligibility = swift_block(context_menu, "func grvmCanForwardLocalCopy(")
+        self.assertContainsAll(
+            eligibility,
+            "GRVMPreservedConsumableMediaAttribute",
+            "TelegramMediaExpiredContent",
+            "marker.media",
+            "restoreConsumableMedia",
+        )
+        self.assertMatches(
+            eligibility,
+            r"(?s)if\s+message\.media\.contains.*?TelegramMediaExpiredContent.*?"
+            r"media\s*=\s*marker\.media.*?else.*?media\s*=\s*message\.media",
+        )
+        self.assertRegex(
+            eligibility,
+            r"(?s)(?:if|guard)\s+let\s+image\s*=\s*media\[0\]\s+as\?\s+TelegramMediaImage",
+        )
+        self.assertNotContains(eligibility, "marker?.media ?? message.media")
+
+    def test_local_copy_enqueue_reloads_fresh_row_before_selecting_marker_media(self) -> None:
+        enqueue = swift_block(
+            source("submodules/TelegramUI/Sources/GRVMPreservedMediaEnqueue.swift"),
+            "func GRVMPreservedMediaEnqueue(",
+        )
+        self.assertContainsAll(
+            enqueue,
+            "context.account.postbox.transaction",
+            "transaction.getMessage(message.id)",
+            "stableId == message.stableId",
+            "TelegramMediaExpiredContent",
+            "marker.media",
+        )
+        fresh_binding = re.search(
+            r"guard\s+let\s+(?P<fresh>[A-Za-z_]\w*)\s*=\s*"
+            r"transaction\.getMessage\(message\.id\).*?"
+            r"(?P=fresh)\.stableId\s*==\s*message\.stableId",
+            enqueue,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(
+            fresh_binding,
+            msg="Local-copy preparation must fail closed on a stale Postbox row",
+        )
+        fresh_name = fresh_binding.group("fresh")
+        self.assertRegex(
+            enqueue,
+            rf"(?s)return\s+{re.escape(fresh_name)}.*?"
+            r"guard\s+let\s+message\s*=\s*[A-Za-z_]\w*",
+        )
+        self.assertMatches(
+            enqueue,
+            r"(?s)if\s+message\.media\.contains.*?TelegramMediaExpiredContent.*?"
+            r"media\s*=\s*marker\.media.*?else.*?media\s*=\s*message\.media",
+        )
+        self.assertOrdered(
+            enqueue,
+            "transaction.getMessage(message.id)",
+            "TelegramMediaExpiredContent",
+            "restoreConsumableMedia",
+            "FileManager.default.temporaryDirectory",
+        )
+        self.assertNotContains(enqueue, "marker?.media ?? message.media")
+
     def test_safe_entity_fixture_uses_utf16_ranges_and_drops_custom_emoji(self) -> None:
         text = "A\U0001f600B"
         utf16_length = len(text.encode("utf-16-le")) // 2
@@ -3882,7 +3949,7 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         for entity_kind in SAFE_ENTITIES:
             self.assertContains(entity_switch, f".{entity_kind}")
         self.assertContains(entity_switch, "default:")
-        self.assertAnyContains(enqueue, "message.media.count", "media.count !=")
+        self.assertAnyContains(enqueue, "message.media.count", "media.count !=", "media.count <=")
         self.assertRegex(enqueue, r"(?s)\.message\(\s*text:\s*message\.text.*?mediaReference:\s*nil")
         self.assertRegex(
             enqueue,
@@ -4032,7 +4099,13 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             "accountPeerId",
         )
         self.assertAnyContains(eligibility, "!message.text.isEmpty", "message.text.isEmpty == false")
-        self.assertAnyContains(eligibility, "message.media.count", "message.media.isEmpty")
+        self.assertAnyContains(
+            eligibility,
+            "message.media.count",
+            "message.media.isEmpty",
+            "media.count",
+            "media.isEmpty",
+        )
         self.assertMatches(
             eligibility,
             r"(?s)completedResourcePath.*?(?:fileSize|byteCount|size).*?>\s*0",

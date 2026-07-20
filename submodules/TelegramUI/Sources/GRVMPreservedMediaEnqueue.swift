@@ -139,14 +139,34 @@ func GRVMPreservedMediaEnqueue(
     context: AccountContext,
     message: Message
 ) -> Signal<GRVMPreservedMediaEnqueuePayload, GRVMPreservedMediaEnqueueError> {
-    guard message.media.count <= 1 else {
-        return .fail(.unsupported)
+    return (context.account.postbox.transaction { transaction -> Message? in
+        guard let currentMessage = transaction.getMessage(message.id),
+              currentMessage.stableId == message.stableId else {
+            return nil
+        }
+        return currentMessage
     }
-    let textEntities = grvmLocalCopyTextEntities(message)
+    |> castError(GRVMPreservedMediaEnqueueError.self))
+    |> mapToSignal { freshMessage -> Signal<GRVMPreservedMediaEnqueuePayload, GRVMPreservedMediaEnqueueError> in
+    guard let message = freshMessage else {
+        return .fail(.unavailable)
+    }
     let marker = message.attributes.first(where: {
         $0 is GRVMPreservedConsumableMediaAttribute
     }) as? GRVMPreservedConsumableMediaAttribute
-    let media = marker?.media ?? message.media
+    let media: [Media]
+    if message.media.contains(where: { $0 is TelegramMediaExpiredContent }) {
+        guard let marker else {
+            return .fail(.unavailable)
+        }
+        media = marker.media
+    } else {
+        media = message.media
+    }
+    guard media.count <= 1 else {
+        return .fail(.unsupported)
+    }
+    let textEntities = grvmLocalCopyTextEntities(message)
     var messageAttributes: [MessageAttribute] = []
     if !textEntities.isEmpty {
         messageAttributes.append(TextEntitiesMessageAttribute(entities: textEntities))
@@ -304,5 +324,6 @@ func GRVMPreservedMediaEnqueue(
                 temporaryFile: temp
             ))
         }
+    }
     }
 }
