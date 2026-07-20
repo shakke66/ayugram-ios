@@ -23,7 +23,38 @@ private struct GRVMConsumableMediaPreparation {
 
 private struct GRVMConsumableMediaRestoreContext {
     let key: GRVMMessageKey
-    let attribute: GRVMPreservedConsumableMediaAttribute
+    let resourceIds: [String]
+    let requiresConsumableMarker: Bool
+}
+
+private func grvmPrimaryMediaResourceIds(_ media: [Media]) -> [String]? {
+    var resourceIds = Set<String>()
+    for item in media {
+        if let image = item as? TelegramMediaImage {
+            guard let representation = largestImageRepresentation(image.representations) else {
+                return nil
+            }
+            resourceIds.insert(representation.resource.id.stringRepresentation)
+        } else if let file = item as? TelegramMediaFile {
+            resourceIds.insert(file.resource.id.stringRepresentation)
+        } else {
+            return nil
+        }
+    }
+    guard !resourceIds.isEmpty else {
+        return nil
+    }
+    return resourceIds.sorted()
+}
+
+private func grvmNonCancellable<T>(_ signal: Signal<T, NoError>) -> Signal<T, NoError> {
+    return Signal { subscriber in
+        let _ = signal.startStandalone(
+            next: subscriber.putNext,
+            completed: subscriber.putCompletion
+        )
+        return EmptyDisposable
+    }
 }
 
 private func grvmMediaResources(_ message: Message) -> [GRVMMediaResourceReference] {
@@ -595,8 +626,9 @@ public final class GRVMMessageArchiveCoordinator {
                     return .single(false)
                 }
 
-                return combineLatest(archiveSignals)
-                |> mapToSignal { terminalRecords -> Signal<Bool, NoError> in
+                return grvmNonCancellable(
+                    combineLatest(archiveSignals)
+                    |> mapToSignal { terminalRecords -> Signal<Bool, NoError> in
                     do {
                         for record in terminalRecords {
                             try self.store.updateMedia(record)
@@ -666,7 +698,8 @@ public final class GRVMMessageArchiveCoordinator {
                         }
                         return attached
                     }
-                }
+                    }
+                )
             }
         }
     }
@@ -674,15 +707,29 @@ public final class GRVMMessageArchiveCoordinator {
     public func restoreArchivedMedia(for message: Message) -> Signal<Bool, NoError> {
         return self.postbox.transaction { transaction -> GRVMConsumableMediaRestoreContext? in
             guard let currentMessage = transaction.getMessage(message.id),
-                  currentMessage.stableId == message.stableId,
-                  let attribute = currentMessage.attributes.first(where: {
-                      $0 is GRVMPreservedConsumableMediaAttribute
-                  }) as? GRVMPreservedConsumableMediaAttribute else {
+                  currentMessage.stableId == message.stableId else {
+                return nil
+            }
+            if let attribute = currentMessage.attributes.first(where: {
+                $0 is GRVMPreservedConsumableMediaAttribute
+            }) as? GRVMPreservedConsumableMediaAttribute {
+                return GRVMConsumableMediaRestoreContext(
+                    key: self.messageKey(currentMessage),
+                    resourceIds: attribute.resourceIds,
+                    requiresConsumableMarker: true
+                )
+            }
+            guard let deletedAttribute = currentMessage.attributes.first(where: {
+                $0 is GRVMDeletedMessageAttribute
+            }) as? GRVMDeletedMessageAttribute,
+                  let primaryResourceIds = grvmPrimaryMediaResourceIds(currentMessage.media),
+                  Set(primaryResourceIds).isSubset(of: Set(deletedAttribute.resourceIds)) else {
                 return nil
             }
             return GRVMConsumableMediaRestoreContext(
                 key: self.messageKey(currentMessage),
-                attribute: attribute
+                resourceIds: primaryResourceIds,
+                requiresConsumableMarker: false
             )
         }
         |> mapToSignal { [weak self] context -> Signal<Bool, NoError> in
@@ -692,13 +739,12 @@ public final class GRVMMessageArchiveCoordinator {
             guard context.key.accountId == self.accountRecordId.int64 else {
                 return .single(false)
             }
-            let attribute = context.attribute
-            guard let records = try? self.store.consumableMedia(key: context.key, resourceIds: Set(attribute.resourceIds)),
+            guard let records = try? self.store.consumableMedia(key: context.key, resourceIds: Set(context.resourceIds)),
                   !records.isEmpty else {
                 return .single(false)
             }
             guard records.allSatisfy({ $0.copyState == .complete && $0.byteCount > 0 }),
-                  Set(attribute.resourceIds) == Set(records.map(\.resourceId)) else {
+                  Set(context.resourceIds) == Set(records.map(\.resourceId)) else {
                 return .single(false)
             }
             let restoreSignals = records.map { record in
@@ -709,7 +755,7 @@ public final class GRVMMessageArchiveCoordinator {
                 guard restored.allSatisfy({ $0 }) else {
                     return .single(false)
                 }
-                for resourceId in attribute.resourceIds {
+                for resourceId in context.resourceIds {
                     guard let path = self.mediaBox.completedResourcePath(id: MediaResourceId(resourceId)) else {
                         return .single(false)
                     }
@@ -721,17 +767,37 @@ public final class GRVMMessageArchiveCoordinator {
 
                 return self.postbox.transaction { transaction -> Bool in
                     guard let freshMessage = transaction.getMessage(message.id),
-                          freshMessage.stableId == message.stableId,
-                          freshMessage.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) else {
+                          freshMessage.stableId == message.stableId else {
                         return false
                     }
-                    if freshMessage.media.contains(where: { $0 is TelegramMediaExpiredContent }) {
+                    let replacementMedia: [Media]?
+                    if context.requiresConsumableMarker {
+                        guard let attribute = freshMessage.attributes.first(where: {
+                            $0 is GRVMPreservedConsumableMediaAttribute
+                        }) as? GRVMPreservedConsumableMediaAttribute,
+                              Set(attribute.resourceIds) == Set(context.resourceIds) else {
+                            return false
+                        }
+                        replacementMedia = attribute.media
+                    } else {
+                        guard let deletedAttribute = freshMessage.attributes.first(where: {
+                            $0 is GRVMDeletedMessageAttribute
+                        }) as? GRVMDeletedMessageAttribute,
+                              let primaryResourceIds = grvmPrimaryMediaResourceIds(freshMessage.media),
+                              Set(primaryResourceIds) == Set(context.resourceIds),
+                              Set(primaryResourceIds).isSubset(of: Set(deletedAttribute.resourceIds)) else {
+                            return false
+                        }
+                        replacementMedia = nil
+                    }
+                    if let replacementMedia,
+                       freshMessage.media.contains(where: { $0 is TelegramMediaExpiredContent }) {
                         transaction.updateMessage(freshMessage.id, update: { currentMessage in
                             var storeForwardInfo: StoreMessageForwardInfo?
                             if let forwardInfo = currentMessage.forwardInfo {
                                 storeForwardInfo = StoreMessageForwardInfo(authorId: forwardInfo.author?.id, sourceId: forwardInfo.source?.id, sourceMessageId: forwardInfo.sourceMessageId, date: forwardInfo.date, authorSignature: forwardInfo.authorSignature, psaType: forwardInfo.psaType, flags: forwardInfo.flags)
                             }
-                            return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: currentMessage.attributes, media: attribute.media))
+                            return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: currentMessage.attributes, media: replacementMedia))
                         })
                     }
                     return true

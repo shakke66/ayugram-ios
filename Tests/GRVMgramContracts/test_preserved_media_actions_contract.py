@@ -2977,7 +2977,7 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
             "transaction.getMessage(message.id)",
             "stableId",
             "Set(",
-            "attribute.resourceIds",
+            "context.resourceIds",
             "==",
             ".complete",
             "byteCount > 0",
@@ -3043,10 +3043,10 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
         records_name = records_binding.group("records")
         self.assertRegex(
             restore,
-            rf"(?s)Set\(\s*attribute\.resourceIds\s*\)\s*==\s*"
+            rf"(?s)Set\(\s*context\.resourceIds\s*\)\s*==\s*"
             rf"Set\(\s*{re.escape(records_name)}\.(?:map|compactMap).*?resourceId.*?\)|"
             rf"Set\(\s*{re.escape(records_name)}\.(?:map|compactMap).*?resourceId.*?\)\s*==\s*"
-            r"Set\(\s*attribute\.resourceIds\s*\)",
+            r"Set\(\s*context\.resourceIds\s*\)",
         )
         self.assertLess(restore.find("mediaStore.restore("), restore.rfind("completedResourcePath"))
         self.assertLess(
@@ -3084,7 +3084,7 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
         )
         update_tail = restore[restore.rfind("transaction.updateMessage") - 2500 :]
         self.assertContains(update_tail, fresh_row)
-        self.assertContains(update_tail, "attribute.media")
+        self.assertAnyContains(update_tail, "attribute.media", "replacementMedia")
         self.assertNotContains(restore, "archivedMedia(accountId:")
         for forbidden in ("network.request", "fetchedResource", "resourceData(", "fetchResource"):
             self.assertNotContains(restore, forbidden)
@@ -3118,13 +3118,64 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
         )
         lookup_calls = swift_calls(restore, "consumableMedia")
         self.assertEqual(1, len(lookup_calls))
-        self.assertContains(lookup_calls[0], "resourceIds: Set(attribute.resourceIds)")
+        self.assertContains(lookup_calls[0], "resourceIds: Set(context.resourceIds)")
         self.assertOrdered(
             restore,
             "transaction.getMessage(message.id)",
             "consumableMedia(",
             "mediaStore.restore(",
         )
+
+    def test_restore_supports_deleted_revision_zero_without_authorizing_replay(self) -> None:
+        coordinator = source(
+            "submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"
+        )
+        restore = swift_block(coordinator, "public func restoreArchivedMedia(")
+        context = swift_block(coordinator, "private struct GRVMConsumableMediaRestoreContext")
+        replay = swift_block(
+            source("submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift"),
+            "func grvmCanReplayMessage(",
+        )
+
+        self.assertContainsAll(
+            context,
+            "resourceIds: [String]",
+            "requiresConsumableMarker: Bool",
+        )
+        self.assertContainsAll(
+            restore,
+            "GRVMPreservedConsumableMediaAttribute",
+            "GRVMDeletedMessageAttribute",
+            "grvmPrimaryMediaResourceIds(",
+            "deletedAttribute.resourceIds",
+            "isSubset(of:",
+            "resourceIds: Set(context.resourceIds)",
+        )
+        self.assertGreaterEqual(
+            restore.count("grvmPrimaryMediaResourceIds("),
+            2,
+            msg="Deleted restore must revalidate primary IDs on both the initial and fresh Postbox rows",
+        )
+        self.assertMatches(
+            restore,
+            r"(?s)GRVMPreservedConsumableMediaAttribute.*?"
+            r"resourceIds:\s*attribute\.resourceIds.*?"
+            r"requiresConsumableMarker:\s*true",
+        )
+        self.assertMatches(
+            restore,
+            r"(?s)GRVMDeletedMessageAttribute.*?"
+            r"resourceIds:\s*primaryResourceIds.*?"
+            r"requiresConsumableMarker:\s*false",
+        )
+        self.assertMatches(
+            restore,
+            r"(?s)if\s+context\.requiresConsumableMarker.*?"
+            r"replacementMedia\s*=\s*attribute\.media.*?"
+            r"else.*?replacementMedia\s*=\s*nil",
+        )
+        self.assertContains(replay, "GRVMPreservedConsumableMediaAttribute")
+        self.assertNotContains(replay, "GRVMDeletedMessageAttribute")
 
 
 class ReplayLocalForwardUIContractTests(SourceContractTestCase):
@@ -3487,6 +3538,48 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         )
         self.assertNotContains(playback_started, "force: true")
         self.assertEqual(1, playback_started.count("markMessageContentAsConsumedInteractively"))
+
+    def test_reservation_and_preview_receipt_outlive_ui_disposal(self) -> None:
+        coordinator = source(
+            "submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"
+        )
+        helper = swift_block(coordinator, "private func grvmNonCancellable")
+        prepare = swift_block(coordinator, "public func prepareConsumableMedia(")
+        self.assertContainsAll(
+            helper,
+            "Signal<T, NoError>",
+            "signal.startStandalone(",
+            "next: subscriber.putNext",
+            "completed: subscriber.putCompletion",
+            "return EmptyDisposable",
+        )
+        durable_calls = swift_calls(prepare, "grvmNonCancellable")
+        self.assertEqual(1, len(durable_calls))
+        durable = durable_calls[0]
+        self.assertContainsAll(
+            durable,
+            "combineLatest(archiveSignals)",
+            "store.updateMedia(",
+            "rollbackConsumableMediaReservation(",
+            "postbox.transaction",
+            "GRVMPreservedConsumableMediaAttribute(",
+        )
+        self.assertLess(
+            prepare.find("reserveConsumableMedia("),
+            prepare.find(durable_calls[0]),
+        )
+
+        preview = source("submodules/GalleryUI/Sources/SecretMediaPreviewController.swift")
+        apply_view = swift_block(preview, "private func applyMessageView()")
+        receipt_gate = swift_block(apply_view, "if self.consumeOnOpen")
+        self.assertContainsAll(
+            receipt_gate,
+            "prepareConsumableMedia",
+            "markMessageContentAsConsumedInteractively",
+            "startStandalone()",
+        )
+        self.assertNotContains(receipt_gate, "[weak self]")
+        self.assertNotContains(preview, "markMessageAsConsumedDisposable")
 
     def test_replay_restore_is_rechecked_and_opens_a_fresh_message(self) -> None:
         context_menu = source(

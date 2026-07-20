@@ -156,7 +156,6 @@ public final class SecretMediaPreviewController: ViewController {
     private var didSetReady = false
     
     private let disposable = MetaDisposable()
-    private let markMessageAsConsumedDisposable = MetaDisposable()
     
     private var controllerNode: SecretMediaPreviewControllerNode {
         return self.displayNode as! SecretMediaPreviewControllerNode
@@ -228,7 +227,6 @@ public final class SecretMediaPreviewController: ViewController {
     
     deinit {
         self.disposable.dispose()
-        self.markMessageAsConsumedDisposable.dispose()
         if let hiddenMediaManagerIndex = self.hiddenMediaManagerIndex {
             self.context.sharedContext.mediaManager.galleryHiddenMediaManager.removeSource(hiddenMediaManagerIndex)
         }
@@ -555,14 +553,12 @@ public final class SecretMediaPreviewController: ViewController {
                         self.context.account.peerId,
                         message
                     ) ?? .single(false)
+                    let context = self.context
                     let consume = preparation
-                    |> mapToSignal { [weak self] _ -> Signal<Void, NoError> in
-                        guard let self else {
-                            return .complete()
-                        }
-                        return self.context.engine.messages.markMessageContentAsConsumedInteractively(messageId: message.id)
+                    |> mapToSignal { _ -> Signal<Void, NoError> in
+                        return context.engine.messages.markMessageContentAsConsumedInteractively(messageId: message.id)
                     }
-                    self.markMessageAsConsumedDisposable.set(consume.start())
+                    let _ = consume.startStandalone()
                 }
             } else {
                 var beginTimeAndTimeout: (Double, Double, Bool)?
