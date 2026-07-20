@@ -20,6 +20,7 @@ class ValidationError(Exception):
     """Raised when a GRVMgram release contract is violated."""
 
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 STRINGS_ENTRY_RE = re.compile(
     r'^\s*"((?:\\.|[^"\\])*)"\s*=\s*"((?:\\.|[^"\\])*)"\s*;\s*$'
 )
@@ -649,7 +650,163 @@ def iter_swift_literals(value: str):
             yield line, normalize_swift_literal(literal or "", hashes or 0)
 
 
-def validate_localizations(root: Path) -> None:
+def _swift_previous_code_index(value: str, index: int) -> int:
+    index -= 1
+    while index >= 0 and value[index].isspace():
+        index -= 1
+    return index
+
+
+def _swift_next_code_index(value: str, index: int) -> int:
+    while index < len(value) and value[index].isspace():
+        index += 1
+    return index
+
+
+def _swift_group_opening_is_transparent(value: str, opening: int) -> bool:
+    previous = _swift_previous_code_index(value, opening)
+    if previous < 0:
+        return True
+    if value[previous].isalnum() or value[previous] == "_":
+        word_end = previous + 1
+        word_start = word_end
+        while word_start > 0 and (
+            value[word_start - 1].isalnum() or value[word_start - 1] == "_"
+        ):
+            word_start -= 1
+        return value[word_start:word_end] in SWIFT_REGEX_PREFIX_KEYWORDS
+    if value[previous] in ")]}`":
+        return False
+    if opening > 0 and value[opening - 1] in "?!>":
+        return False
+    return True
+
+
+def _swift_grouped_expression_bounds(
+    value: str, start: int, end: int
+) -> tuple[int, int]:
+    while True:
+        opening = _swift_previous_code_index(value, start)
+        closing = _swift_next_code_index(value, end)
+        if (
+            opening < 0
+            or closing >= len(value)
+            or value[opening] != "("
+            or value[closing] != ")"
+            or not _swift_group_opening_is_transparent(value, opening)
+        ):
+            return start, end
+        start = opening
+        end = closing + 1
+
+
+def iter_swift_string_expressions(value: str):
+    tokens = list(_iter_swift_tokens(value))
+    literals = [
+        (start, end, line, normalize_swift_literal(literal or "", hashes or 0))
+        for kind, start, end, line, literal, hashes in tokens
+        if kind == "literal"
+    ]
+    for _start, _end, line, literal in literals:
+        yield line, literal
+
+    structural_source = list(value)
+    for kind, start, end, _line, _literal, _hashes in tokens:
+        if kind not in {"comment", "regex"}:
+            continue
+        for position in range(start, end):
+            if value[position] != "\n":
+                structural_source[position] = " "
+    structural_value = "".join(structural_source)
+
+    grouped_literals = [
+        (*entry, *_swift_grouped_expression_bounds(structural_value, entry[0], entry[1]))
+        for entry in literals
+    ]
+    for index, (_start, _end, line, literal, group_start, group_end) in enumerate(
+        grouped_literals
+    ):
+        combined = literal
+        combined_start = group_start
+        combined_end = group_end
+        for (
+            next_start,
+            _next_end,
+            _next_line,
+            next_literal,
+            next_group_start,
+            next_group_end,
+        ) in grouped_literals[index + 1 :]:
+            if next_start < combined_end:
+                continue
+            connector = structural_value[combined_end:next_group_start]
+            if re.fullmatch(r"\s*\+\s*", connector) is None:
+                break
+            combined += next_literal
+            combined_end = next_group_end
+            combined_start, combined_end = _swift_grouped_expression_bounds(
+                structural_value, combined_start, combined_end
+            )
+            yield line, combined
+
+
+def _swift_available_message_literal_starts(value: str, tokens: list[tuple]) -> set[int]:
+    structural_source = list(value)
+    for kind, start, end, _line, _literal, _hashes in tokens:
+        if kind not in {"comment", "literal", "regex"}:
+            continue
+        for position in range(start, end):
+            if value[position] != "\n":
+                structural_source[position] = " "
+    structural_value = "".join(structural_source)
+    literal_ranges = [
+        (start, end)
+        for kind, start, end, _line, _literal, _hashes in tokens
+        if kind == "literal"
+    ]
+    result: set[int] = set()
+    for attribute in re.finditer(r"(?<![A-Za-z0-9_])@available\s*\(", structural_value):
+        opening = structural_value.find("(", attribute.start(), attribute.end())
+        depth = 1
+        closing = -1
+        for position in range(opening + 1, len(structural_value)):
+            if structural_value[position] == "(":
+                depth += 1
+            elif structural_value[position] == ")":
+                depth -= 1
+                if depth == 0:
+                    closing = position
+                    break
+        if closing == -1:
+            continue
+        attribute_body = structural_value[opening + 1 : closing]
+        body_depths: list[int] = []
+        body_depth = 0
+        for character in attribute_body:
+            body_depths.append(body_depth)
+            if character == "(":
+                body_depth += 1
+            elif character == ")":
+                body_depth -= 1
+        for message in re.finditer(
+            r"\bmessage\s*:",
+            attribute_body,
+        ):
+            if body_depths[message.start()] != 0:
+                continue
+            message_end = opening + 1 + message.end()
+            for literal_start, literal_end in literal_ranges:
+                if literal_start < message_end:
+                    continue
+                if literal_end > closing:
+                    break
+                if not structural_value[message_end:literal_start].strip():
+                    result.add(literal_start)
+                break
+    return result
+
+
+def validate_localizations(root: Path) -> set[str]:
     english_path = root / "Telegram/Telegram-iOS/en.lproj/GRVMgram.strings"
     russian_path = root / "Telegram/Telegram-iOS/ru.lproj/GRVMgram.strings"
     enum_path = (
@@ -674,6 +831,7 @@ def validate_localizations(root: Path) -> None:
         )
 
     validate_required_localization_contract(english, russian)
+    return set(english)
 
 
 def iter_runtime_files(root: Path):
@@ -722,7 +880,15 @@ def validate_settings_ui_literals(root: Path) -> None:
         return
     violations: list[str] = []
     for path in directory.rglob("*.swift"):
-        for line_number, raw_literal in iter_swift_literals(read_utf8(path)):
+        value = read_utf8(path)
+        tokens = list(_iter_swift_tokens(value))
+        available_message_starts = _swift_available_message_literal_starts(
+            value, tokens
+        )
+        for kind, start, _end, line_number, literal, hashes in tokens:
+            if kind != "literal" or start in available_message_starts:
+                continue
+            raw_literal = normalize_swift_literal(literal or "", hashes or 0)
             if raw_literal in ALLOWED_SETTINGS_UI_LITERALS:
                 continue
             if LETTER_RE.search(raw_literal):
@@ -754,24 +920,50 @@ def validate_public_branding(root: Path) -> None:
     for path in iter_runtime_files(root):
         value = read_utf8(path)
         folded = value.casefold()
-        for token in FORBIDDEN_PUBLIC_TOKENS:
-            if contains_forbidden_public_token(value, token):
-                violations.append(f"{path}: forbidden public token {token}")
         if path.suffix == ".plist":
             violations.extend(validate_plist_public_values(root, path, value))
-        should_scan_literals = "ayugram" in folded
-        if path.suffix in {".swift", ".m", ".mm"}:
-            should_scan_literals = swift_source_may_contain_ayugram(value)
-        if should_scan_literals:
+        is_swift = path.suffix == ".swift"
+        is_source = path.suffix in {".swift", ".m", ".mm"}
+        if is_swift:
+            should_scan_literals = (
+                swift_source_may_contain_ayugram(value)
+                or ('"' in value and "+" in value)
+                or any(
+                    contains_forbidden_public_token(value, token)
+                    for token in FORBIDDEN_PUBLIC_TOKENS
+                )
+                or any(forbidden in value for forbidden in FORBIDDEN_CROSS_UI_LITERALS)
+            )
             literal_entries = (
-                iter_swift_literals(value)
-                if path.suffix in {".swift", ".m", ".mm"}
-                else (
+                list(iter_swift_string_expressions(value))
+                if should_scan_literals
+                else []
+            )
+            for line_number, literal in literal_entries:
+                for token in FORBIDDEN_PUBLIC_TOKENS:
+                    if contains_forbidden_public_token(literal, token):
+                        violations.append(
+                            f"{path}:{line_number}: forbidden public token {token}"
+                        )
+        else:
+            for token in FORBIDDEN_PUBLIC_TOKENS:
+                if contains_forbidden_public_token(value, token):
+                    violations.append(f"{path}: forbidden public token {token}")
+            should_scan_literals = "ayugram" in folded
+            if is_source:
+                should_scan_literals = swift_source_may_contain_ayugram(value)
+            literal_entries = (
+                list(iter_swift_literals(value))
+                if should_scan_literals and is_source
+                else []
+            )
+        if should_scan_literals:
+            if not is_source:
+                literal_entries = list(
                     (line_number, literal)
                     for line_number, line in enumerate(value.splitlines(), start=1)
                     for literal in QUOTED_STRING_RE.findall(line)
                 )
-            )
             for line_number, literal in literal_entries:
                 if "ayugram" not in literal.casefold():
                     continue
@@ -780,7 +972,14 @@ def validate_public_branding(root: Path) -> None:
                 violations.append(
                     f"{path}:{line_number}: public/loggable AyuGram literal {literal}"
                 )
-        if path.suffix in {".swift", ".m", ".mm"} and any(
+        if is_swift:
+            for line_number, literal in literal_entries:
+                for forbidden in FORBIDDEN_CROSS_UI_LITERALS:
+                    if forbidden in literal:
+                        violations.append(
+                            f"{path}:{line_number}: hard-coded UI text {forbidden}"
+                        )
+        elif is_source and any(
             forbidden in value for forbidden in FORBIDDEN_CROSS_UI_LITERALS
         ):
             for line_number, line in enumerate(value.splitlines(), start=1):
@@ -1382,6 +1581,15 @@ def validate_ipa(path: Path) -> dict[str, str]:
         validate_required_localization_contract(
             localized_tables["en"], localized_tables["ru"]
         )
+        expected_keys = validate_localizations(REPOSITORY_ROOT)
+        actual_keys = set(localized_tables["en"])
+        if actual_keys != expected_keys:
+            missing_keys = sorted(expected_keys - actual_keys)
+            extra_keys = sorted(actual_keys - expected_keys)
+            raise ValidationError(
+                "IPA localization inventory mismatch: "
+                f"missing_keys={missing_keys}, extra_keys={extra_keys}"
+            )
 
         return {
             "display_name": str(info["CFBundleDisplayName"]),

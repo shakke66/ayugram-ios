@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import json
 import plistlib
 import stat
 import tempfile
@@ -31,6 +32,22 @@ REQUIRED_KEYS = {
     "GRVMgram.Chat.EditedMark.Default": "edited",
     "GRVMgram.Ghost.ActiveCount": "%d of %@ enabled",
 }
+REPOSITORY_ENGLISH = VALIDATOR.parse_strings(
+    REPOSITORY_ROOT / "Telegram/Telegram-iOS/en.lproj/GRVMgram.strings"
+)
+REPOSITORY_RUSSIAN = VALIDATOR.parse_strings(
+    REPOSITORY_ROOT / "Telegram/Telegram-iOS/ru.lproj/GRVMgram.strings"
+)
+REPOSITORY_ENUM_KEYS = set(
+    VALIDATOR.extract_grvmgram_string_keys(
+        REPOSITORY_ROOT
+        / "submodules/TelegramPresentationData/Sources/GRVMgramStrings.swift"
+    )
+)
+if set(REPOSITORY_ENGLISH) != set(REPOSITORY_RUSSIAN) or set(
+    REPOSITORY_ENGLISH
+) != REPOSITORY_ENUM_KEYS:
+    raise RuntimeError("Repository GRVMgram localization inventory is inconsistent")
 
 
 def write(path: Path, value: str) -> None:
@@ -40,7 +57,9 @@ def write(path: Path, value: str) -> None:
 
 def strings_file(entries: dict[str, str]) -> str:
     return "\n".join(
-        f'"{key}" = "{value}";' for key, value in entries.items()
+        f"{json.dumps(key, ensure_ascii=False)} = "
+        f"{json.dumps(value, ensure_ascii=False)};"
+        for key, value in entries.items()
     ) + "\n"
 
 
@@ -286,10 +305,8 @@ def create_ipa(
                 else:
                     archive.writestr(f"{app_root}/Telegram", executable)
             if include_tables:
-                english = dict(REQUIRED_KEYS)
-                russian = dict(REQUIRED_KEYS)
-                russian["GRVMgram.Streamer.Title"] = "Streamer RU"
-                russian["GRVMgram.Chat.EditedMark.Default"] = "\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u043e"
+                english = dict(REPOSITORY_ENGLISH)
+                russian = dict(REPOSITORY_RUSSIAN)
                 for key in omit_ipa_keys or set():
                     english.pop(key)
                     russian.pop(key)
@@ -774,6 +791,52 @@ class BrandingTests(unittest.TestCase):
             with self.assertRaisesRegex(VALIDATOR.ValidationError, "public/loggable"):
                 VALIDATOR.validate_public_branding(root)
 
+    def test_compile_time_concatenated_swift_branding_is_rejected(self) -> None:
+        fixtures = (
+            (
+                'let title = "Ayu" /* compile-time join */ +\n'
+                '    "Gram Settings"\n',
+                "public/loggable",
+            ),
+            (
+                'let url = "https://t.me/ayu" + "gram"\n',
+                "forbidden public token",
+            ),
+            (
+                'let endpoint = "dpa" + "ste"\n',
+                "forbidden public token",
+            ),
+            (
+                'let title = ("Ayu") + (("Gram Settings"))\n',
+                "public/loggable",
+            ),
+            (
+                'let title = (("Ayu") + ("Gram")) + " Settings"\n',
+                "public/loggable",
+            ),
+        )
+        for source, message in fixtures:
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                write(root / "submodules/TelegramUI/Sources/Bad.swift", source)
+                with self.assertRaisesRegex(VALIDATOR.ValidationError, message):
+                    VALIDATOR.validate_public_branding(root)
+
+    def test_unrelated_swift_tokens_are_not_reconstructed_as_branding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(
+                root / "submodules/TelegramUI/Sources/Clean.swift",
+                'let tuple = ("Ayu", "Gram Settings")\n'
+                'let dynamic = "Ayu" + component + "Gram Settings"\n'
+                'let transformed = normalize("Ayu") + ("Gram Settings")\n'
+                'let escapedCall = `repeat`("Ayu") + ("Gram Settings")\n'
+                "let exteraClient = Service()\n"
+                '// let oldURL = "https://t.me/ayugram"\n'
+                '/* let oldTitle = "Ayu" + "Gram Settings" */\n',
+            )
+            VALIDATOR.validate_public_branding(root)
+
     def test_identifier_shaped_public_ayugram_copy_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1066,6 +1129,45 @@ class BrandingTests(unittest.TestCase):
                 '"Prompt" = "Send voice message?";\n',
             )
             VALIDATOR.validate_public_branding(root)
+
+    def test_settings_ui_available_message_literal_is_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(
+                root / "submodules/AyuGramSettingsUI/Sources/Available.swift",
+                "@available(*, deprecated, message: "
+                '"Use grvmDeletedMessagesController(context:peerId:threadId:)")\n'
+                "public func compatibilityEntryPoint() {}\n",
+            )
+            VALIDATOR.validate_settings_ui_literals(root)
+
+    def test_settings_ui_available_message_text_is_rejected_at_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(
+                root / "submodules/AyuGramSettingsUI/Sources/Runtime.swift",
+                'let title = "Use grvmDeletedMessagesController(context:peerId:threadId:)"\n',
+            )
+            with self.assertRaisesRegex(
+                VALIDATOR.ValidationError,
+                "hard-coded GRVMgram Settings UI text",
+            ):
+                VALIDATOR.validate_settings_ui_literals(root)
+
+    def test_settings_ui_nested_available_message_label_is_not_exempt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(
+                root / "submodules/AyuGramSettingsUI/Sources/Nested.swift",
+                "@available(*, deprecated, renamed: helper("
+                'message: "Visible Settings Label"))\n'
+                "public func compatibilityEntryPoint() {}\n",
+            )
+            with self.assertRaisesRegex(
+                VALIDATOR.ValidationError,
+                "hard-coded GRVMgram Settings UI text",
+            ):
+                VALIDATOR.validate_settings_ui_literals(root)
 
     def test_dpaste_endpoint_does_not_match_pasteboard_symbols(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2021,6 +2123,36 @@ class IpaTests(unittest.TestCase):
                 create_ipa(path, **fixture)
                 with self.assertRaisesRegex(VALIDATOR.ValidationError, "empty value"):
                     VALIDATOR.validate_ipa(path)
+
+    def test_ipa_requires_repository_key_outside_legacy_minimum(self) -> None:
+        key = "GRVMgram.Settings.Title"
+        self.assertIn(key, REPOSITORY_ENUM_KEYS)
+        self.assertNotIn(key, REQUIRED_KEYS)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "GRVMgram.ipa"
+            create_ipa(path, omit_ipa_keys={key})
+            with self.assertRaisesRegex(
+                VALIDATOR.ValidationError,
+                "IPA localization inventory mismatch",
+            ) as raised:
+                VALIDATOR.validate_ipa(path)
+            self.assertIn(key, str(raised.exception))
+
+    def test_ipa_rejects_keys_outside_repository_inventory(self) -> None:
+        key = "GRVMgram.Unexpected"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "GRVMgram.ipa"
+            create_ipa(
+                path,
+                english_overrides={key: "Unexpected"},
+                russian_overrides={key: "Unexpected"},
+            )
+            with self.assertRaisesRegex(
+                VALIDATOR.ValidationError,
+                "IPA localization inventory mismatch",
+            ) as raised:
+                VALIDATOR.validate_ipa(path)
+            self.assertIn(key, str(raised.exception))
 
     def test_ipa_requires_retained_localization_keys_even_with_table_parity(self) -> None:
         for key in REQUIRED_KEYS:
