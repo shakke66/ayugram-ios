@@ -215,21 +215,63 @@ def decode_strings_value(value: str, source: str, line_number: int) -> str:
         ) from error
 
 
+def _mask_strings_comments(value: str, source: str) -> str:
+    result: list[str] = []
+    index = 0
+    block_depth = 0
+    in_string = False
+    while index < len(value):
+        if block_depth:
+            if value.startswith("/*", index):
+                block_depth += 1
+                result.extend("  ")
+                index += 2
+                continue
+            if value.startswith("*/", index):
+                block_depth -= 1
+                result.extend("  ")
+                index += 2
+                continue
+            result.append("\n" if value[index] == "\n" else " ")
+            index += 1
+            continue
+        if in_string:
+            result.append(value[index])
+            if value[index] == "\\" and index + 1 < len(value):
+                result.append(value[index + 1])
+                index += 2
+                continue
+            if value[index] == '"':
+                in_string = False
+            index += 1
+            continue
+        if value.startswith("//", index):
+            while index < len(value) and value[index] != "\n":
+                result.append(" ")
+                index += 1
+            continue
+        if value.startswith("/*", index):
+            block_depth = 1
+            result.extend("  ")
+            index += 2
+            continue
+        if value[index] == '"':
+            in_string = True
+        result.append(value[index])
+        index += 1
+    if block_depth:
+        raise ValidationError(f"{source}: unterminated block comment")
+    return "".join(result)
+
+
 def parse_strings_text(value: str, source: str) -> dict[str, str]:
     if "\ufffd" in value:
         raise ValidationError(f"{source}: contains U+FFFD replacement character")
     result: dict[str, str] = {}
-    in_block_comment = False
-    for line_number, line in enumerate(value.splitlines(), start=1):
+    uncommented = _mask_strings_comments(value, source)
+    for line_number, line in enumerate(uncommented.splitlines(), start=1):
         stripped = line.strip()
-        if in_block_comment:
-            if "*/" in stripped:
-                in_block_comment = False
-            continue
-        if not stripped or stripped.startswith("//"):
-            continue
-        if stripped.startswith("/*"):
-            in_block_comment = "*/" not in stripped
+        if not stripped:
             continue
         match = STRINGS_ENTRY_RE.fullmatch(line)
         if match is None:
@@ -239,8 +281,6 @@ def parse_strings_text(value: str, source: str) -> dict[str, str]:
         if key in result:
             raise ValidationError(f"{source}:{line_number}: duplicate key {key}")
         result[key] = localized
-    if in_block_comment:
-        raise ValidationError(f"{source}: unterminated block comment")
     return result
 
 
@@ -677,7 +717,7 @@ def _swift_group_opening_is_transparent(value: str, opening: int) -> bool:
         return value[word_start:word_end] in SWIFT_REGEX_PREFIX_KEYWORDS
     if value[previous] in ")]}`":
         return False
-    if opening > 0 and value[opening - 1] in "?!>":
+    if opening > 0 and value[opening - 1] in "\\#?!>":
         return False
     return True
 
@@ -700,16 +740,138 @@ def _swift_grouped_expression_bounds(
         end = closing + 1
 
 
+def _swift_skip_expression_trivia(value: str, index: int, limit: int) -> int:
+    while index < limit:
+        if value[index].isspace():
+            index += 1
+            continue
+        if value.startswith("//", index):
+            index = min(_swift_line_comment_end(value, index), limit)
+            continue
+        if value.startswith("/*", index):
+            index = min(_swift_block_comment_end(value, index), limit)
+            continue
+        break
+    return index
+
+
+def _parse_swift_constant_string_expression(
+    value: str, start: int, limit: int
+) -> tuple[str, int] | None:
+    def parse_term(index: int) -> tuple[str, int] | None:
+        index = _swift_skip_expression_trivia(value, index, limit)
+        if index >= limit:
+            return None
+        opening = _swift_literal_opening(value, index)
+        if opening is not None:
+            literal_end, _segments, constant = _analyze_swift_literal(
+                value, index, opening
+            )
+            if constant is None or literal_end > limit:
+                return None
+            return constant, literal_end
+        if value[index] != "(":
+            return None
+        nested = _parse_swift_constant_string_expression(value, index + 1, limit)
+        if nested is None:
+            return None
+        nested_value, nested_end = nested
+        nested_end = _swift_skip_expression_trivia(value, nested_end, limit)
+        if nested_end >= limit or value[nested_end] != ")":
+            return None
+        return nested_value, nested_end + 1
+
+    parsed = parse_term(start)
+    if parsed is None:
+        return None
+    result, cursor = parsed
+    while True:
+        operator = _swift_skip_expression_trivia(value, cursor, limit)
+        if operator >= limit or value[operator] != "+":
+            return result, operator
+        right = parse_term(operator + 1)
+        if right is None:
+            return result, operator
+        right_value, cursor = right
+        result += right_value
+
+
+def _analyze_swift_literal(
+    value: str,
+    start: int,
+    opening: tuple[int, bool, int, int],
+) -> tuple[int, list[str], str | None]:
+    hashes, _triple, quote, quote_length = opening
+    cursor = quote + quote_length
+    segment_start = cursor
+    segments: list[str] = []
+    components: list[str] = []
+    is_constant = True
+    closing = ('"' * quote_length) + ("#" * hashes)
+    escape_prefix = "\\" + ("#" * hashes)
+    interpolation_opener = escape_prefix + "("
+
+    while cursor < len(value):
+        interpolation = _scan_swift_interpolation(value, cursor, hashes)
+        if interpolation is not None:
+            segment = normalize_swift_literal(
+                value[segment_start:cursor], hashes
+            )
+            segments.append(segment)
+            components.append(segment)
+            interpolation_end, _tokens = interpolation
+            expression_start = cursor + len(interpolation_opener)
+            expression_limit = interpolation_end - 1
+            parsed = _parse_swift_constant_string_expression(
+                value, expression_start, expression_limit
+            )
+            if parsed is None:
+                is_constant = False
+            else:
+                interpolation_value, expression_end = parsed
+                expression_end = _swift_skip_expression_trivia(
+                    value, expression_end, expression_limit
+                )
+                if expression_end != expression_limit:
+                    is_constant = False
+                else:
+                    components.append(interpolation_value)
+            cursor = interpolation_end
+            segment_start = cursor
+            continue
+        escaped_closing = escape_prefix + closing
+        if value.startswith(escaped_closing, cursor):
+            cursor += len(escaped_closing)
+            continue
+        if value.startswith("\\", cursor):
+            if hashes == 0:
+                cursor += min(2, len(value) - cursor)
+                continue
+            if value.startswith(escape_prefix, cursor):
+                cursor += len(escape_prefix)
+                if cursor < len(value):
+                    cursor += 1
+                continue
+        if value.startswith(closing, cursor):
+            segment = normalize_swift_literal(
+                value[segment_start:cursor], hashes
+            )
+            segments.append(segment)
+            components.append(segment)
+            end = cursor + len(closing)
+            break
+        cursor += 1
+    else:
+        segment = normalize_swift_literal(value[segment_start:], hashes)
+        segments.append(segment)
+        components.append(segment)
+        end = len(value)
+
+    return end, segments, "".join(components) if is_constant else None
+
+
 def iter_swift_string_expressions(value: str):
     tokens = list(_iter_swift_tokens(value))
-    literals = [
-        (start, end, line, normalize_swift_literal(literal or "", hashes or 0))
-        for kind, start, end, line, literal, hashes in tokens
-        if kind == "literal"
-    ]
-    for _start, _end, line, literal in literals:
-        yield line, literal
-
     structural_source = list(value)
     for kind, start, end, _line, _literal, _hashes in tokens:
         if kind not in {"comment", "regex"}:
@@ -718,36 +880,47 @@ def iter_swift_string_expressions(value: str):
             if value[position] != "\n":
                 structural_source[position] = " "
     structural_value = "".join(structural_source)
+    results: list[tuple[int, str]] = []
+    seen: set[tuple[int, str]] = set()
 
-    grouped_literals = [
-        (*entry, *_swift_grouped_expression_bounds(structural_value, entry[0], entry[1]))
-        for entry in literals
+    def add(line: int, literal: str) -> None:
+        entry = (line, literal)
+        if entry not in seen:
+            seen.add(entry)
+            results.append(entry)
+
+    literal_tokens = [
+        (start, line)
+        for kind, start, _end, line, _literal, _hashes in tokens
+        if kind == "literal"
     ]
-    for index, (_start, _end, line, literal, group_start, group_end) in enumerate(
-        grouped_literals
-    ):
-        combined = literal
-        combined_start = group_start
-        combined_end = group_end
-        for (
-            next_start,
-            _next_end,
-            _next_line,
-            next_literal,
-            next_group_start,
-            next_group_end,
-        ) in grouped_literals[index + 1 :]:
-            if next_start < combined_end:
-                continue
-            connector = structural_value[combined_end:next_group_start]
-            if re.fullmatch(r"\s*\+\s*", connector) is None:
-                break
-            combined += next_literal
-            combined_end = next_group_end
-            combined_start, combined_end = _swift_grouped_expression_bounds(
-                structural_value, combined_start, combined_end
+    for start, line in literal_tokens:
+        opening = _swift_literal_opening(value, start)
+        if opening is None:
+            continue
+        _end, segments, constant = _analyze_swift_literal(value, start, opening)
+        for segment in segments:
+            add(line, segment)
+        if constant is not None:
+            add(line, constant)
+
+        expression_start = start
+        while True:
+            parsed = _parse_swift_constant_string_expression(
+                value, expression_start, len(value)
             )
-            yield line, combined
+            if parsed is None:
+                break
+            expression_value, expression_end = parsed
+            add(line, expression_value)
+            grouped_start, grouped_end = _swift_grouped_expression_bounds(
+                structural_value, expression_start, expression_end
+            )
+            if grouped_start == expression_start and grouped_end == expression_end:
+                break
+            expression_start = grouped_start
+
+    yield from results
 
 
 def _swift_available_message_literal_starts(value: str, tokens: list[tuple]) -> set[int]:
@@ -912,6 +1085,7 @@ def swift_source_may_contain_ayugram(value: str) -> bool:
         "ayugram" in folded
         or re.search(r"\\#*u\{", value, re.IGNORECASE) is not None
         or re.search(r"\\#*\r?\n", value) is not None
+        or re.search(r"\\#*\(", value) is not None
     )
 
 
@@ -1512,6 +1686,18 @@ def validate_ipa(path: Path) -> dict[str, str]:
                 f"expected exactly one Payload/*.app bundle, got {sorted(app_roots)}"
             )
         app_root = next(iter(app_roots))
+        unsupported_payload_members = sorted(
+            normalized
+            for name in names
+            if (normalized := name.rstrip("/")).startswith("Payload/")
+            and normalized != app_root
+            and not normalized.startswith(f"{app_root}/")
+        )
+        if unsupported_payload_members:
+            raise ValidationError(
+                "unsupported Payload member outside main app: "
+                f"{unsupported_payload_members}"
+            )
         info_path = f"{app_root}/Info.plist"
         if info_path not in names:
             raise ValidationError(f"missing {info_path}")

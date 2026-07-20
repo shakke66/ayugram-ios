@@ -243,6 +243,8 @@ def create_ipa(
     fifo_member: bool = False,
     prefix_collision: bool = False,
     standard_extra_roots: bool = False,
+    payload_sibling_file: bool = False,
+    payload_sibling_directory: bool = False,
     unrelated_root: bool = False,
     decoy_app_file: bool = False,
     metadata_omissions: set[str] | None = None,
@@ -361,6 +363,13 @@ def create_ipa(
                 "iTunesArtwork@2x~ipad",
             ):
                 archive.writestr(name, b"standard IPA fixture")
+        if payload_sibling_file:
+            archive.writestr("Payload/Extra.txt", b"unexpected Payload sibling")
+        if payload_sibling_directory:
+            sibling = zipfile.ZipInfo("Payload/Extras/")
+            sibling.create_system = 3
+            sibling.external_attr = (stat.S_IFDIR | 0o755) << 16
+            archive.writestr(sibling, b"")
         if unrelated_root:
             archive.writestr("README.txt", b"unrelated")
         if decoy_app_file:
@@ -368,6 +377,34 @@ def create_ipa(
 
 
 class StringsTests(unittest.TestCase):
+    def test_parse_strings_parses_entry_after_leading_block_comment(self) -> None:
+        parsed = VALIDATOR.parse_strings_text(
+            '/* comment */ "EXTRA" = "value";\n',
+            "fixture.strings",
+        )
+        self.assertEqual(parsed, {"EXTRA": "value"})
+
+    def test_parse_strings_detects_duplicate_after_block_comment(self) -> None:
+        source = '"A" = "one";\n/* comment */ "A" = "two";\n'
+        with self.assertRaisesRegex(VALIDATOR.ValidationError, "duplicate key A"):
+            VALIDATOR.parse_strings_text(source, "fixture.strings")
+
+    def test_parse_strings_handles_comments_without_changing_quoted_values(self) -> None:
+        source = (
+            "/* leading\n"
+            "   block */\n"
+            '"A" /* between */ = "https://host/path/* literal */ // value"; '
+            "/* trailing */\n"
+            '"B" = "two"; // trailing line comment\n'
+        )
+        self.assertEqual(
+            VALIDATOR.parse_strings_text(source, "fixture.strings"),
+            {
+                "A": "https://host/path/* literal */ // value",
+                "B": "two",
+            },
+        )
+
     def test_parse_strings_rejects_duplicate_keys(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "GRVMgram.strings"
@@ -814,6 +851,18 @@ class BrandingTests(unittest.TestCase):
                 'let title = (("Ayu") + ("Gram")) + " Settings"\n',
                 "public/loggable",
             ),
+            (
+                'let title = "Ayu" + ("Gram" + " Settings")\n',
+                "public/loggable",
+            ),
+            (
+                'let title = "Ayu\\("Gram") Settings"\n',
+                "public/loggable",
+            ),
+            (
+                'let url = "https://t.me/" + ("ayu" + "gram")\n',
+                "forbidden public token",
+            ),
         )
         for source, message in fixtures:
             with self.subTest(source=source), tempfile.TemporaryDirectory() as directory:
@@ -834,6 +883,17 @@ class BrandingTests(unittest.TestCase):
                 "let exteraClient = Service()\n"
                 '// let oldURL = "https://t.me/ayugram"\n'
                 '/* let oldTitle = "Ayu" + "Gram Settings" */\n',
+            )
+            VALIDATOR.validate_public_branding(root)
+
+    def test_dynamic_swift_interpolations_are_not_reconstructed_as_branding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(
+                root / "submodules/TelegramUI/Sources/Dynamic.swift",
+                'let identifier = "Ayu\\(component)Gram Settings"\n'
+                'let function = "Ayu\\(normalize("Gram")) Settings"\n'
+                'let escapedCall = "Ayu\\(`repeat`("Gram")) Settings"\n',
             )
             VALIDATOR.validate_public_branding(root)
 
@@ -2045,6 +2105,22 @@ class IpaTests(unittest.TestCase):
             path = Path(directory) / "GRVMgram.ipa"
             create_ipa(path, standard_extra_roots=True)
             VALIDATOR.validate_ipa(path)
+
+    def test_ipa_rejects_payload_siblings_outside_main_app(self) -> None:
+        fixtures = (
+            ({"payload_sibling_file": True}, "Payload/Extra.txt"),
+            ({"payload_sibling_directory": True}, "Payload/Extras"),
+        )
+        for fixture, member in fixtures:
+            with self.subTest(member=member), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "GRVMgram.ipa"
+                create_ipa(path, **fixture)
+                with self.assertRaisesRegex(
+                    VALIDATOR.ValidationError,
+                    "unsupported Payload member",
+                ) as raised:
+                    VALIDATOR.validate_ipa(path)
+                self.assertIn(member, str(raised.exception))
 
     def test_ipa_rejects_unrelated_top_level_roots(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
