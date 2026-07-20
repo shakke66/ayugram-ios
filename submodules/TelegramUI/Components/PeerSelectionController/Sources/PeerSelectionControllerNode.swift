@@ -38,7 +38,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
     private let filter: ChatListNodePeersFilter
     private let forumPeerId: (id: EnginePeer.Id, isMonoforum: Bool)?
     private let hasGlobalSearch: Bool
-    private let forwardedMessageIds: [EngineMessage.Id]
+    private let forwardedMessageIds: [EngineMessage.Id]?
     private let hasTypeHeaders: Bool
     private let requestPeerType: [ReplyMarkupButtonRequestPeerType]?
     private let suggestedPeers: [EnginePeer]
@@ -116,7 +116,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
         return (self.presentationData, self.presentationDataPromise.get())
     }
     
-    init(context: AccountContext, controller: PeerSelectionControllerImpl, presentationData: PresentationData, filter: ChatListNodePeersFilter, forumPeerId: (id: EnginePeer.Id, isMonoforum: Bool)?, hasFilters: Bool, hasChatListSelector: Bool, hasContactSelector: Bool, hasGlobalSearch: Bool, forwardedMessageIds: [EngineMessage.Id], hasTypeHeaders: Bool, requestPeerType: [ReplyMarkupButtonRequestPeerType]?, hasCreation: Bool, createNewGroup: (() -> Void)?, suggestedPeers: [EnginePeer], present: @escaping (ViewController, Any?) -> Void, presentInGlobalOverlay: @escaping (ViewController, Any?) -> Void, dismiss: @escaping () -> Void) {
+    init(context: AccountContext, controller: PeerSelectionControllerImpl, presentationData: PresentationData, filter: ChatListNodePeersFilter, forumPeerId: (id: EnginePeer.Id, isMonoforum: Bool)?, hasFilters: Bool, hasChatListSelector: Bool, hasContactSelector: Bool, hasGlobalSearch: Bool, forwardedMessageIds: [EngineMessage.Id]?, hasTypeHeaders: Bool, requestPeerType: [ReplyMarkupButtonRequestPeerType]?, hasCreation: Bool, createNewGroup: (() -> Void)?, suggestedPeers: [EnginePeer], present: @escaping (ViewController, Any?) -> Void, presentInGlobalOverlay: @escaping (ViewController, Any?) -> Void, dismiss: @escaping () -> Void) {
         self.context = context
         self.controller = controller
         self.present = present
@@ -935,7 +935,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
         guard let controller = self.controller else {
             return
         }
-        if controller.immediatelyActivateMultipleSelection {
+        if controller.immediatelyActivateMultipleSelection && self.forwardedMessageIds != nil {
             let countPanelNode = PeersCountPanelNode(theme: self.presentationData.theme, strings: self.presentationData.strings, action: { [weak self] in
                 guard let self else {
                     return
@@ -954,10 +954,12 @@ final class PeerSelectionControllerNode: ASDisplayNode {
         } else {
             if let _ = self.textInputPanelNode {
             } else {
-                let forwardAccessoryPanelNode = ForwardAccessoryPanelNode(context: self.context, messageIds: self.forwardedMessageIds, theme: self.presentationData.theme, strings: self.presentationData.strings, fontSize: self.presentationData.chatFontSize, nameDisplayOrder: self.presentationData.nameDisplayOrder, forwardOptionsState: self.presentationInterfaceState.interfaceState.forwardOptionsState, animationCache: nil, animationRenderer: nil)
-                forwardAccessoryPanelNode.interfaceInteraction = self.interfaceInteraction
-                self.addSubnode(forwardAccessoryPanelNode)
-                self.forwardAccessoryPanelNode = forwardAccessoryPanelNode
+                if let forwardedMessageIds = self.forwardedMessageIds {
+                    let forwardAccessoryPanelNode = ForwardAccessoryPanelNode(context: self.context, messageIds: forwardedMessageIds, theme: self.presentationData.theme, strings: self.presentationData.strings, fontSize: self.presentationData.chatFontSize, nameDisplayOrder: self.presentationData.nameDisplayOrder, forwardOptionsState: self.presentationInterfaceState.interfaceState.forwardOptionsState, animationCache: nil, animationRenderer: nil)
+                    forwardAccessoryPanelNode.interfaceInteraction = self.interfaceInteraction
+                    self.addSubnode(forwardAccessoryPanelNode)
+                    self.forwardAccessoryPanelNode = forwardAccessoryPanelNode
+                }
                 
                 let textInputPanelNode = AttachmentTextInputPanelNode(context: self.context, presentationInterfaceState: self.presentationInterfaceState, presentController: { [weak self] c in self?.present(c, nil) }, makeEntityInputView: {
                     return nil

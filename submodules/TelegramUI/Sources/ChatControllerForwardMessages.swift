@@ -16,6 +16,24 @@ import TopMessageReactions
 import ChatMessagePaymentAlertController
 
 extension ChatControllerImpl {
+    func forwardLocalCopy(message: Message) {
+        let _ = (GRVMPreservedMediaEnqueue(context: self.context, message: message)
+        |> deliverOnMainQueue).startStandalone(next: { [weak self] preparedLocalCopy in
+            let localCopy: EnqueueMessage? = preparedLocalCopy
+            self?.forwardMessages(messages: [message], resetCurrent: false, localCopy: localCopy)
+        }, error: { [weak self] error in
+            guard let self else {
+                return
+            }
+            switch error {
+            case .unsupported:
+                self.controllerInteraction?.displayUndo(.info(title: nil, text: "This message can't be forwarded as a local copy.", timeout: nil, customUndoText: nil))
+            case .unavailable:
+                self.controllerInteraction?.displayUndo(.info(title: nil, text: "The local media is unavailable.", timeout: nil, customUndoText: nil))
+            }
+        })
+    }
+
     func forwardMessages(messageIds: [MessageId], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool = false) {
         let _ = (self.context.engine.data.get(EngineDataMap(
             messageIds.map(TelegramEngine.EngineData.Item.Messages.Message.init)
@@ -28,7 +46,7 @@ extension ChatControllerImpl {
         })
     }
 
-    func forwardMessages(messages: [Message], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool) {
+    func forwardMessages(messages: [Message], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool, localCopy: EnqueueMessage? = nil) {
         let _ = self.presentVoiceMessageDiscardAlert(action: {
             var filter: ChatListNodePeersFilter = [.onlyWriteable, .excludeDisabled, .doNotSearchMessages]
             var hasPublicPolls = false
@@ -53,7 +71,7 @@ extension ChatControllerImpl {
             var attemptSelectionImpl: ((EnginePeer, ChatListDisabledPeerReason) -> Void)?
             let controller = self.context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(context: self.context, updatedPresentationData: self.updatedPresentationData, filter: filter, hasFilters: true, attemptSelection: { peer, _, reason in
                 attemptSelectionImpl?(peer, reason)
-            }, multipleSelection: true, forwardedMessageIds: messages.map { $0.id }, selectForumThreads: true))
+            }, multipleSelection: true, forwardedMessageIds: localCopy == nil ? messages.map { $0.id } : nil, selectForumThreads: true, immediatelyActivateMultipleSelection: localCopy != nil))
             let context = self.context
             attemptSelectionImpl = { [weak self, weak controller] peer, reason in
                 guard let strongSelf = self, let controller = controller else {
@@ -156,9 +174,13 @@ extension ChatControllerImpl {
                         var attributes: [MessageAttribute] = []
                         attributes.append(ForwardOptionsMessageAttribute(hideNames: forwardOptions?.hideNames == true, hideCaptions: forwardOptions?.hideCaptions == true))
                         
-                        result.append(contentsOf: messages.map { message -> EnqueueMessage in
-                            return .forward(source: message.id, threadId: nil, grouping: .auto, attributes: attributes, correlationId: nil)
-                        })
+                        if let localCopy {
+                            result.append(localCopy)
+                        } else {
+                            result.append(contentsOf: messages.map { message -> EnqueueMessage in
+                                return .forward(source: message.id, threadId: nil, grouping: .auto, attributes: attributes, correlationId: nil)
+                            })
+                        }
                         
                         let commit: ([EnqueueMessage]) -> Void = { result in
                             guard let strongSelf = self else {
@@ -395,7 +417,7 @@ extension ChatControllerImpl {
                     let mappedMessages = messages.map { message -> EnqueueMessage in
                         let correlationId = Int64.random(in: Int64.min ... Int64.max)
                         correlationIds.append(correlationId)
-                        return .forward(source: message.id, threadId: nil, grouping: .auto, attributes: [], correlationId: correlationId)
+                        return .forward(source: message.id, threadId: threadId, grouping: .auto, attributes: [], correlationId: correlationId)
                     }
                     
                     let _ = (reactionItems

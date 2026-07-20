@@ -30,6 +30,7 @@ public final class OpenChatMessageParams {
     public let copyProtected: Bool
     public let reverseMessageGalleryOrder: Bool
     public let mode: ChatControllerInteractionOpenMessageMode
+    public let consumeOnOpen: Bool
     public let navigationController: NavigationController?
     public let modal: Bool
     public let dismissInput: () -> Void
@@ -65,6 +66,7 @@ public final class OpenChatMessageParams {
         copyProtected: Bool = false,
         reverseMessageGalleryOrder: Bool,
         mode: ChatControllerInteractionOpenMessageMode = .default,
+        consumeOnOpen: Bool = true,
         navigationController: NavigationController?,
         modal: Bool = false,
         dismissInput: @escaping () -> Void,
@@ -98,6 +100,7 @@ public final class OpenChatMessageParams {
         self.copyProtected = copyProtected
         self.reverseMessageGalleryOrder = reverseMessageGalleryOrder
         self.mode = mode
+        self.consumeOnOpen = consumeOnOpen
         self.navigationController = navigationController
         self.modal = modal
         self.dismissInput = dismissInput

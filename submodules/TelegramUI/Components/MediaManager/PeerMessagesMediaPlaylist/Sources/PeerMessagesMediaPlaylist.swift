@@ -29,7 +29,7 @@ private enum PeerMessagesMediaPlaylistNavigation {
     case random(previous: Bool)
 }
 
-struct MessageMediaPlaylistItemStableId: Hashable {
+struct PeerMessagesMediaPlaylistItemStableId: Hashable {
     let stableId: UInt32
 }
 
@@ -51,18 +51,20 @@ private func extractFileMedia(_ message: Message) -> TelegramMediaFile? {
 }
 
 public final class MessageMediaPlaylistItem: SharedMediaPlaylistItem {
+    public var stableId: AnyHashable {
+        return PeerMessagesMediaPlaylistItemStableId(stableId: self.message.stableId)
+    }
+
     public let id: SharedMediaPlaylistItemId
     public let message: Message
     public let isSavedMusic: Bool
+    public let consumeViewOnce: Bool
     
-    public init(message: Message, isSavedMusic: Bool) {
+    public init(message: Message, isSavedMusic: Bool, consumeViewOnce: Bool) {
         self.id = PeerMessagesMediaPlaylistItemId(messageId: message.id, messageIndex: message.index)
         self.message = message
         self.isSavedMusic = isSavedMusic
-    }
-    
-    public var stableId: AnyHashable {
-        return MessageMediaPlaylistItemStableId(stableId: message.stableId)
+        self.consumeViewOnce = consumeViewOnce
     }
     
     public lazy var playbackData: SharedMediaPlaybackData? = {
@@ -73,7 +75,7 @@ public final class MessageMediaPlaylistItem: SharedMediaPlaylistItem {
             } else {
                 fileReference = .message(message: MessageReference(self.message), media: file)
             }
-            let source = SharedMediaPlaybackDataSource.telegramFile(reference: fileReference, isCopyProtected: self.message.isCopyProtected(), isViewOnce: self.message.minAutoremoveOrClearTimeout == viewOnceTimeout)
+            let source = SharedMediaPlaybackDataSource.telegramFile(reference: fileReference, isCopyProtected: self.message.isCopyProtected(), isViewOnce: self.consumeViewOnce && self.message.minAutoremoveOrClearTimeout == viewOnceTimeout)
             for attribute in file.attributes {
                 switch attribute {
                     case let .Audio(isVoice, _, _, _, _):
@@ -399,6 +401,7 @@ public final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
     public let context: AccountContext
     private let messagesLocation: PeerMessagesPlaylistLocation
     private let chatLocationContextHolder: Atomic<ChatLocationContextHolder?>?
+    private let consumeViewOnce: Bool
     
     public var location: SharedMediaPlaylistLocation {
         return self.messagesLocation
@@ -427,7 +430,7 @@ public final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
         return self.stateValue.get()
     }
     
-    public init(context: AccountContext, location: PeerMessagesPlaylistLocation, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>?) {
+    public init(context: AccountContext, location: PeerMessagesPlaylistLocation, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>?, consumeViewOnce: Bool = true) {
         assert(Queue.mainQueue().isCurrent())
         
         self.id = location.playlistId
@@ -435,6 +438,7 @@ public final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
         self.context = context
         self.chatLocationContextHolder = chatLocationContextHolder
         self.messagesLocation = location
+        self.consumeViewOnce = consumeViewOnce
         
         switch self.messagesLocation.effectiveLocation(context: context) {
         case let .messages(_, _, messageId), let .singleMessage(messageId), let .custom(_, _, messageId, _, _):
@@ -528,12 +532,12 @@ public final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
         var nextItem: MessageMediaPlaylistItem?
         var previousItem: MessageMediaPlaylistItem?
         if let (message, aroundMessages) = self.currentItem {
-            item = MessageMediaPlaylistItem(message: message, isSavedMusic: isSavedMusic)
+            item = MessageMediaPlaylistItem(message: message, isSavedMusic: isSavedMusic, consumeViewOnce: self.consumeViewOnce)
             for around in aroundMessages {
                 if around.index < message.index {
-                    previousItem = MessageMediaPlaylistItem(message: around, isSavedMusic: isSavedMusic)
+                    previousItem = MessageMediaPlaylistItem(message: around, isSavedMusic: isSavedMusic, consumeViewOnce: self.consumeViewOnce)
                 } else {
-                    nextItem = MessageMediaPlaylistItem(message: around, isSavedMusic: isSavedMusic)
+                    nextItem = MessageMediaPlaylistItem(message: around, isSavedMusic: isSavedMusic, consumeViewOnce: self.consumeViewOnce)
                 }
             }
         }
@@ -918,7 +922,21 @@ public final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                 default:
                     break
             }
-            let _ = self.context.engine.messages.markMessageContentAsConsumedInteractively(messageId: item.message.id).startStandalone()
+            let timeout = item.message.minAutoremoveOrClearTimeout
+            if self.consumeViewOnce || timeout != viewOnceTimeout {
+                let consume = self.context.engine.messages.markMessageContentAsConsumedInteractively(messageId: item.message.id)
+                let preparation: Signal<Bool, NoError>
+                if self.consumeViewOnce && timeout == viewOnceTimeout {
+                    preparation = AyuGramHooks.prepareConsumableMedia?(
+                        self.context.account.peerId,
+                        item.message
+                    ) ?? .single(false)
+                } else {
+                    preparation = .single(false)
+                }
+                let _ = (preparation
+                |> mapToSignal { _ in consume }).startStandalone()
+            }
         }
     }
 }

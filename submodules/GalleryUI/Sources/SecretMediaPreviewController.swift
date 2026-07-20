@@ -147,6 +147,7 @@ private final class SecretMediaPreviewControllerNode: GalleryControllerNode {
 public final class SecretMediaPreviewController: ViewController {
     private let context: AccountContext
     private let messageId: MessageId
+    private let consumeOnOpen: Bool
     
     private let _ready = Promise<Bool>()
     override public var ready: Promise<Bool> {
@@ -180,9 +181,10 @@ public final class SecretMediaPreviewController: ViewController {
     
     private weak var tooltipController: TooltipScreen?
     
-    public init(context: AccountContext, messageId: MessageId) {
+    public init(context: AccountContext, messageId: MessageId, consumeOnOpen: Bool = true) {
         self.context = context
         self.messageId = messageId
+        self.consumeOnOpen = consumeOnOpen
         self.presentationData = context.sharedContext.currentPresentationData.with { $0 }
         
         super.init(navigationBarPresentationData: NavigationBarPresentationData(theme: GalleryController.darkNavigationTheme, strings: NavigationBarStrings(presentationStrings: self.presentationData.strings)))
@@ -548,7 +550,20 @@ public final class SecretMediaPreviewController: ViewController {
                     self?.didSetReady = true
                 }
                 self._ready.set(ready |> map { true })
-                self.markMessageAsConsumedDisposable.set(self.context.engine.messages.markMessageContentAsConsumedInteractively(messageId: message.id).start())
+                if self.consumeOnOpen {
+                    let preparation = AyuGramHooks.prepareConsumableMedia?(
+                        self.context.account.peerId,
+                        message
+                    ) ?? .single(false)
+                    let consume = preparation
+                    |> mapToSignal { [weak self] _ -> Signal<Void, NoError> in
+                        guard let self else {
+                            return .complete()
+                        }
+                        return self.context.engine.messages.markMessageContentAsConsumedInteractively(messageId: message.id)
+                    }
+                    self.markMessageAsConsumedDisposable.set(consume.start())
+                }
             } else {
                 var beginTimeAndTimeout: (Double, Double, Bool)?
                 var videoDuration: Double?

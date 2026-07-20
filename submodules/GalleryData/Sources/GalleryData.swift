@@ -106,7 +106,8 @@ public func chatMessageGalleryControllerData(
     mode: ChatControllerInteractionOpenMessageMode,
     source: GalleryControllerItemSource?,
     synchronousLoad: Bool,
-    actionInteraction: GalleryControllerActionInteraction?
+    actionInteraction: GalleryControllerActionInteraction?,
+    consumeOnOpen: Bool = true
 ) -> ChatMessageGalleryControllerData? {
     var standalone = standalone
     if message.id.peerId.namespace == Namespaces.Peer.CloudUser && message.id.namespace != Namespaces.Message.Cloud {
@@ -305,7 +306,7 @@ public func chatMessageGalleryControllerData(
                 gallery.temporaryDoNotWaitForReady = autoplayingVideo
                 return .gallery(.single(gallery))
             } else if message.containsSecretMedia {
-                let gallery = SecretMediaPreviewController(context: context, messageId: message.id)
+                let gallery = SecretMediaPreviewController(context: context, messageId: message.id, consumeOnOpen: consumeOnOpen)
                 return .secretGallery(gallery)
             } else {
                 let startState: Signal<(timecode: Double?, rate: Double), NoError>

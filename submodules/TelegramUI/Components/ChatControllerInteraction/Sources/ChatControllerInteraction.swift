@@ -118,11 +118,13 @@ public struct OpenMessageParams {
     public var mode: ChatControllerInteractionOpenMessageMode
     public var mediaSubject: GalleryMediaSubject?
     public var progress: Promise<Bool>?
+    public var consumeOnOpen: Bool
     
-    public init(mode: ChatControllerInteractionOpenMessageMode, mediaSubject: GalleryMediaSubject? = nil, progress: Promise<Bool>? = nil) {
+    public init(mode: ChatControllerInteractionOpenMessageMode, mediaSubject: GalleryMediaSubject? = nil, progress: Promise<Bool>? = nil, consumeOnOpen: Bool = true) {
         self.mode = mode
         self.mediaSubject = mediaSubject
         self.progress = progress
+        self.consumeOnOpen = consumeOnOpen
     }
 }
 
@@ -328,6 +330,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     public var chatIsRotated: Bool = true
     public var canReadHistory: Bool = false
     public var grvmMarkCurrentChatReadAfterAction: (() -> Void)?
+    public var grvmForwardLocalCopy: ((Message) -> Void)?
     public var summarizedMessageIds: Set<MessageId> = Set()
     public var focusedTextInputIsMedia: Bool = false
     public var focusedPollAddOptionMessageId: MessageId?

@@ -64,7 +64,7 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
     private let hasFilters: Bool
     private let hasGlobalSearch: Bool
     private let pretendPresentedInModal: Bool
-    private let forwardedMessageIds: [EngineMessage.Id]
+    private let forwardedMessageIds: [EngineMessage.Id]?
     private let hasTypeHeaders: Bool
     private let requestPeerType: [ReplyMarkupButtonRequestPeerType]?
     let multipleSelectionLimit: Int32?

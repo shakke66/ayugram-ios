@@ -161,6 +161,177 @@ private func grvmMessageAuthors(message: Message) -> [Peer] {
     return result
 }
 
+private func grvmCanBurnMessage(messages: [Message]) -> Bool {
+    guard messages.count == 1 else {
+        return false
+    }
+    let message = messages[0]
+    guard message.id.namespace == Namespaces.Message.Cloud,
+          message.id.peerId.namespace == Namespaces.Peer.CloudUser
+            || message.id.peerId.namespace == Namespaces.Peer.CloudGroup
+            || message.id.peerId.namespace == Namespaces.Peer.CloudChannel,
+          message.flags.contains(.Incoming),
+          message.media.contains(where: { $0 is TelegramMediaImage || $0 is TelegramMediaFile }),
+          message.minAutoremoveOrClearTimeout != nil,
+          let attribute = message.attributes.first(where: {
+              $0 is ConsumableContentMessageAttribute
+          }) as? ConsumableContentMessageAttribute,
+          !attribute.consumed else {
+        return false
+    }
+    return true
+}
+
+private func grvmBurnMessage(
+    context: AccountContext,
+    message: Message,
+    controllerInteraction: ChatControllerInteraction
+) {
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    let alert = textAlertController(
+        context: context,
+        title: "Burn media?",
+        text: "This permanently marks the media as viewed on Telegram.",
+        actions: [
+            TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+            TextAlertAction(type: .destructiveAction, title: "Burn", action: {
+                let preparation = AyuGramHooks.prepareConsumableMedia?(
+                    context.account.peerId,
+                    message
+                ) ?? .single(false)
+                let _ = (preparation
+                |> mapToSignal { _ in
+                    context.engine.messages.markMessageContentAsConsumedInteractively(
+                        messageId: message.id,
+                        force: true
+                    )
+                }).startStandalone()
+            })
+        ]
+    )
+    controllerInteraction.presentController(alert, nil)
+}
+
+private func grvmCanReplayMessage(
+    accountPeerId: PeerId,
+    messages: [Message]
+) -> Signal<Bool, NoError> {
+    guard messages.count == 1 else {
+        return .single(false)
+    }
+    let message = messages[0]
+    guard message.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) else {
+        return .single(false)
+    }
+    let consumed = message.attributes.contains(where: { value in
+        guard let attribute = value as? ConsumableContentMessageAttribute else {
+            return false
+        }
+        return attribute.consumed
+    })
+    let expired = message.media.contains(where: { $0 is TelegramMediaExpiredContent })
+    guard consumed || expired || isLocallyDeletedMessage(message.attributes) else {
+        return .single(false)
+    }
+    return AyuGramHooks.restoreConsumableMedia?(accountPeerId, message) ?? .single(false)
+}
+
+private func grvmReplayMessage(
+    context: AccountContext,
+    message: Message,
+    controllerInteraction: ChatControllerInteraction
+) {
+    guard message.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) else {
+        return
+    }
+    let displayUndo = {
+        Queue.mainQueue().async {
+            controllerInteraction.displayUndo(.info(
+                title: nil,
+                text: "Preserved media is unavailable.",
+                timeout: nil,
+                customUndoText: nil
+            ))
+        }
+    }
+    let restoreSignal = AyuGramHooks.restoreConsumableMedia?(
+        context.account.peerId,
+        message
+    ) ?? .single(false)
+    let _ = (restoreSignal
+    |> deliverOnMainQueue).startStandalone(next: { restored in
+        guard restored else {
+            displayUndo()
+            return
+        }
+        let _ = (context.account.postbox.transaction { transaction -> Message? in
+            guard let freshMessage = transaction.getMessage(message.id) else {
+                displayUndo()
+                return nil
+            }
+            guard freshMessage.stableId == message.stableId,
+                  freshMessage.attributes.contains(where: {
+                      $0 is GRVMPreservedConsumableMediaAttribute
+                  }) else {
+                displayUndo()
+                return nil
+            }
+            return freshMessage
+        }
+        |> deliverOnMainQueue).startStandalone(next: { freshMessage in
+            guard let freshMessage else {
+                displayUndo()
+                return
+            }
+            let openParams = OpenMessageParams(mode: .default, consumeOnOpen: false)
+            _ = controllerInteraction.openMessage(freshMessage, openParams)
+        })
+    })
+}
+
+private func grvmCanForwardLocalCopy(
+    context: AccountContext,
+    accountPeerId: PeerId,
+    messages: [Message],
+    copyProtectionEnabled: Bool
+) -> Signal<Bool, NoError> {
+    guard messages.count == 1 else {
+        return .single(false)
+    }
+    let message = messages[0]
+    let candidate = isLocallyDeletedMessage(message.attributes)
+        || message.minAutoremoveOrClearTimeout != nil
+        || copyProtectionEnabled
+        || message.isCopyProtected()
+    guard candidate else {
+        return .single(false)
+    }
+    if message.media.isEmpty {
+        return .single(!message.text.isEmpty)
+    }
+    guard message.media.count == 1 else {
+        return .single(false)
+    }
+    let resource: MediaResource
+    if let image = message.media[0] as? TelegramMediaImage,
+       let representation = largestImageRepresentation(image.representations) {
+        resource = representation.resource
+    } else if let file = message.media[0] as? TelegramMediaFile {
+        resource = file.resource
+    } else {
+        return .single(false)
+    }
+    if let path = context.account.postbox.mediaBox.completedResourcePath(id: resource.id),
+       let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size]) as? NSNumber,
+       size.int64Value > 0 {
+        return .single(true)
+    }
+    return AyuGramHooks.restoreConsumableMedia?(accountPeerId, message) ?? .single(false)
+    |> map { restored in
+        return restored
+    }
+}
+
 func canEditMessage(context: AccountContext, limitsConfiguration: EngineConfiguration.Limits, message: Message) -> Bool {
     return canEditMessage(accountPeerId: context.account.peerId, limitsConfiguration: limitsConfiguration, message: message)
 }
@@ -1046,14 +1217,75 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         return (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer)
     }
     
-    return dataSignal
+    let replayAvailableSignal = grvmCanReplayMessage(
+        accountPeerId: context.account.peerId,
+        messages: messages
+    )
+    let localCopyAvailableSignal = grvmCanForwardLocalCopy(
+        context: context,
+        accountPeerId: context.account.peerId,
+        messages: messages,
+        copyProtectionEnabled: chatPresentationInterfaceState.copyProtectionEnabled
+    )
+
+    return combineLatest(dataSignal, replayAvailableSignal, localCopyAvailableSignal)
     |> deliverOnMainQueue
-    |> map { data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer -> ContextController.Items in
+    |> map { combinedData, replayAvailable, localCopyAvailable -> ContextController.Items in
+        let (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer) = combinedData
         let isPremium = accountPeer?.isPremium ?? false
 
         var actions: [ContextMenuItem] = []
         var contextMoreActions: [ContextMenuItem] = []
         let contextMenuSettings = AyuGramHooks.chatAppearance(accountPeerId: context.account.peerId).contextMenu
+
+        if messages.count == 1 {
+            let message = messages[0]
+            if grvmCanBurnMessage(messages: messages) {
+                actions.append(.action(ContextMenuActionItem(
+                    text: "Burn",
+                    textColor: .destructive,
+                    icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.actionSheet.destructiveActionTextColor)
+                    },
+                    action: { c, _ in
+                        c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                        grvmBurnMessage(
+                            context: context,
+                            message: message,
+                            controllerInteraction: controllerInteraction
+                        )
+                    }
+                )))
+            }
+            if replayAvailable {
+                actions.append(.action(ContextMenuActionItem(
+                    text: "Replay",
+                    icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Resend"), color: theme.actionSheet.primaryTextColor)
+                    },
+                    action: { c, _ in
+                        c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                        grvmReplayMessage(
+                            context: context,
+                            message: message,
+                            controllerInteraction: controllerInteraction
+                        )
+                    }
+                )))
+            }
+            if localCopyAvailable {
+                actions.append(.action(ContextMenuActionItem(
+                    text: "Forward Local Copy",
+                    icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.actionSheet.primaryTextColor)
+                    },
+                    action: { c, _ in
+                        c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                        controllerInteraction.grvmForwardLocalCopy?(message)
+                    }
+                )))
+            }
+        }
 
         if messages.count == 1,
            message.flags.contains(.Incoming),

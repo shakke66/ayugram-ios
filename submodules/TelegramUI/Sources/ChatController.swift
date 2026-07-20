@@ -1422,6 +1422,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 copyProtected: self.presentationInterfaceState.copyProtectionEnabled || self.presentationInterfaceState.myCopyProtectionEnabled,
                 reverseMessageGalleryOrder: false,
                 mode: mode,
+                consumeOnOpen: params.consumeOnOpen,
                 navigationController: self.effectiveNavigationController, dismissInput: { [weak self] in
                     self?.chatDisplayNode.dismissInput()
                 },
@@ -5585,6 +5586,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         controllerInteraction.enableFullTranslucency = context.sharedContext.energyUsageSettings.fullTranslucency
         controllerInteraction.grvmMarkCurrentChatReadAfterAction = { [weak self] in
             self?.grvmMarkCurrentChatReadAfterAction()
+        }
+        controllerInteraction.grvmForwardLocalCopy = { [weak self] message in
+            self?.forwardLocalCopy(message: message)
         }
         
         self.controllerInteraction = controllerInteraction
