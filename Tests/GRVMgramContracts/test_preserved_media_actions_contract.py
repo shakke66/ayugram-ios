@@ -455,8 +455,6 @@ def replay_fresh_row_fail_closed(text: str) -> str:
         return ""
     if re.search(r"(?:present|displayUndo|textAlertController)", body) is None:
         return ""
-    if re.search(r"(?:[A-Za-z_]\w*\.)*strings\.[A-Za-z_]\w*", body) is None:
-        return ""
     if "openMessage" in failure_block:
         return ""
     return binding.group("row")
@@ -1519,6 +1517,11 @@ class HardeningMutantRegressionTests(SourceContractTestCase):
             "                return",
         )
         self.assertEqual("fresh", replay_fresh_row_fail_closed(valid))
+        valid_literal_alert = valid.replace(
+            "strings.MediaUnavailable",
+            '"Unavailable"',
+        )
+        self.assertEqual("fresh", replay_fresh_row_fail_closed(valid_literal_alert))
         opens_on_failure = valid.replace(
             "present(textAlertController(text: strings.MediaUnavailable))",
             "controllerInteraction.openMessage(message, consumeOnOpen: false)\n"
