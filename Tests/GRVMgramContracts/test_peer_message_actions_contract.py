@@ -485,22 +485,31 @@ class PeerMessageReadEngineContractTests(unittest.TestCase):
             "case .forceServer",
         ):
             self.assertIn(token, apply)
+        self.assertIn(
+            "(index.id.peerId.namespace",
+            normalized(apply),
+            "Cloud peer alternatives must be grouped under the Cloud message guard",
+        )
 
     def test_local_read_applies_then_confirms_in_one_non_network_transaction(self) -> None:
         apply = swift_block(source(self.read_path), "func _internal_grvmApplyMaxReadIndex(")
-        local = bounded_window(apply, "case .localOnly", before=100, after=1800)
+        local = bounded_window(apply, "case .localOnly", before=100, after=2600)
         self.assertIn("account.postbox.transaction", local)
         assert_ordered_tokens(
             self,
             local,
             [
+                "transaction.getPeerCachedData(peerId: index.id.peerId)",
+                "associatedHistoryMessageId",
                 "_internal_applyMaxReadIndexInteractively(",
                 "transaction: transaction",
                 "stateManager: account.stateManager",
                 "index: index",
                 "transaction.confirmSynchronizedIncomingReadState(index.id.peerId)",
+                "transaction.confirmSynchronizedIncomingReadState(associatedHistoryMessageId.peerId)",
             ],
         )
+        self.assertIn("CachedChannelData", local)
         self.assertNotIn("network.request", local)
         self.assertNotIn("synchronizePeerReadState", local)
         self.assertNotIn(".complete()", local)
