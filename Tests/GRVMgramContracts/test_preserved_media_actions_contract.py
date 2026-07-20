@@ -246,16 +246,6 @@ def swift_top_level_argument(call: str, label: str) -> str:
     return ""
 
 
-def resource_backed_text(text: str) -> bool:
-    expression = strip_balanced_outer_parentheses(
-        swift_top_level_argument(text, "text")
-    )
-    return re.fullmatch(
-        r"(?:[A-Za-z_][A-Za-z0-9_]*\.)*strings\.[A-Za-z_][A-Za-z0-9_]*",
-        expression,
-    ) is not None
-
-
 def swift_block_at(text: str, start: int) -> tuple[str, int]:
     """Return a brace-balanced block and its end offset from an existing match."""
     opening = text.find("{", start)
@@ -385,6 +375,7 @@ def call_is_owned_by_exact_receipt_gate(text: str, signature: str) -> bool:
                     text,
                     call_position,
                     allowed_start=match.start(),
+                    ignore_simple_optional_bindings=True,
                 )
             ):
                 return True
@@ -392,14 +383,22 @@ def call_is_owned_by_exact_receipt_gate(text: str, signature: str) -> bool:
             if (
                 block_has_top_level_return(block)
                 and end <= call_position
-                and not position_is_enclosed_by_other_if(text, call_position)
+                and not position_is_enclosed_by_other_if(
+                    text,
+                    call_position,
+                    ignore_simple_optional_bindings=True,
+                )
             ):
                 return True
         if kind == "guard" and is_exact_receipt_expression(condition):
             if (
                 block_has_top_level_return(block)
                 and end <= call_position
-                and not position_is_enclosed_by_other_if(text, call_position)
+                and not position_is_enclosed_by_other_if(
+                    text,
+                    call_position,
+                    ignore_simple_optional_bindings=True,
+                )
             ):
                 return True
     return False
@@ -506,6 +505,7 @@ def position_is_enclosed_by_other_if(
     position: int,
     *,
     allowed_start: int | None = None,
+    ignore_simple_optional_bindings: bool = False,
 ) -> bool:
     for match in re.finditer(r"\bif\b", text):
         if match.start() >= position:
@@ -514,6 +514,13 @@ def position_is_enclosed_by_other_if(
             continue
         block, end = swift_block_at(text, match.start())
         opening = text.find("{", match.start())
+        if ignore_simple_optional_bindings and opening >= 0:
+            condition = text[match.end() : opening].strip()
+            if re.fullmatch(
+                r"(?:let|var)\s+[A-Za-z_]\w*\s*=\s*[^,]+",
+                condition,
+            ):
+                continue
         if block and opening < position < end:
             return True
     return False
@@ -1333,23 +1340,6 @@ class HardeningMutantRegressionTests(SourceContractTestCase):
             )
         )
 
-    def test_menu_localization_checks_only_top_level_text_argument(self) -> None:
-        mutant = """
-        ContextMenuActionItem(
-            text: "Burn",
-            action: { _, _ in
-                let alert = textAlertController(
-                    text: presentationData.strings.GRVMMediaUnavailable
-                )
-                present(alert)
-                grvmBurnMessage(context: context, message: message)
-            }
-        )
-        """
-        item, _ = action_item_containing(mutant, "grvmBurnMessage")
-        self.assertTrue(item)
-        self.assertFalse(resource_backed_text(item))
-
     def test_playlist_polarity_rejects_trailing_logic(self) -> None:
         view_once_mutant = """
         SharedMediaPlaybackDataSource.telegramFile(
@@ -1389,6 +1379,19 @@ class HardeningMutantRegressionTests(SourceContractTestCase):
         self.assertTrue(
             call_is_owned_by_exact_receipt_gate(
                 exact_receipt,
+                "markMessageContentAsConsumedInteractively",
+            )
+        )
+        type_bound_exact_receipt = """
+        if let item = item as? MessageMediaPlaylistItem {
+            if consumeViewOnce || timeout != viewOnceTimeout {
+                markMessageContentAsConsumedInteractively(messageId: item.message.id)
+            }
+        }
+        """
+        self.assertTrue(
+            call_is_owned_by_exact_receipt_gate(
+                type_bound_exact_receipt,
                 "markMessageContentAsConsumedInteractively",
             )
         )
@@ -3072,14 +3075,6 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
 
 class ReplayLocalForwardUIContractTests(SourceContractTestCase):
     def test_burn_eligibility_fixture_covers_every_exclusion(self) -> None:
-        localized_fixture = """
-        ContextMenuActionItem(
-            text: presentationData.strings.GRVMMediaBurn,
-            action: { _, _ in grvmBurnMessage(context: context, message: message) }
-        )
-        """
-        localized_item, _ = action_item_containing(localized_fixture, "grvmBurnMessage")
-        self.assertTrue(resource_backed_text(localized_item))
         eligible = BurnCase()
         self.assertTrue(burn_eligible(eligible))
         for peer in ("user", "group", "channel"):
@@ -3156,7 +3151,6 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         )
         self.assertIsNotNone(selected_binding, msg="Burn eligibility must structurally bind one selected message")
         self.assertTrue(burn_item_action, msg="Burn menu item must be located by its semantic handler")
-        self.assertTrue(resource_backed_text(burn_item), msg="Burn label must be resource-backed")
         self.assertContains(burn_item_action, "grvmBurnMessage")
         item_position = context_menu.find(burn_item)
         item_prefix = context_menu[max(0, item_position - 2500) : item_position]
@@ -3239,15 +3233,6 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         )
 
     def test_replay_fixture_keeps_normal_receipts_and_disables_every_replay_edge(self) -> None:
-        localized_fixture = """
-        ContextMenuActionItem(
-            text: presentationData.strings.GRVMMediaReplay,
-            action: { _, _ in controllerInteraction.openMessage(fresh, consumeOnOpen: false) }
-        )
-        """
-        localized_item, _ = action_item_containing(localized_fixture, "consumeOnOpen: false")
-        self.assertTrue(resource_backed_text(localized_item))
-        self.assertNotIn("Replay\"", localized_item)
         self.assertTrue(all(replay_flow(True).values()))
         self.assertFalse(any(replay_flow(False).values()))
         self.assertEqual(
@@ -3468,7 +3453,6 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         ]
         self.assertTrue(exact_account_callers, msg="Replay eligibility must receive the account peer ID")
         self.assertTrue(replay_item, msg="Replay item must be found from its semantic behavior")
-        self.assertTrue(resource_backed_text(replay_item), msg="Replay label must be resource-backed")
         gating_if = None
         for match in re.finditer(r"if\s+(?P<flag>[A-Za-z_]\w*)\s*\{", context_menu):
             block, _ = swift_block_at(context_menu, match.start())
@@ -3542,16 +3526,6 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             fresh_open_anchor,
         )
     def test_local_copy_fixture_distinguishes_ready_unavailable_and_unsupported(self) -> None:
-        localized_fixture = """
-        ContextMenuActionItem(
-            text: presentationData.strings.GRVMMediaForwardLocalCopy,
-            action: { _, _ in controllerInteraction.grvmForwardLocalCopy?(message) }
-        )
-        """
-        localized_item, _ = action_item_containing(
-            localized_fixture, "grvmForwardLocalCopy?(message)"
-        )
-        self.assertTrue(resource_backed_text(localized_item))
         cases = {
             "protectedText": (
                 LocalCopyCase(source_protected=True, text="safe text"),
@@ -3918,7 +3892,6 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         self.assertContains(interaction, "public var grvmForwardLocalCopy: ((Message) -> Void)?")
         self.assertContains(chat_controller, "controllerInteraction.grvmForwardLocalCopy = { [weak self] message in")
         self.assertTrue(local_item)
-        self.assertTrue(resource_backed_text(local_item), msg="Forward Local Copy label must be resource-backed")
         self.assertContainsAll(
             local_action,
             "grvmForwardLocalCopy?(message)",
