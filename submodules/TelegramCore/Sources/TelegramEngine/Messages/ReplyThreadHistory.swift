@@ -368,9 +368,14 @@ private class ReplyThreadHistoryContextImpl {
             }
             
             if markMainAsRead {
+                let associatedHistoryMessageId = (transaction.getPeerCachedData(peerId: messageIndex.id.peerId) as? CachedChannelData)?.associatedHistoryMessageId
                 _internal_applyMaxReadIndexInteractively(transaction: transaction, stateManager: account.stateManager, index: messageIndex)
                 if case .localOnly = mode {
                     transaction.confirmSynchronizedIncomingReadState(messageIndex.id.peerId)
+                    if let associatedHistoryMessageId = associatedHistoryMessageId,
+                       associatedHistoryMessageId.peerId != messageIndex.id.peerId {
+                        transaction.confirmSynchronizedIncomingReadState(associatedHistoryMessageId.peerId)
+                    }
                 }
             }
             
