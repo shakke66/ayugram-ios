@@ -52,7 +52,20 @@ class LocalDeletionContractTests(unittest.TestCase):
 
     def test_incoming_counts_skip_marker(self) -> None:
         source = HISTORY.read_text(encoding="utf-8")
-        self.assertGreaterEqual(source.count("!isLocallyDeletedMessage"), 2)
+        for signature in (
+            "func incomingMessageStatsInIndices(",
+            "func incomingMessageCountInRange(",
+        ):
+            method = swift_block(source, signature)
+            self.assertIn(
+                "isLocallyDeletedMessage("
+                "MessageHistoryTable.renderMessageAttributes(entry.message))",
+                method,
+            )
+            self.assertNotIn(
+                "isLocallyDeletedMessage(entry.message.attributes)",
+                method,
+            )
 
     def test_marked_incoming_reinsert_and_move_never_reenter_unread(self) -> None:
         def admitted_to_read_state(*, incoming: bool, locally_deleted: bool) -> bool:
@@ -84,12 +97,25 @@ class LocalDeletionContractTests(unittest.TestCase):
             source.index("case let .Update(index, storeMessage):") :
             source.index("case let .UpdateTimestamp(index, timestamp):")
         ]
-        predicate = (
+        insert_predicate = (
             "!message.flags.intersection(.IsIncomingMask).isEmpty "
-            "&& !isLocallyDeletedMessage(message.attributes)"
+            "&& !isLocallyDeletedMessage(messageAttributes)"
         )
-        self.assertIn(predicate, insert)
-        self.assertIn(predicate, moving)
+        moving_predicate = (
+            "!message.flags.intersection(.IsIncomingMask).isEmpty "
+            "&& !isLocallyDeletedMessage("
+            "MessageHistoryTable.renderMessageAttributes(message))"
+        )
+        self.assertIn(
+            "let messageAttributes = "
+            "MessageHistoryTable.renderMessageAttributes(message)",
+            insert,
+        )
+        self.assertIn("for attribute in messageAttributes", insert)
+        self.assertIn(insert_predicate, insert)
+        self.assertIn(moving_predicate, moving)
+        self.assertNotIn("isLocallyDeletedMessage(message.attributes)", insert)
+        self.assertNotIn("isLocallyDeletedMessage(message.attributes)", moving)
 
     def test_index_has_local_deletion_bit_and_idempotent_transition(self) -> None:
         source = INDEX.read_text(encoding="utf-8")

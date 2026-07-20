@@ -339,12 +339,13 @@ final class MessageHistoryTable: Table {
                     if !message.localTags.isEmpty {
                         self.localTagsTable.set(id: message.id, tags: message.localTags, previousTags: [], operations: &localTagsOperations)
                     }
-                    for attribute in MessageHistoryTable.renderMessageAttributes(message) {
+                    let messageAttributes = MessageHistoryTable.renderMessageAttributes(message)
+                    for attribute in messageAttributes {
                         if let (tag, timestamp) = attribute.automaticTimestampBasedAttribute {
                             self.timeBasedAttributesTable.set(tag: tag, id: message.id, timestamp: timestamp, operations: &timestampBasedMessageAttributesOperations)
                         }
                     }
-                    if !message.flags.intersection(.IsIncomingMask).isEmpty && !isLocallyDeletedMessage(message.attributes) {
+                    if !message.flags.intersection(.IsIncomingMask).isEmpty && !isLocallyDeletedMessage(messageAttributes) {
                         accumulatedAddedIncomingMessageIndices.insert(message.index)
                     }
                 case let .InsertExistingMessage(storeMessage):
@@ -374,7 +375,7 @@ final class MessageHistoryTable: Table {
                             outputOperations.append(.UpdateGroupInfos(updatedGroupInfos))
                         }
                         
-                        if !message.flags.intersection(.IsIncomingMask).isEmpty && !isLocallyDeletedMessage(message.attributes) {
+                        if !message.flags.intersection(.IsIncomingMask).isEmpty && !isLocallyDeletedMessage(MessageHistoryTable.renderMessageAttributes(message)) {
                             if index != message.index {
                                 accumulatedRemoveIndices.append(index)
                                 accumulatedAddedIncomingMessageIndices.insert(message.index)
@@ -3098,7 +3099,7 @@ final class MessageHistoryTable: Table {
                 let entry = self.readIntermediateEntry(key, value: value)
                 if entry.message.id.namespace == namespace
                     && !entry.message.flags.intersection(.IsIncomingMask).isEmpty
-                    && !isLocallyDeletedMessage(entry.message.attributes) {
+                    && !isLocallyDeletedMessage(MessageHistoryTable.renderMessageAttributes(entry.message)) {
                     count += 1
                 }
             } else {
@@ -3122,7 +3123,7 @@ final class MessageHistoryTable: Table {
                 let entry = self.readIntermediateEntry(key, value: value)
                 if entry.message.id.namespace == namespace
                     && !entry.message.flags.intersection(.IsIncomingMask).isEmpty
-                    && !isLocallyDeletedMessage(entry.message.attributes) {
+                    && !isLocallyDeletedMessage(MessageHistoryTable.renderMessageAttributes(entry.message)) {
                     count += 1
                     messageIds.append(entry.message.id)
                 }
