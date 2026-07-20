@@ -9,6 +9,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -24,7 +25,7 @@ REQUIRED_KEYS = {
     "GRVMgram.Brand.Name": "GRVMgram",
     "GRVMgram.Streamer.Title": "Streamer",
     "GRVMgram.Streamer.Info": "Recording privacy information",
-    "GRVMgram.StreamerPrivacy.Cover": "Privacy cover",
+    "GRVMgram.Streamer.Cover": "Privacy cover",
     "GRVMgram.Crash.Export": "Export local logs",
     "GRVMgram.Chat.DeletedMark.Default": "\U0001F9F9",
     "GRVMgram.Chat.EditedMark.Default": "edited",
@@ -703,6 +704,20 @@ class StringsTests(unittest.TestCase):
 
 
 class BrandingTests(unittest.TestCase):
+    def test_brand_scan_skips_literal_parser_without_ayugram_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(
+                root / "submodules/TelegramUI/Sources/Clean.swift",
+                'let title = "Telegram"\n',
+            )
+            with mock.patch.object(
+                VALIDATOR,
+                "iter_swift_literals",
+                side_effect=AssertionError("clean source should not be tokenized"),
+            ):
+                VALIDATOR.validate_public_branding(root)
+
     def test_legacy_storage_and_internal_identifiers_are_allowed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1035,6 +1050,30 @@ class BrandingTests(unittest.TestCase):
                 'let prompt = "Send voice message?"\n',
             )
             with self.assertRaisesRegex(VALIDATOR.ValidationError, "hard-coded UI text"):
+                VALIDATOR.validate_public_branding(root)
+
+    def test_cross_module_prompt_is_allowed_in_grvmgram_resources(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(
+                root / "Telegram/Telegram-iOS/en.lproj/GRVMgram.strings",
+                '"Prompt" = "Send voice message?";\n',
+            )
+            VALIDATOR.validate_public_branding(root)
+
+    def test_dpaste_endpoint_does_not_match_pasteboard_symbols(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(
+                root / "submodules/TelegramUI/Sources/Clean.swift",
+                'let type = "DiscardPasteboardAlert"\n',
+            )
+            VALIDATOR.validate_public_branding(root)
+            write(
+                root / "submodules/TelegramUI/Sources/Bad.swift",
+                'let endpoint = "https://dpaste.org/api"\n',
+            )
+            with self.assertRaisesRegex(VALIDATOR.ValidationError, "dpaste"):
                 VALIDATOR.validate_public_branding(root)
 
     def test_original_project_url_is_rejected(self) -> None:

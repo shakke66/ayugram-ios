@@ -96,7 +96,7 @@ REQUIRED_LOCALIZATION_KEYS = {
     "GRVMgram.Brand.Name",
     "GRVMgram.Streamer.Title",
     "GRVMgram.Streamer.Info",
-    "GRVMgram.StreamerPrivacy.Cover",
+    "GRVMgram.Streamer.Cover",
     "GRVMgram.Crash.Export",
     "GRVMgram.Chat.DeletedMark.Default",
     "GRVMgram.Chat.EditedMark.Default",
@@ -728,22 +728,46 @@ def validate_settings_ui_literals(root: Path) -> None:
         )
 
 
+def contains_forbidden_public_token(value: str, token: str) -> bool:
+    folded = value.casefold()
+    if token == "dpaste":
+        return re.search(r"(?<![a-z0-9_])dpaste(?![a-z0-9_])", folded) is not None
+    return token.casefold() in folded
+
+
+def swift_source_may_contain_ayugram(value: str) -> bool:
+    folded = value.casefold()
+    return (
+        "ayugram" in folded
+        or re.search(r"\\#*u\{", value, re.IGNORECASE) is not None
+        or re.search(r"\\#*\r?\n", value) is not None
+    )
+
+
 def validate_public_branding(root: Path) -> None:
     violations: list[str] = []
     for path in iter_runtime_files(root):
         value = read_utf8(path)
         folded = value.casefold()
         for token in FORBIDDEN_PUBLIC_TOKENS:
-            if token.casefold() in folded:
+            if contains_forbidden_public_token(value, token):
                 violations.append(f"{path}: forbidden public token {token}")
         if path.suffix == ".plist":
             violations.extend(validate_plist_public_values(root, path, value))
-        literal_entries = (
-            iter_swift_literals(value)
-            if path.suffix in {".swift", ".m", ".mm"}
-            else ((line_number, literal) for line_number, line in enumerate(value.splitlines(), start=1) for literal in QUOTED_STRING_RE.findall(line))
-        )
-        for line_number, literal in literal_entries:
+        should_scan_literals = "ayugram" in folded
+        if path.suffix in {".swift", ".m", ".mm"}:
+            should_scan_literals = swift_source_may_contain_ayugram(value)
+        if should_scan_literals:
+            literal_entries = (
+                iter_swift_literals(value)
+                if path.suffix in {".swift", ".m", ".mm"}
+                else (
+                    (line_number, literal)
+                    for line_number, line in enumerate(value.splitlines(), start=1)
+                    for literal in QUOTED_STRING_RE.findall(line)
+                )
+            )
+            for line_number, literal in literal_entries:
                 if "ayugram" not in literal.casefold():
                     continue
                 if is_allowed_legacy_storage_literal(root, path, literal):
@@ -751,12 +775,15 @@ def validate_public_branding(root: Path) -> None:
                 violations.append(
                     f"{path}:{line_number}: public/loggable AyuGram literal {literal}"
                 )
-        for line_number, line in enumerate(value.splitlines(), start=1):
-            for forbidden in FORBIDDEN_CROSS_UI_LITERALS:
-                if forbidden in line:
-                    violations.append(
-                        f"{path}:{line_number}: hard-coded UI text {forbidden}"
-                    )
+        if path.suffix in {".swift", ".m", ".mm"} and any(
+            forbidden in value for forbidden in FORBIDDEN_CROSS_UI_LITERALS
+        ):
+            for line_number, line in enumerate(value.splitlines(), start=1):
+                for forbidden in FORBIDDEN_CROSS_UI_LITERALS:
+                    if forbidden in line:
+                        violations.append(
+                            f"{path}:{line_number}: hard-coded UI text {forbidden}"
+                        )
     if violations:
         raise ValidationError("\n".join(violations))
     validate_settings_ui_literals(root)
