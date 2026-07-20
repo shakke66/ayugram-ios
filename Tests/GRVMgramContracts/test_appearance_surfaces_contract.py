@@ -68,11 +68,15 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
             "case standard",
             "case md3",
             "public static var defaultStyle",
-            "private let style: Style",
-            "self.style = Self.defaultStyle",
+            "private let switchStyle: Style",
+            "self.switchStyle = Self.defaultStyle",
+            "if case .md3 = self.switchStyle",
+            "switch self.switchStyle",
             "case .md3:",
         ]:
             self.assertIn(fragment, switch)
+        self.assertNotIn("private let style: Style", switch)
+        self.assertNotIn("self.style = Self.defaultStyle", switch)
 
     def test_avatar_geometry_is_account_exact_and_draw_stable(self) -> None:
         hooks = source("submodules/TelegramCore/Sources/AyuGramHooks.swift")

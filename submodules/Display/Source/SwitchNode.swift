@@ -26,7 +26,7 @@ open class SwitchNode: ASDisplayNode {
     public static var defaultStyle: Style = .standard
 
     public var valueUpdated: ((Bool) -> Void)?
-    private let style: Style
+    private let switchStyle: Style
     
     public var frameColor = UIColor(rgb: 0xe0e0e0) {
         didSet {
@@ -69,7 +69,7 @@ open class SwitchNode: ASDisplayNode {
     }
     
     override public init() {
-        self.style = Self.defaultStyle
+        self.switchStyle = Self.defaultStyle
         super.init()
         
         self.setViewBlock({
@@ -88,7 +88,7 @@ open class SwitchNode: ASDisplayNode {
         
         (self.view as! UISwitch).setOn(self._isOn, animated: false)
 
-        if case .md3 = self.style {
+        if case .md3 = self.switchStyle {
             let nativeSize: CGSize
             if #available(iOS 26.0, *) {
                 nativeSize = CGSize(width: 63.0, height: 28.0)
@@ -112,7 +112,7 @@ open class SwitchNode: ASDisplayNode {
     }
     
     override open func calculateSizeThatFits(_ constrainedSize: CGSize) -> CGSize {
-        switch self.style {
+        switch self.switchStyle {
         case .standard:
             if #available(iOS 26.0, *) {
                 return CGSize(width: 63.0, height: 28.0)
