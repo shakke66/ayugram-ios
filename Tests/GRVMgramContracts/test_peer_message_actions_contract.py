@@ -1823,8 +1823,9 @@ class PeerMessageUIContractTests(unittest.TestCase):
 
     def test_read_message_is_one_incoming_cloud_ghost_scoped_local_action(self) -> None:
         context_menu = source(self.context_menu_path)
+        read_label = "text: grvmStrings[.menuReadMessage]"
         read_message = swift_enclosing_statement(
-            context_menu, 'text: "Read Message"'
+            context_menu, read_label
         )
         self.assertRegex(read_message.lstrip(), r"^if\b")
         self.assertLess(len(read_message), 6000)
@@ -1856,7 +1857,7 @@ class PeerMessageUIContractTests(unittest.TestCase):
             'Chat/Context Menu/Read',
         ):
             self.assertIn(token, read_message)
-        read_item = swift_enclosing_call(read_message, 'text: "Read Message"')
+        read_item = swift_enclosing_call(read_message, read_label)
         action = swift_named_closure(read_item, "action")
         for token in (
             "interfaceInteraction.chatController() as? ChatControllerImpl",
