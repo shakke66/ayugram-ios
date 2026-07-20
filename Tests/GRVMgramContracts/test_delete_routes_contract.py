@@ -47,6 +47,12 @@ class DeleteRouteContractTests(unittest.TestCase):
         coordinator = COORDINATOR.read_text(encoding="utf-8")
         manager = MANAGER.read_text(encoding="utf-8")
         autoremove = source("State/ManagedAutoremoveMessageOperations.swift")
+        autoremove_route = occurrence_window(
+            autoremove,
+            "func managedAutoremoveMessageOperations(",
+            1,
+            14000,
+        )
         self.assertIn("public enum GRVMDeletedMessagesPreservationResult", hooks)
         for outcome in ("case disabled", "case preserved([MessageId: [String]])", "case unavailable"):
             self.assertIn(outcome, hooks)
@@ -66,8 +72,10 @@ class DeleteRouteContractTests(unittest.TestCase):
         self.assertIn("directBot", coordinator)
         self.assertIn("try self.store.saveDeleted(", coordinator)
         self.assertIn("self.index.insertDeleted(", coordinator)
-        self.assertTrue("GRVMPreservedConsumableMediaAttribute" in autoremove)
-        self.assertFalse("shouldPreserveOneTimeMedia" in autoremove)
+        self.assertIn("GRVMPreservedConsumableMediaAttribute", autoremove_route)
+        lifecycle_code = re.sub(r"/\*.*?\*/", "", autoremove_route, flags=re.DOTALL)
+        lifecycle_code = re.sub(r"//[^\n]*", "", lifecycle_code)
+        self.assertNotIn("shouldPreserveOneTimeMedia", lifecycle_code)
         self.assertGreaterEqual(manager.count("registry.service(accountPeerId: accountPeerId)"), 2)
 
     def test_unavailable_preservation_never_authorizes_physical_deletion(self) -> None:
