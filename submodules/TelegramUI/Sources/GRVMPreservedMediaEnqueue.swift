@@ -9,6 +9,28 @@ enum GRVMPreservedMediaEnqueueError: Error {
     case unavailable
 }
 
+final class GRVMPreservedMediaEnqueuePayload {
+    let message: EnqueueMessage
+    private let temporaryFile: URL?
+    private var ownsTemporaryFile: Bool
+
+    init(message: EnqueueMessage, temporaryFile: URL?) {
+        self.message = message
+        self.temporaryFile = temporaryFile
+        self.ownsTemporaryFile = temporaryFile != nil
+    }
+
+    func transferOwnership() {
+        self.ownsTemporaryFile = false
+    }
+
+    deinit {
+        if self.ownsTemporaryFile, let temporaryFile = self.temporaryFile {
+            try? FileManager.default.removeItem(at: temporaryFile)
+        }
+    }
+}
+
 private enum GRVMLocalCopyMedia {
     case image(TelegramMediaImage, TelegramMediaImageRepresentation)
     case file(TelegramMediaFile)
@@ -116,7 +138,7 @@ private func grvmLocalCopyFileAttributes(_ file: TelegramMediaFile) -> [Telegram
 func GRVMPreservedMediaEnqueue(
     context: AccountContext,
     message: Message
-) -> Signal<EnqueueMessage, GRVMPreservedMediaEnqueueError> {
+) -> Signal<GRVMPreservedMediaEnqueuePayload, GRVMPreservedMediaEnqueueError> {
     guard message.media.count <= 1 else {
         return .fail(.unsupported)
     }
@@ -133,7 +155,7 @@ func GRVMPreservedMediaEnqueue(
         guard !message.text.isEmpty else {
             return .fail(.unsupported)
         }
-        return .single(.message(
+        let enqueueMessage: EnqueueMessage = .message(
             text: message.text,
             attributes: messageAttributes,
             inlineStickers: [:],
@@ -144,6 +166,10 @@ func GRVMPreservedMediaEnqueue(
             localGroupingKey: nil,
             correlationId: nil,
             bubbleUpEmojiOrStickersets: []
+        )
+        return .single(GRVMPreservedMediaEnqueuePayload(
+            message: enqueueMessage,
+            temporaryFile: nil
         ))
     }
     guard media.count == 1 else {
@@ -231,7 +257,7 @@ func GRVMPreservedMediaEnqueue(
                 flags: [],
                 video: nil
             )
-            return .single(.message(
+            let enqueueMessage: EnqueueMessage = .message(
                 text: message.text,
                 attributes: messageAttributes,
                 inlineStickers: [:],
@@ -242,6 +268,10 @@ func GRVMPreservedMediaEnqueue(
                 localGroupingKey: nil,
                 correlationId: nil,
                 bubbleUpEmojiOrStickersets: []
+            )
+            return .single(GRVMPreservedMediaEnqueuePayload(
+                message: enqueueMessage,
+                temporaryFile: temp
             ))
         case let .file(file):
             let clone = TelegramMediaFile(
@@ -257,7 +287,7 @@ func GRVMPreservedMediaEnqueue(
                 attributes: grvmLocalCopyFileAttributes(file),
                 alternativeRepresentations: []
             )
-            return .single(.message(
+            let enqueueMessage: EnqueueMessage = .message(
                 text: message.text,
                 attributes: messageAttributes,
                 inlineStickers: [:],
@@ -268,6 +298,10 @@ func GRVMPreservedMediaEnqueue(
                 localGroupingKey: nil,
                 correlationId: nil,
                 bubbleUpEmojiOrStickersets: []
+            )
+            return .single(GRVMPreservedMediaEnqueuePayload(
+                message: enqueueMessage,
+                temporaryFile: temp
             ))
         }
     }

@@ -291,7 +291,16 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
                 if case let .timecode(time) = params.mode {
                     control = .seek(time)
                 }
-                if (file.isVoice || file.isInstantVideo) && params.message.tags.contains(.voiceOrInstantVideo) {
+                if !params.consumeOnOpen {
+                    location = .singleMessage(params.message.id)
+                    if file.isVoice || file.isInstantVideo {
+                        playerType = .voice
+                    } else if file.isMusic {
+                        playerType = .music
+                    } else {
+                        playerType = .file
+                    }
+                } else if (file.isVoice || file.isInstantVideo) && params.message.tags.contains(.voiceOrInstantVideo) {
                     if let playlistLocation = params.playlistLocation {
                         location = playlistLocation
                     } else if params.standalone {

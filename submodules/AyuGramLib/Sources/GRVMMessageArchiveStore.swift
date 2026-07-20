@@ -587,7 +587,10 @@ public final class GRVMMessageArchiveStore {
         }
     }
 
-    public func consumableMedia(key: GRVMMessageKey) throws -> [GRVMArchivedMedia] {
+    public func consumableMedia(
+        key: GRVMMessageKey,
+        resourceIds: Set<String>
+    ) throws -> [GRVMArchivedMedia] {
         return try self.perform { database in
             let reserved = try self.queryMedia(
                 database,
@@ -606,9 +609,9 @@ public final class GRVMMessageArchiveStore {
                 values: self.keyValues(key) + [.int64(Self.consumableMediaRevisionId)]
             )
             if !reserved.isEmpty {
-                return reserved
+                return reserved.filter { resourceIds.contains($0.resourceId) }
             }
-            return try self.queryMedia(
+            let deleted = try self.queryMedia(
                 database,
                 sql: """
                 SELECT blob.account_id, blob.resource_id, blob.relative_path,
@@ -624,6 +627,7 @@ public final class GRVMMessageArchiveStore {
                 """,
                 values: self.keyValues(key)
             )
+            return deleted.filter { resourceIds.contains($0.resourceId) }
         }
     }
 

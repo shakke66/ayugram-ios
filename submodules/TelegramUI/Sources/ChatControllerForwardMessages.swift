@@ -17,21 +17,11 @@ import ChatMessagePaymentAlertController
 
 extension ChatControllerImpl {
     func forwardLocalCopy(message: Message) {
-        let _ = (GRVMPreservedMediaEnqueue(context: self.context, message: message)
-        |> deliverOnMainQueue).startStandalone(next: { [weak self] preparedLocalCopy in
-            let localCopy: EnqueueMessage? = preparedLocalCopy
-            self?.forwardMessages(messages: [message], resetCurrent: false, localCopy: localCopy)
-        }, error: { [weak self] error in
-            guard let self else {
-                return
-            }
-            switch error {
-            case .unsupported:
-                self.controllerInteraction?.displayUndo(.info(title: nil, text: "This message can't be forwarded as a local copy.", timeout: nil, customUndoText: nil))
-            case .unavailable:
-                self.controllerInteraction?.displayUndo(.info(title: nil, text: "The local media is unavailable.", timeout: nil, customUndoText: nil))
-            }
-        })
+        let localCopy: Signal<GRVMPreservedMediaEnqueuePayload, GRVMPreservedMediaEnqueueError> = GRVMPreservedMediaEnqueue(
+            context: self.context,
+            message: message
+        )
+        self.forwardMessages(messages: [message], resetCurrent: false, localCopy: localCopy)
     }
 
     func forwardMessages(messageIds: [MessageId], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool = false) {
@@ -46,7 +36,7 @@ extension ChatControllerImpl {
         })
     }
 
-    func forwardMessages(messages: [Message], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool, localCopy: EnqueueMessage? = nil) {
+    func forwardMessages(messages: [Message], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool, localCopy: Signal<GRVMPreservedMediaEnqueuePayload, GRVMPreservedMediaEnqueueError>? = nil) {
         let _ = self.presentVoiceMessageDiscardAlert(action: {
             var filter: ChatListNodePeersFilter = [.onlyWriteable, .excludeDisabled, .doNotSearchMessages]
             var hasPublicPolls = false
@@ -71,8 +61,11 @@ extension ChatControllerImpl {
             var attemptSelectionImpl: ((EnginePeer, ChatListDisabledPeerReason) -> Void)?
             let controller = self.context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(context: self.context, updatedPresentationData: self.updatedPresentationData, filter: filter, hasFilters: true, attemptSelection: { peer, _, reason in
                 attemptSelectionImpl?(peer, reason)
-            }, multipleSelection: true, forwardedMessageIds: localCopy == nil ? messages.map { $0.id } : nil, selectForumThreads: true, immediatelyActivateMultipleSelection: localCopy != nil))
+            }, multipleSelection: true, forwardedMessageIds: localCopy == nil ? messages.map { $0.id } : nil, selectForumThreads: true))
             let context = self.context
+            var preparedLocalCopy: GRVMPreservedMediaEnqueuePayload?
+            var preparingLocalCopy = false
+            var localCopyThreadIds: [EnginePeer.Id: Int64] = [:]
             attemptSelectionImpl = { [weak self, weak controller] peer, reason in
                 guard let strongSelf = self, let controller = controller else {
                     return
@@ -120,6 +113,34 @@ extension ChatControllerImpl {
                 }
             }
             controller.multiplePeersSelected = { [weak self, weak controller] peers, peerMap, messageText, mode, forwardOptions, _ in
+                if let localCopy, preparedLocalCopy == nil {
+                    guard !preparingLocalCopy else {
+                        return
+                    }
+                    preparingLocalCopy = true
+                    let _ = (localCopy
+                    |> deliverOnMainQueue).startStandalone(next: { [weak controller] payload in
+                        preparingLocalCopy = false
+                        preparedLocalCopy = payload
+                        controller?.multiplePeersSelected?(
+                            peers,
+                            peerMap,
+                            messageText,
+                            mode,
+                            forwardOptions,
+                            nil
+                        )
+                    }, error: { [weak self] error in
+                        preparingLocalCopy = false
+                        switch error {
+                        case .unsupported:
+                            self?.controllerInteraction?.displayUndo(.info(title: nil, text: "This message can't be forwarded as a local copy.", timeout: nil, customUndoText: nil))
+                        case .unavailable:
+                            self?.controllerInteraction?.displayUndo(.info(title: nil, text: "The local media is unavailable.", timeout: nil, customUndoText: nil))
+                        }
+                    })
+                    return
+                }
                 let peerIds = peers.map { $0.id }
                 
                 let _ = (context.engine.data.get(
@@ -174,8 +195,8 @@ extension ChatControllerImpl {
                         var attributes: [MessageAttribute] = []
                         attributes.append(ForwardOptionsMessageAttribute(hideNames: forwardOptions?.hideNames == true, hideCaptions: forwardOptions?.hideCaptions == true))
                         
-                        if let localCopy {
-                            result.append(localCopy)
+                        if let preparedLocalCopy {
+                            result.append(preparedLocalCopy.message)
                         } else {
                             result.append(contentsOf: messages.map { message -> EnqueueMessage in
                                 return .forward(source: message.id, threadId: nil, grouping: .auto, attributes: attributes, correlationId: nil)
@@ -215,6 +236,11 @@ extension ChatControllerImpl {
                                 var displayPeers: [EnginePeer] = []
                                 for (peer, shouldDivert) in targetPeersShouldDivert {
                                     var peerMessages = result
+                                    if preparedLocalCopy != nil, let threadId = localCopyThreadIds[peer.id] {
+                                        peerMessages = peerMessages.map { message in
+                                            return message.withUpdatedThreadId(threadId)
+                                        }
+                                    }
                                     if shouldDivert {
                                         displayConvertingTooltip = true
                                         peerMessages = peerMessages.map { message -> EnqueueMessage in
@@ -237,6 +263,7 @@ extension ChatControllerImpl {
                                         }
                                     }
                                     
+                                    preparedLocalCopy?.transferOwnership()
                                     let _ = (enqueueMessages(account: strongSelf.context.account, peerId: peer.id, messages: peerMessages)
                                     |> deliverOnMainQueue).startStandalone(next: { messageIds in
                                         if let strongSelf = self {
@@ -374,6 +401,22 @@ extension ChatControllerImpl {
             }
             controller.peerSelected = { [weak self, weak controller] peer, threadId in
                 guard let strongSelf = self, let strongController = controller else {
+                    return
+                }
+                if localCopy != nil {
+                    if let threadId {
+                        localCopyThreadIds[peer.id] = threadId
+                    } else {
+                        localCopyThreadIds.removeValue(forKey: peer.id)
+                    }
+                    strongController.multiplePeersSelected?(
+                        [peer],
+                        [peer.id: peer],
+                        NSAttributedString(),
+                        .generic,
+                        nil,
+                        nil
+                    )
                     return
                 }
                 let peerId = peer.id

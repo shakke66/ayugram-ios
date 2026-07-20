@@ -935,7 +935,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
         guard let controller = self.controller else {
             return
         }
-        if controller.immediatelyActivateMultipleSelection && self.forwardedMessageIds != nil {
+        if controller.immediatelyActivateMultipleSelection {
             let countPanelNode = PeersCountPanelNode(theme: self.presentationData.theme, strings: self.presentationData.strings, action: { [weak self] in
                 guard let self else {
                     return

@@ -3034,8 +3034,8 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
             rf"(?s){re.escape(first_row)}\.attributes.*?GRVMPreservedConsumableMediaAttribute",
         )
         records_binding = re.search(
-            r"(?:let|guard\s+let)\s+(?P<records>[A-Za-z_]\w*)\s*=.*?"
-            r"consumableMedia\(key:",
+            r"guard\s+let\s+(?P<records>[A-Za-z_]\w*)\s*=\s*try\?\s*"
+            r"self\.store\.consumableMedia\(key:",
             restore,
             re.DOTALL,
         )
@@ -3088,6 +3088,43 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
         self.assertNotContains(restore, "archivedMedia(accountId:")
         for forbidden in ("network.request", "fetchedResource", "resourceData(", "fetchResource"):
             self.assertNotContains(restore, forbidden)
+
+    def test_restore_filters_deleted_revision_extras_to_marker_resource_ids(self) -> None:
+        records = (
+            ArchivedMediaRecord("account-a", "message-1", "primary", restored_size=10),
+            ArchivedMediaRecord("account-a", "message-1", "preview", restored_size=5),
+        )
+        marker_ids = {"primary"}
+        filtered = tuple(record for record in records if record.resource_id in marker_ids)
+        self.assertTrue(
+            restore_authorized(
+                account="account-a",
+                message_key="message-1",
+                marker_ids=tuple(marker_ids),
+                records=filtered,
+            )
+        )
+
+        store = source("submodules/AyuGramLib/Sources/GRVMMessageArchiveStore.swift")
+        lookup = swift_block(store, "public func consumableMedia(")
+        restore = swift_block(
+            source("submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"),
+            "public func restoreArchivedMedia(",
+        )
+        self.assertContains(lookup, "resourceIds: Set<String>")
+        self.assertMatches(
+            lookup,
+            r"(?s)(?:filter|compactMap).*?resourceIds\.contains\(.*?resourceId",
+        )
+        lookup_calls = swift_calls(restore, "consumableMedia")
+        self.assertEqual(1, len(lookup_calls))
+        self.assertContains(lookup_calls[0], "resourceIds: Set(attribute.resourceIds)")
+        self.assertOrdered(
+            restore,
+            "transaction.getMessage(message.id)",
+            "consumableMedia(",
+            "mediaStore.restore(",
+        )
 
 
 class ReplayLocalForwardUIContractTests(SourceContractTestCase):
@@ -3359,6 +3396,27 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
                 ),
             )
 
+    def test_replay_voice_playlist_is_scoped_to_the_exact_message(self) -> None:
+        open_chat = source("submodules/TelegramUI/Sources/OpenChatMessage.swift")
+        start = open_chat.find("case let .audio(file):")
+        end = open_chat.find("case let .story(", start)
+        self.assertGreaterEqual(start, 0)
+        self.assertGreater(end, start)
+        audio = open_chat[start:end]
+        replay_branch = swift_block(audio, "if !params.consumeOnOpen")
+        self.assertContainsAll(
+            replay_branch,
+            "!params.consumeOnOpen",
+            ".singleMessage(params.message.id)",
+        )
+        self.assertNotContains(replay_branch, ".messages(")
+        self.assertOrdered(
+            audio,
+            "if !params.consumeOnOpen",
+            ".singleMessage(params.message.id)",
+            "consumeViewOnce: params.consumeOnOpen",
+        )
+
     def test_replay_receipt_gates_prepare_and_consume_only_on_normal_open(self) -> None:
         secret_preview = source(
             "submodules/GalleryUI/Sources/SecretMediaPreviewController.swift"
@@ -3623,7 +3681,7 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             "enum GRVMPreservedMediaEnqueueError: Error",
             "case unsupported",
             "case unavailable",
-            "Signal<EnqueueMessage, GRVMPreservedMediaEnqueueError>",
+            "Signal<GRVMPreservedMediaEnqueuePayload, GRVMPreservedMediaEnqueueError>",
             ".fail(.unsupported)",
             ".fail(.unavailable)",
             "restoreConsumableMedia",
@@ -3862,6 +3920,7 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         )
         forward = source("submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift")
         local_forward = swift_block(forward, "func forwardLocalCopy(message: Message)")
+        common_forward = swift_block(forward, "func forwardMessages(messages: [Message]")
         eligibility = swift_block(context_menu, "func grvmCanForwardLocalCopy(")
         local_item, local_action = action_item_containing(
             context_menu, "grvmForwardLocalCopy?(message)"
@@ -3926,29 +3985,82 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             local_forward,
             "func forwardLocalCopy(message: Message)",
             "GRVMPreservedMediaEnqueue",
-            "localCopy: EnqueueMessage?",
+            "localCopy: Signal<GRVMPreservedMediaEnqueuePayload",
             "forwardMessages(messages:",
         )
         self.assertContains(local_forward, "localCopy: localCopy")
+        self.assertNotContains(local_forward, ".start")
         self.assertNotContains(local_forward, ".forward(source:")
         self.assertNotContains(local_forward, "withUpdatedForwardMessageIds")
         self.assertOrdered(local_forward, "GRVMPreservedMediaEnqueue", "forwardMessages(messages:")
+        error_switch = swift_block(common_forward, "switch error")
         for error_case in ("case .unsupported", "case .unavailable"):
-            error_branch = switch_case(local_forward, error_case)
-            if error_branch:
-                self.assertNotContains(error_branch, "forwardMessages(")
-                self.assertAnyContains(error_branch, "return", "present", "displayUndo", "alert")
-        catch_branch = swift_block(local_forward, "catch")
-        if catch_branch:
-            self.assertNotContains(catch_branch, "forwardMessages(")
-            self.assertAnyContains(catch_branch, "return", "present", "alert")
-        self.assertAnyContains(local_forward, "case .unsupported", "catch")
-        self.assertAnyContains(local_forward, "case .unavailable", "catch")
-        success_callback = re.search(
-            r"(?s)(?:next|success)\s*:\s*\{[^}]*forwardMessages\(.*?localCopy:",
-            local_forward,
+            error_branch = switch_case(error_switch, error_case)
+            self.assertContains(error_branch, "displayUndo")
+            self.assertNotContains(error_branch, "chatMessagePaymentAlertController")
+            self.assertNotContains(error_branch, "enqueueMessages(")
+
+    def test_local_copy_temp_lifetime_is_owned_until_stock_enqueue(self) -> None:
+        enqueue = source("submodules/TelegramUI/Sources/GRVMPreservedMediaEnqueue.swift")
+        payload = swift_block(enqueue, "final class GRVMPreservedMediaEnqueuePayload")
+        forward = source("submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift")
+        common_forward = swift_block(forward, "func forwardMessages(messages: [Message]")
+        commit = swift_block(common_forward, "let commit: ([EnqueueMessage]) -> Void")
+        self.assertContainsAll(
+            payload,
+            "let message: EnqueueMessage",
+            "temporaryFile",
+            "func transferOwnership()",
+            "deinit",
+            "removeItem",
         )
-        self.assertIsNotNone(success_callback, msg="Only successful preparation may enter stock forward")
+        self.assertContainsAll(
+            common_forward,
+            "localCopy: Signal<GRVMPreservedMediaEnqueuePayload",
+            "preparedLocalCopy",
+            "chatMessagePaymentAlertController",
+        )
+        preparation = swift_block(common_forward, "if let localCopy")
+        self.assertContains(preparation, "preparedLocalCopy")
+        self.assertContainsAll(
+            commit,
+            "preparedLocalCopy?.transferOwnership()",
+            "enqueueMessages(",
+        )
+        self.assertLess(
+            common_forward.find("if let localCopy"),
+            common_forward.find("chatMessagePaymentAlertController"),
+        )
+        self.assertOrdered(commit, "transferOwnership()", "enqueueMessages(")
+
+    def test_local_copy_single_selection_preserves_forum_thread(self) -> None:
+        forward = source("submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift")
+        common_forward = swift_block(forward, "func forwardMessages(messages: [Message]")
+        peer_selected = swift_block(common_forward, "controller.peerSelected =")
+        self.assertNotContains(
+            common_forward,
+            "immediatelyActivateMultipleSelection: localCopy != nil",
+        )
+        self.assertContainsAll(
+            peer_selected,
+            "if localCopy != nil",
+            "threadId",
+            "multiplePeersSelected?",
+            "return",
+        )
+        self.assertContainsAll(
+            common_forward,
+            "localCopyThreadIds",
+            "withUpdatedThreadId",
+        )
+        local_branch = swift_block(peer_selected, "if localCopy != nil")
+        self.assertOrdered(
+            local_branch,
+            "if localCopy != nil",
+            "threadId",
+            "multiplePeersSelected?",
+            "return",
+        )
 
     def test_local_copy_reuses_stock_selector_paid_commit_enqueue_and_pending_pipeline(self) -> None:
         forward = source("submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift")
@@ -3970,6 +4082,8 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             "enqueueMessages(",
             "pendingMessageStatus",
             "if let localCopy",
+            "preparedLocalCopy",
+            "transferOwnership()",
             "commit(",
         )
         self.assertMatches(
@@ -3979,7 +4093,10 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             r"localCopy\s*!=\s*nil\s*\?\s*nil\s*:\s*messages\.map\s*\{\s*\$0\.id\s*\})",
         )
         self.assertOrdered(common_forward, "if let localCopy", "chatMessagePaymentAlertController")
-        self.assertMatches(common_forward, r"(?s)if let localCopy.*result.*localCopy.*commit\(")
+        self.assertMatches(
+            common_forward,
+            r"(?s)if let preparedLocalCopy.*result.*preparedLocalCopy\.message.*commit\(",
+        )
         self.assertEqual(1, common_forward.count("let commit: ([EnqueueMessage]) -> Void"))
 
     def test_stock_forward_remains_server_referenced_and_keeps_both_routes(self) -> None:

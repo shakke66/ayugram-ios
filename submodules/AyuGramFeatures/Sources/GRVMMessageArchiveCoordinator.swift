@@ -672,10 +672,6 @@ public final class GRVMMessageArchiveCoordinator {
     }
 
     public func restoreArchivedMedia(for message: Message) -> Signal<Bool, NoError> {
-        guard let records = try? self.store.consumableMedia(key: self.messageKey(message)),
-              !records.isEmpty else {
-            return .single(false)
-        }
         return self.postbox.transaction { transaction -> GRVMConsumableMediaRestoreContext? in
             guard let currentMessage = transaction.getMessage(message.id),
                   currentMessage.stableId == message.stableId,
@@ -697,6 +693,10 @@ public final class GRVMMessageArchiveCoordinator {
                 return .single(false)
             }
             let attribute = context.attribute
+            guard let records = try? self.store.consumableMedia(key: context.key, resourceIds: Set(attribute.resourceIds)),
+                  !records.isEmpty else {
+                return .single(false)
+            }
             guard records.allSatisfy({ $0.copyState == .complete && $0.byteCount > 0 }),
                   Set(attribute.resourceIds) == Set(records.map(\.resourceId)) else {
                 return .single(false)
