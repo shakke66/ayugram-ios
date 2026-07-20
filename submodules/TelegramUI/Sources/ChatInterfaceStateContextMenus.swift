@@ -130,6 +130,25 @@ private func grvmLocalHideMessage(context: AccountContext, messageId: MessageId)
     }.startStandalone()
 }
 
+private func grvmCanOfferReadMessage(in state: ChatPresentationInterfaceState) -> Bool {
+    switch state.chatLocation {
+    case .peer, .replyThread:
+        break
+    case .customChatContents:
+        return false
+    }
+
+    if let subject = state.subject {
+        switch subject {
+        case .scheduledMessages, .customChatContents:
+            return false
+        default:
+            break
+        }
+    }
+    return true
+}
+
 private func grvmMessageAuthors(message: Message) -> [Peer] {
     var seen = Set<PeerId>()
     var result: [Peer] = []
@@ -1035,6 +1054,30 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         var actions: [ContextMenuItem] = []
         var contextMoreActions: [ContextMenuItem] = []
         let contextMenuSettings = AyuGramHooks.chatAppearance(accountPeerId: context.account.peerId).contextMenu
+
+        if messages.count == 1,
+           message.flags.contains(.Incoming),
+           message.id.namespace == Namespaces.Message.Cloud,
+           AyuGramHooks.shouldSuppressReadReceipts?(context.account.peerId) == true,
+           grvmCanOfferReadMessage(in: chatPresentationInterfaceState),
+           message.id.peerId != context.account.peerId,
+           message.id.peerId.namespace != Namespaces.Peer.SecretChat
+        {
+            // The route is restricted to .peer and .replyThread histories; .scheduledMessages and .customChatContents stay hidden.
+            actions.append(.action(ContextMenuActionItem(
+                text: "Read Message",
+                icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Read"), color: theme.actionSheet.primaryTextColor)
+                },
+                action: { _, f in
+                    f(.default)
+                    guard let chatController = interfaceInteraction.chatController() as? ChatControllerImpl else {
+                        return
+                    }
+                    chatController.grvmApplyMaxReadIndex(message.index, mode: .localOnly)
+                }
+            )))
+        }
 
         var isPinnedMessages = false
         if case .pinnedMessages = chatPresentationInterfaceState.subject {

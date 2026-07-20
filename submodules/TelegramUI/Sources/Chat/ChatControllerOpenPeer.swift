@@ -329,7 +329,7 @@ extension ChatControllerImpl {
         })
     }
     
-    func openBotForumMoreMenu(sourceView: UIView, gesture: ContextGesture?) {
+    func openBotForumMoreMenu(sourceView: UIView, gesture: ContextGesture?, additionalItems: [ContextMenuItem] = []) {
         guard let peerId = self.chatLocation.peerId else {
             return
         }
@@ -451,6 +451,10 @@ extension ChatControllerImpl {
             peerId: peerId,
             threadId: self.chatLocation.threadId
         ))
+        if !items.isEmpty && !additionalItems.isEmpty {
+            items.append(.separator)
+        }
+        items.append(contentsOf: additionalItems)
 
         let presentationData = self.presentationData
         

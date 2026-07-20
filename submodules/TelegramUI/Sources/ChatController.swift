@@ -5964,6 +5964,16 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 default:
                     items = .single([])
                 }
+
+                let itemsWithGRVM = combineLatest(items, strongSelf.grvmHeaderContextMenuItems())
+                |> map { stockItems, additionalItems -> [ContextMenuItem] in
+                    var result = stockItems
+                    if !result.isEmpty && !additionalItems.isEmpty {
+                        result.append(.separator)
+                    }
+                    result.append(contentsOf: additionalItems)
+                    return result
+                }
                 
                 strongSelf.chatDisplayNode.messageTransitionNode.dismissMessageReactionContexts()
                 
@@ -5979,7 +5989,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     source = .reference(ChatControllerContextReferenceContentSource(controller: strongSelf, sourceView: node.view, insets: .zero))
                 }
                 
-                let contextController = makeContextController(presentationData: strongSelf.presentationData, source: source, items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
+                let contextController = makeContextController(presentationData: strongSelf.presentationData, source: source, items: itemsWithGRVM |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
                 contextController.dismissed = { [weak self] in
                     self?.canReadHistory.set(true)
                 }
@@ -6004,14 +6014,20 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             guard let peerId = self.chatLocation.peerId else {
                 return
             }
-            
-            if peerId == self.context.account.peerId {
-                PeerInfoScreenImpl.openSavedMessagesMoreMenu(context: self.context, sourceController: self, isViewingAsTopics: false, sourceView: self.navigationBar?.navigationButtonContextContainer(sourceView: sourceNode.view) ?? sourceNode.view, gesture: gesture)
-            } else if peerId.namespace == Namespaces.Peer.CloudUser {
-                self.openBotForumMoreMenu(sourceView: self.navigationBar?.navigationButtonContextContainer(sourceView: sourceNode.view) ?? sourceNode.view, gesture: gesture)
-            } else {
-                ChatListControllerImpl.openMoreMenu(context: self.context, peerId: peerId, sourceController: self, isViewingAsTopics: false, sourceView: sourceNode.view, gesture: gesture)
-            }
+
+            (self.grvmHeaderContextMenuItems()
+            |> deliverOnMainQueue).startStandalone(next: { [weak self] additionalItems in
+                guard let self else {
+                    return
+                }
+                if peerId == self.context.account.peerId {
+                    PeerInfoScreenImpl.openSavedMessagesMoreMenu(context: self.context, sourceController: self, isViewingAsTopics: false, sourceView: self.navigationBar?.navigationButtonContextContainer(sourceView: sourceNode.view) ?? sourceNode.view, gesture: gesture)
+                } else if peerId.namespace == Namespaces.Peer.CloudUser {
+                    self.openBotForumMoreMenu(sourceView: self.navigationBar?.navigationButtonContextContainer(sourceView: sourceNode.view) ?? sourceNode.view, gesture: gesture, additionalItems: additionalItems)
+                } else {
+                    ChatListControllerImpl.openMoreMenu(context: self.context, peerId: peerId, sourceController: self, isViewingAsTopics: false, sourceView: sourceNode.view, gesture: gesture, additionalItems: additionalItems)
+                }
+            })
         }
         self.moreBarButton.addTarget(self, action: #selector(self.moreButtonPressed), forControlEvents: .touchUpInside)
         
@@ -8503,6 +8519,177 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 }
             ))
         ]
+    }
+
+    func grvmApplyMaxReadIndex(_ messageIndex: MessageIndex, mode: GRVMReadMode) {
+        self.context.grvmApplyMaxReadIndex(
+            for: self.chatLocation,
+            contextHolder: self.chatLocationContextHolder,
+            messageIndex: messageIndex,
+            mode: mode
+        )
+    }
+
+    private func grvmApplyTopReadIndex(mode: GRVMReadMode) {
+        let chatLocation = self.chatLocation
+        let contextHolder = self.chatLocationContextHolder
+        let _ = (self.context.account.postbox.transaction { transaction -> MessageIndex? in
+            switch chatLocation {
+            case let .peer(peerId):
+                return transaction.getTopPeerMessageIndex(peerId: peerId, namespace: Namespaces.Message.Cloud)
+            case let .replyThread(message):
+                return transaction.getMessageHistoryThreadTopMessage(
+                    peerId: message.peerId,
+                    threadId: message.threadId,
+                    namespaces: Set([Namespaces.Message.Cloud])
+                )
+            case .customChatContents:
+                return nil
+            }
+        }
+        |> deliverOnMainQueue).startStandalone(next: { [weak self] messageIndex in
+            guard let self, let messageIndex else {
+                return
+            }
+            self.context.grvmApplyMaxReadIndex(
+                for: chatLocation,
+                contextHolder: contextHolder,
+                messageIndex: messageIndex,
+                mode: mode
+            )
+        })
+    }
+
+    private func grvmHeaderContextMenuItems() -> Signal<[ContextMenuItem], NoError> {
+        if self.presentationInterfaceState.interfaceState.selectionState != nil {
+            return .single([])
+        }
+        if case .standard(.previewing) = self.mode {
+            return .single([])
+        }
+        if let subject = self.presentationInterfaceState.subject {
+            switch subject {
+            case .scheduledMessages, .pinnedMessages, .messageOptions, .customChatContents:
+                return .single([])
+            default:
+                break
+            }
+        }
+
+        let peerId: PeerId
+        let threadId: Int64?
+        switch self.chatLocation {
+        case let .peer(id):
+            peerId = id
+            threadId = nil
+        case let .replyThread(message):
+            peerId = message.peerId
+            threadId = message.threadId
+        case .customChatContents:
+            return .single([])
+        }
+        guard peerId.namespace == Namespaces.Peer.CloudUser
+                || peerId.namespace == Namespaces.Peer.CloudGroup
+                || peerId.namespace == Namespaces.Peer.CloudChannel else {
+            return .single([])
+        }
+        guard peerId.namespace != Namespaces.Peer.SecretChat else {
+            return .single([])
+        }
+
+        let context = self.context
+        return context.chatLocationUnreadCount(
+            for: self.chatLocation,
+            contextHolder: self.chatLocationContextHolder
+        )
+        |> take(1)
+        |> map { [weak self] unreadCount -> [ContextMenuItem] in
+            guard let self else {
+                return []
+            }
+
+            var items: [ContextMenuItem] = []
+            if peerId != context.account.peerId,
+               (unreadCount > 0 || AyuGramHooks.shouldSuppressReadReceipts?(context.account.peerId) == true)
+            {
+                items.append(.action(ContextMenuActionItem(
+                    text: "Read All Locally",
+                    icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Read"), color: theme.contextMenu.primaryColor)
+                    },
+                    action: { [weak self] _, f in
+                        f(.default)
+                        self?.grvmApplyTopReadIndex(mode: .localOnly)
+                    }
+                )))
+                items.append(.action(ContextMenuActionItem(
+                    text: "Read All on Server",
+                    icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Read"), color: theme.contextMenu.primaryColor)
+                    },
+                    action: { [weak self] _, f in
+                        f(.default)
+                        self?.grvmApplyTopReadIndex(mode: .forceServer)
+                    }
+                )))
+            }
+
+            items.append(.action(ContextMenuActionItem(
+                text: "Jump to Beginning",
+                icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/GoToMessage"), color: theme.contextMenu.primaryColor)
+                },
+                action: { [weak self] _, f in
+                    f(.default)
+                    self?.scrollToStartOfHistory()
+                }
+            )))
+
+            var canDeleteOwnMessages = false
+            if peerId != context.account.peerId, let peer = self.presentationInterfaceState.renderedPeer?.chatMainPeer {
+                if peer is TelegramGroup {
+                    canDeleteOwnMessages = threadId == nil
+                } else if let channel = peer as? TelegramChannel, case .group = channel.info {
+                    canDeleteOwnMessages = threadId == nil || channel.isForumOrMonoForum
+                }
+            }
+            if canDeleteOwnMessages {
+                items.append(.action(ContextMenuActionItem(
+                    text: "Delete Own Messages",
+                    textColor: .destructive,
+                    icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.contextMenu.destructiveColor)
+                    },
+                    action: { [weak self] _, f in
+                        f(.default)
+                        guard let self else {
+                            return
+                        }
+                        let alert = textAlertController(
+                            context: self.context,
+                            updatedPresentationData: self.updatedPresentationData,
+                            title: "Delete Own Messages",
+                            text: "Delete all messages you sent in this chat?",
+                            actions: [
+                                TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_Cancel, action: {}),
+                                TextAlertAction(type: .destructiveAction, title: "Delete", action: { [weak self] in
+                                    guard let self else {
+                                        return
+                                    }
+                                    let _ = self.context.engine.messages.grvmDeleteOwnMessages(
+                                        peerId: peerId,
+                                        threadId: threadId
+                                    ).startStandalone()
+                                })
+                            ]
+                        )
+                        self.present(alert, in: .window(.root))
+                    }
+                )))
+            }
+
+            return items
+        }
     }
 
     private func grvmMarkCurrentChatReadAfterAction() {

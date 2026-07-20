@@ -878,6 +878,31 @@ open class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol {
             switch button.action {
                 case let .url(url):
                     item.controllerInteraction.longTap(.url(url), ChatControllerInteraction.LongTapParams(message: item.message))
+                case let .callback(_, data):
+                    let bytes = data.makeData()
+                    let callbackText: String
+                    if let text = String(data: bytes, encoding: .utf8) {
+                        callbackText = text
+                    } else {
+                        callbackText = bytes.map { String(format: "%02x", $0) }.joined()
+                    }
+
+                    let presentationData = item.context.sharedContext.currentPresentationData.with { $0 }
+                    let actionSheet = ActionSheetController(presentationData: presentationData)
+                    actionSheet.setItemGroups([
+                        ActionSheetItemGroup(items: [
+                            ActionSheetButtonItem(title: "Copy Callback Data", action: { [weak actionSheet] in
+                                actionSheet?.dismissAnimated()
+                                UIPasteboard.general.string = callbackText
+                            })
+                        ]),
+                        ActionSheetItemGroup(items: [
+                            ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
+                                actionSheet?.dismissAnimated()
+                            })
+                        ])
+                    ])
+                    item.controllerInteraction.presentController(actionSheet, nil)
                 default:
                     break
             }

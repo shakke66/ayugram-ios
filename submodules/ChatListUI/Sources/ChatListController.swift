@@ -3692,7 +3692,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         self.dismiss()
     }
     
-    public static func openMoreMenu(context: AccountContext, peerId: EnginePeer.Id, sourceController: ViewController, isViewingAsTopics: Bool, sourceView: UIView, gesture: ContextGesture?) {
+    public static func openMoreMenu(context: AccountContext, peerId: EnginePeer.Id, sourceController: ViewController, isViewingAsTopics: Bool, sourceView: UIView, gesture: ContextGesture?, additionalItems: [ContextMenuItem] = []) {
         let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
         |> deliverOnMainQueue).startStandalone(next: { peer in
             guard case let .channel(channel) = peer else {
@@ -3856,6 +3856,10 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 peerId: peerId,
                 threadId: nil
             ))
+            if !items.isEmpty && !additionalItems.isEmpty {
+                items.append(.separator)
+            }
+            items.append(contentsOf: additionalItems)
 
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
             let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
