@@ -95,7 +95,7 @@ private enum GRVMDeletedEntry: ItemListNodeEntry {
         case .empty:
             return ItemListTextItem(
                 presentationData: presentationData,
-                text: .plain(presentationData.strings.ChatList_Search_NoResults),
+                text: .plain(strings[.deletedEmpty]),
                 sectionId: self.section
             )
         case let .message(_, _, message):
@@ -324,7 +324,7 @@ public func grvmDeletedMessagesController(
     return controller!
 }
 
-@available(*, deprecated)
+@available(*, deprecated, message: "Use grvmDeletedMessagesController(context:peerId:threadId:)")
 /// Compatibility entry point for the former global archive screen.
 public func ayuGramDeletedMessagesController(context: AccountContext) -> ViewController {
     return grvmDeletedMessagesController(context: context)

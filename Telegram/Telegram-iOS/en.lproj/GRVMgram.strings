@@ -260,6 +260,7 @@
 "GRVMgram.History.Title" = "GRVMgram History";
 "GRVMgram.History.Info" = "GRVMgram History is available from the context menu of a specific edited message.";
 "GRVMgram.History.Empty" = "No edit history has been saved yet.";
+"GRVMgram.History.MessageEmpty" = "[empty]";
 "GRVMgram.History.Recent" = "Recent Edited Messages";
 "GRVMgram.History.Current" = "Current";
 "GRVMgram.History.Revision" = "Version %d";

@@ -257,6 +257,7 @@ GRVMgram.Deleted.Clear.DatabaseFinalizationFailed
 GRVMgram.History.Title
 GRVMgram.History.Info
 GRVMgram.History.Empty
+GRVMgram.History.MessageEmpty
 GRVMgram.History.Recent
 GRVMgram.History.Current
 GRVMgram.History.Revision

@@ -181,7 +181,8 @@ class HistoryUIContractTests(unittest.TestCase):
             "strings[.historyMediaTodo]",
             "legacyMediaSummary",
             "legacyResourceIds",
-            "ChatList_Search_NoResults",
+            "strings[.historyEmpty]",
+            "strings[.historyMessageEmpty]",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, value)
@@ -233,12 +234,18 @@ class HistoryUIContractTests(unittest.TestCase):
             "AyuGramFeatures.deletedMessages?(",
             "peerId, threadId, query",
             "ItemListSingleLineInputItem",
+            "strings[.deletedEmpty]",
             "textUpdated:",
             "arguments.openMessage(message.key)",
             "subject: .message(id: .id(messageId)",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, value)
+        self.assertNotIn("ChatList_Search_NoResults", value)
+        self.assertIn(
+            '@available(*, deprecated, message: "Use grvmDeletedMessagesController(context:peerId:threadId:)")',
+            value,
+        )
         message_item = window(value, "case let .message(_, _, message):", 2500)
         self.assertNotIn("action: {}", message_item)
         self.assertIn("arguments.openMessage(message.key)", message_item)

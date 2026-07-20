@@ -257,6 +257,7 @@ public enum GRVMgramStringKey: String, CaseIterable {
     case historyTitle = "GRVMgram.History.Title"
     case historyInfo = "GRVMgram.History.Info"
     case historyEmpty = "GRVMgram.History.Empty"
+    case historyMessageEmpty = "GRVMgram.History.MessageEmpty"
     case historyRecent = "GRVMgram.History.Recent"
     case historyCurrent = "GRVMgram.History.Current"
     case historyRevision = "GRVMgram.History.Revision"

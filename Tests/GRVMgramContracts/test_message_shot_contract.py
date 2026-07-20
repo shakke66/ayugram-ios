@@ -760,9 +760,10 @@ class MessageShotControllerContractTests(unittest.TestCase):
                 "Queue.mainQueue().async",
                 "if success",
                 "self.completion()",
-                "self.presentError(",
+                "self.presentError(self.grvmStrings[.messageShotSaveFailed])",
             ],
         )
+        self.assertNotIn("localizedDescription", perform)
         assert_tokens(
             self,
             save,

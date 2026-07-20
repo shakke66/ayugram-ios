@@ -73,11 +73,12 @@ private enum GRVMHistoryEntry: ItemListNodeEntry {
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! GRVMHistoryArguments
+        let strings = GRVMgramStrings(presentationData.strings)
         switch self {
         case .empty:
             return ItemListTextItem(
                 presentationData: presentationData,
-                text: .plain(presentationData.strings.ChatList_Search_NoResults),
+                text: .plain(strings[.historyEmpty]),
                 sectionId: self.section
             )
         case let .version(_, _, version):
@@ -149,7 +150,7 @@ private func grvmHistoryAttributedText(
 
     if version.content.text.isEmpty {
         result.append(NSAttributedString(
-            string: strings[.historyEmpty],
+            string: strings[.historyMessageEmpty],
             font: Font.regular(16.0),
             textColor: presentationData.theme.list.itemPrimaryTextColor
         ))

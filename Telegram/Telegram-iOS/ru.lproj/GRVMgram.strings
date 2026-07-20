@@ -260,6 +260,7 @@
 "GRVMgram.History.Title" = "История GRVMgram";
 "GRVMgram.History.Info" = "История GRVMgram доступна в контекстном меню конкретного изменённого сообщения.";
 "GRVMgram.History.Empty" = "История правок пока пуста.";
+"GRVMgram.History.MessageEmpty" = "[пусто]";
 "GRVMgram.History.Recent" = "Недавние изменения сообщений";
 "GRVMgram.History.Current" = "Текущая версия";
 "GRVMgram.History.Revision" = "Версия %d";

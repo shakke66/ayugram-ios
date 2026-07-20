@@ -438,7 +438,7 @@ public final class GRVMMessageShotController: ViewController {
         PHPhotoLibrary.shared().performChanges({
             let creationRequest = PHAssetCreationRequest.forAsset()
             creationRequest.addResource(with: .photo, data: pngData, options: nil)
-        }, completionHandler: { [weak self] success, error in
+        }, completionHandler: { [weak self] success, _ in
             Queue.mainQueue().async {
                 guard let self else {
                     return
@@ -447,7 +447,7 @@ public final class GRVMMessageShotController: ViewController {
                     self.completion()
                     self.dismiss()
                 } else {
-                    self.presentError(error?.localizedDescription ?? self.grvmStrings[.messageShotSaveFailed])
+                    self.presentError(self.grvmStrings[.messageShotSaveFailed])
                 }
             }
         })
