@@ -950,6 +950,26 @@ class PeerMessageReadEngineContractTests(unittest.TestCase):
         )
         self.assertIn("impl.applyMaxReadIndex(messageIndex: messageIndex, mode: mode)", public)
 
+    def test_reply_local_read_confirms_migrated_associated_peer(self) -> None:
+        reply_source = source(self.reply_path)
+        reply = swift_block(
+            reply_source,
+            "func applyMaxReadIndex(messageIndex: MessageIndex, mode: GRVMReadMode = .automatic)",
+        )
+        local = swift_control_statement(reply, "if case .localOnly", keywords=("if",))
+        self.assertTrue(local, "Reply localOnly path must be explicit")
+        self.assertIn("transaction.getPeerCachedData(peerId: messageIndex.id.peerId)", reply)
+        self.assertIn("CachedChannelData", reply)
+        self.assertIn("associatedHistoryMessageId", reply)
+        self.assertIn(
+            "transaction.confirmSynchronizedIncomingReadState(associatedHistoryMessageId.peerId)",
+            reply,
+        )
+        self.assertGreaterEqual(
+            reply.count("transaction.confirmSynchronizedIncomingReadState("),
+            2,
+        )
+
     def test_account_context_adds_exact_mode_route_without_removing_stock_route(self) -> None:
         protocol = source(self.account_protocol_path)
         self.assertIn("func applyMaxReadIndex(for location:", protocol)
