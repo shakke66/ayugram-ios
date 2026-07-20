@@ -46,16 +46,46 @@ func _internal_grvmApplyMaxReadIndex(account: Account, index: MessageIndex, mode
         }
 
         return deferred {
-            let _ = GRVMReadReceiptBypass.shared.register(
-                accountPeerId: account.peerId,
-                peerId: index.id.peerId,
-                maxIncomingReadId: index.id.id
-            )
-            return _internal_applyMaxReadIndexInteractively(
-                postbox: account.postbox,
-                stateManager: account.stateManager,
-                index: index
-            )
+            return account.postbox.transaction { transaction -> Void in
+                let associatedHistoryMessageId = (transaction.getPeerCachedData(peerId: index.id.peerId) as? CachedChannelData)?.associatedHistoryMessageId
+                _internal_applyMaxReadIndexInteractively(
+                    transaction: transaction,
+                    stateManager: account.stateManager,
+                    index: index
+                )
+
+                var forcePeerIds = [index.id.peerId]
+                if let associatedHistoryMessageId = associatedHistoryMessageId,
+                   associatedHistoryMessageId.peerId != index.id.peerId {
+                    forcePeerIds.append(associatedHistoryMessageId.peerId)
+                }
+
+                for peerId in forcePeerIds {
+                    var maxIncomingReadId: MessageId.Id?
+                    if let combinedPeerReadState = transaction.getCombinedPeerReadState(peerId),
+                       let cloudState = combinedPeerReadState.states.first(where: { namespace, _ in
+                           return namespace == Namespaces.Message.Cloud
+                       })?.1 {
+                        switch cloudState {
+                        case let .idBased(incomingReadId, _, _, _, _):
+                            maxIncomingReadId = incomingReadId
+                        case let .indexBased(incomingReadIndex, _, _, _):
+                            if incomingReadIndex.id.namespace == Namespaces.Message.Cloud {
+                                maxIncomingReadId = incomingReadIndex.id.id
+                            }
+                        }
+                    }
+
+                    if let maxIncomingReadId = maxIncomingReadId {
+                        let _ = GRVMReadReceiptBypass.shared.register(
+                            accountPeerId: account.peerId,
+                            peerId: peerId,
+                            maxIncomingReadId: maxIncomingReadId
+                        )
+                        transaction.forceSynchronizeIncomingReadState(peerId)
+                    }
+                }
+            }
         }
     }
 }
