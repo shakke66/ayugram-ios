@@ -140,7 +140,7 @@ class GhostRuntimeContractTests(unittest.TestCase):
             source(
                 "submodules/TelegramCore/Sources/TelegramEngine/Messages/ReplyThreadHistory.swift"
             ),
-            "func applyMaxReadIndex(messageIndex: MessageIndex)",
+            "func applyMaxReadIndex(messageIndex: MessageIndex, mode: GRVMReadMode = .automatic)",
         )
         self.assertIn("setMessageHistoryThreadInfo", reply)
         self.assertIn("_internal_applyMaxReadIndexInteractively", reply)
@@ -149,7 +149,7 @@ class GhostRuntimeContractTests(unittest.TestCase):
             "shouldSuppressReadReceipts?(self.account.peerId)", reply
         )
         gate = re.search(
-            r"if shouldSuppressReadReceipts\s*\{\s*return\s*\}", reply
+            r"guard shouldSendReadReceipt\s+else\s*\{\s*return\s*\}", reply
         )
         self.assertIsNotNone(gate)
         assert gate is not None

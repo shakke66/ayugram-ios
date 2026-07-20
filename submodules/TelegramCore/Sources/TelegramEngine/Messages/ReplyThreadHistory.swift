@@ -314,7 +314,7 @@ private class ReplyThreadHistoryContextImpl {
         }
     }
     
-    func applyMaxReadIndex(messageIndex: MessageIndex) {
+    func applyMaxReadIndex(messageIndex: MessageIndex, mode: GRVMReadMode = .automatic) {
         let peerId = self.peerId
         let threadId = self.threadId
         
@@ -369,6 +369,9 @@ private class ReplyThreadHistoryContextImpl {
             
             if markMainAsRead {
                 _internal_applyMaxReadIndexInteractively(transaction: transaction, stateManager: account.stateManager, index: messageIndex)
+                if case .localOnly = mode {
+                    transaction.confirmSynchronizedIncomingReadState(messageIndex.id.peerId)
+                }
             }
             
             var subPeerId: Api.InputPeer?
@@ -459,7 +462,17 @@ private class ReplyThreadHistoryContextImpl {
                 }
             }
 
-            if shouldSuppressReadReceipts {
+            let shouldSendReadReceipt: Bool
+            switch mode {
+            case .automatic:
+                shouldSendReadReceipt = shouldSuppressReadReceipts == false
+            case .localOnly:
+                shouldSendReadReceipt = false
+            case .forceServer:
+                shouldSendReadReceipt = true
+            }
+
+            guard shouldSendReadReceipt else {
                 return
             }
 
@@ -582,9 +595,9 @@ public class ReplyThreadHistoryContext {
         })
     }
     
-    public func applyMaxReadIndex(messageIndex: MessageIndex) {
+    public func applyMaxReadIndex(messageIndex: MessageIndex, mode: GRVMReadMode = .automatic) {
         self.impl.with { impl in
-            impl.applyMaxReadIndex(messageIndex: messageIndex)
+            impl.applyMaxReadIndex(messageIndex: messageIndex, mode: mode)
         }
     }
 }

@@ -617,12 +617,16 @@ public final class AccountContextImpl: AccountContext {
     }
     
     public func applyMaxReadIndex(for location: ChatLocation, contextHolder: Atomic<ChatLocationContextHolder?>, messageIndex: MessageIndex) {
+        self.grvmApplyMaxReadIndex(for: location, contextHolder: contextHolder, messageIndex: messageIndex, mode: .automatic)
+    }
+
+    public func grvmApplyMaxReadIndex(for location: ChatLocation, contextHolder: Atomic<ChatLocationContextHolder?>, messageIndex: MessageIndex, mode: GRVMReadMode) {
         switch location {
         case .peer:
-            let _ = self.engine.messages.applyMaxReadIndexInteractively(index: messageIndex).start()
+            let _ = self.engine.messages.grvmApplyMaxReadIndex(messageIndex, mode: mode).start()
         case let .replyThread(data):
             let context = chatLocationContext(holder: contextHolder, account: self.account, data: data)
-            context.applyMaxReadIndex(messageIndex: messageIndex)
+            context.applyMaxReadIndex(messageIndex: messageIndex, mode: mode)
         case .customChatContents:
             break
         }

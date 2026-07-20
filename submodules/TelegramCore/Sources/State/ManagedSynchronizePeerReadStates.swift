@@ -89,8 +89,31 @@ private final class SynchronizePeerReadStatesContextImpl {
                     case .Validate:
                         signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: self.stateManager, peerId: peerId, push: false, validate: true)
                         |> ignoreValues
-                    case let .Push(_, thenSync):
-                        if AyuGramHooks.shouldSuppressReadReceipts?(self.stateManager.accountPeerId) == true {
+                    case let .Push(state: pushState, thenSync: thenSync):
+                        var maxIncomingReadId: MessageId.Id?
+                        if let pushState = pushState,
+                           let cloudState = pushState.states.first(where: { namespace, _ in
+                               return namespace == Namespaces.Message.Cloud
+                           })?.1 {
+                            switch cloudState {
+                            case let .idBased(incomingReadId, _, _, _, _):
+                                maxIncomingReadId = incomingReadId
+                            case let .indexBased(incomingReadIndex, _, _, _):
+                                if incomingReadIndex.id.namespace == Namespaces.Message.Cloud {
+                                    maxIncomingReadId = incomingReadIndex.id.id
+                                }
+                            }
+                        }
+
+                        let forceServerRead = GRVMReadReceiptBypass.shared.consumeIfMatching(
+                            accountPeerId: self.stateManager.accountPeerId,
+                            peerId: peerId,
+                            maxIncomingReadId: maxIncomingReadId
+                        )
+                        if forceServerRead {
+                            signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: stateManager, peerId: peerId, push: true, validate: thenSync)
+                            |> ignoreValues
+                        } else if AyuGramHooks.shouldSuppressReadReceipts?(self.stateManager.accountPeerId) == true {
                             // Ghost mode: don't push the read state to the server, but confirm the
                             // operation locally. A bare `.complete()` finishes synchronously and,
                             // since the operation stays pending in the postbox view, the completed
