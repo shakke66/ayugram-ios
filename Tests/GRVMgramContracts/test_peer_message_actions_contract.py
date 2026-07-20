@@ -1896,9 +1896,11 @@ class PeerMessageUIContractTests(unittest.TestCase):
         helper_name = re.search(r"func\s+([A-Za-z0-9_]+)\s*\(", target)
         self.assertIsNotNone(helper_name)
         assert helper_name is not None
-        header = enclosing_swift_function(chat, 'text: "Read All Locally"')
-        local_item = swift_enclosing_call(header, 'text: "Read All Locally"')
-        server_item = swift_enclosing_call(header, 'text: "Read All on Server"')
+        local_label = "text: strings[.menuReadAllLocal]"
+        server_label = "text: strings[.menuReadAllServer]"
+        header = enclosing_swift_function(chat, local_label)
+        local_item = swift_enclosing_call(header, local_label)
+        server_item = swift_enclosing_call(header, server_label)
         local_action = swift_named_closure(local_item, "action")
         server_action = swift_named_closure(server_item, "action")
         for action, mode, wrong_mode in (
@@ -1910,18 +1912,19 @@ class PeerMessageUIContractTests(unittest.TestCase):
             self.assertNotIn(wrong_mode, action)
 
     def test_header_builder_has_read_pair_ghost_fallback_and_mode_exclusions(self) -> None:
-        header = enclosing_swift_function(
-            source(self.chat_path), 'text: "Read All Locally"'
-        )
+        local_label = "text: strings[.menuReadAllLocal]"
+        server_label = "text: strings[.menuReadAllServer]"
+        header = enclosing_swift_function(source(self.chat_path), local_label)
         for token in (
             "chatLocationUnreadCount(",
             "|> take(1)",
             "unreadCount > 0",
             "shouldSuppressReadReceipts?(",
             "context.account.peerId",
-            'text: "Read All Locally"',
+            "let strings = GRVMgramStrings(self.presentationData.strings)",
+            local_label,
             ".localOnly",
-            'text: "Read All on Server"',
+            server_label,
             ".forceServer",
             'Chat/Context Menu/Read',
             ".selectionState",
@@ -1961,7 +1964,7 @@ class PeerMessageUIContractTests(unittest.TestCase):
         )
         visibility_body = normalized(inequality_scope).replace("(", "").replace(")", "")
         visibility_condition = visibility_body.split("{", 1)[0]
-        item_label = 'text: "Read All Locally"'
+        item_label = local_label
         item_offset = header.find(item_label)
         guard_before_item = normalized(header[:item_offset]).replace("(", "").replace(")", "")
         self.assertTrue(
@@ -1992,9 +1995,8 @@ class PeerMessageUIContractTests(unittest.TestCase):
         )
 
     def test_delete_own_action_is_group_scoped_and_searches_only_after_confirmation(self) -> None:
-        header = enclosing_swift_function(
-            source(self.chat_path), 'text: "Delete Own Messages"'
-        )
+        delete_label = "text: strings[.menuDeleteOwn]"
+        header = enclosing_swift_function(source(self.chat_path), delete_label)
         for token in (
             "TelegramGroup",
             "TelegramChannel",
@@ -2006,11 +2008,16 @@ class PeerMessageUIContractTests(unittest.TestCase):
             "textAlertController(",
             "TextAlertAction(type: .destructiveAction",
             "engine.messages.grvmDeleteOwnMessages(",
+            "let strings = GRVMgramStrings(self.presentationData.strings)",
+            delete_label,
+            "title: strings[.deleteOwnTitle]",
+            "text: strings[.deleteOwnText]",
+            "title: strings[.deleteOwnAction]",
             'Chat/Context Menu/Delete',
             "textColor: .destructive",
         ):
             self.assertIn(token, header)
-        delete_item = swift_enclosing_call(header, 'text: "Delete Own Messages"')
+        delete_item = swift_enclosing_call(header, delete_label)
         delete_action = swift_named_closure(delete_item, "action")
         alert_offset = delete_action.find("textAlertController(")
         self.assertGreaterEqual(alert_offset, 0)
@@ -2078,7 +2085,9 @@ class PeerMessageUIContractTests(unittest.TestCase):
         avatar = swift_closure_matching(
             chat, r"avatarNode\.contextAction\s*=\s*\{"
         )
-        header = enclosing_swift_function(chat, 'text: "Read All Locally"')
+        header = enclosing_swift_function(
+            chat, "text: strings[.menuReadAllLocal]"
+        )
         header_name = re.search(r"func\s+([A-Za-z0-9_]+)\s*\(", header)
         self.assertIsNotNone(header_name)
         assert header_name is not None
@@ -2131,8 +2140,9 @@ class PeerMessageUIContractTests(unittest.TestCase):
 
     def test_jump_calls_existing_lower_bound_helper_without_reimplementing_history(self) -> None:
         chat = source(self.chat_path)
-        jump_item = swift_enclosing_statement(chat, 'text: "Jump to Beginning"')
-        jump_call = swift_enclosing_call(jump_item, 'text: "Jump to Beginning"')
+        jump_label = "text: strings[.menuJumpBeginning]"
+        jump_item = swift_enclosing_statement(chat, jump_label)
+        jump_call = swift_enclosing_call(jump_item, jump_label)
         jump_action = swift_named_closure(jump_call, "action")
         self.assertIn("scrollToStartOfHistory()", jump_action)
         self.assertIn('Chat/Context Menu/GoToMessage', jump_item)

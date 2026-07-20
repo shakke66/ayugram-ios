@@ -72,6 +72,15 @@ class SendAsStickerContractTests(unittest.TestCase):
         self.assertIn("presentSendAsStickerError", self.picker)
         self.assertNotIn("controllerNode.send(asFile: false", self._sticker_methods())
 
+    def test_conversion_failure_uses_typed_selected_language_copy(self) -> None:
+        error_method = self._send_as_sticker_error_method()
+        self.assertIn(
+            "let grvmStrings = GRVMgramStrings(self.presentationData.strings)",
+            error_method,
+        )
+        self.assertIn("text: grvmStrings[.sendAsStickerError]", error_method)
+        self.assertNotIn("Login_UnknownError", error_method)
+
     def test_chat_wires_once_to_existing_sticker_pipeline(self) -> None:
         self.assertEqual(self.attach.count("controller.sendAsSticker ="), 1)
         self.assertEqual(
@@ -97,6 +106,13 @@ class SendAsStickerContractTests(unittest.TestCase):
     def _static_eligibility_method(self) -> str:
         start = self.picker.find("private func isStaticStickerItem")
         end = self.picker.find("private func sendSelectedImageAsSticker", start)
+        self.assertGreaterEqual(start, 0)
+        self.assertGreater(end, start)
+        return self.picker[start:end]
+
+    def _send_as_sticker_error_method(self) -> str:
+        start = self.picker.find("private func presentSendAsStickerError")
+        end = self.picker.find("fileprivate func defaultTransitionView", start)
         self.assertGreaterEqual(start, 0)
         self.assertGreater(end, start)
         return self.picker[start:end]

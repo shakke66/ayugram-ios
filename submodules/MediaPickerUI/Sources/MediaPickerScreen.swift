@@ -3358,7 +3358,8 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
     }
 
     private func presentSendAsStickerError() {
-        self.present(textAlertController(context: self.context, updatedPresentationData: self.updatedPresentationData, title: nil, text: self.presentationData.strings.Login_UnknownError, actions: [TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+        let grvmStrings = GRVMgramStrings(self.presentationData.strings)
+        self.present(textAlertController(context: self.context, updatedPresentationData: self.updatedPresentationData, title: nil, text: grvmStrings[.sendAsStickerError], actions: [TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_OK, action: {})]), in: .window(.root))
     }
     
     fileprivate func defaultTransitionView() -> UIView? {
