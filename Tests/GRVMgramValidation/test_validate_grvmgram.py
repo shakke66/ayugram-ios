@@ -6,6 +6,7 @@ import io
 import json
 import plistlib
 import stat
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -253,6 +254,7 @@ def create_ipa(
     omit_russian_ipa_keys: set[str] | None = None,
     english_overrides: dict[str, str] | None = None,
     russian_overrides: dict[str, str] | None = None,
+    binary_localizations: bool = False,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -319,7 +321,12 @@ def create_ipa(
                 english.update(english_overrides or {})
                 russian.update(russian_overrides or {})
                 english_path = f"{app_root}/en.lproj/GRVMgram.strings"
-                english_bytes = strings_file(english).encode("utf-8")
+                if binary_localizations:
+                    english_bytes = plistlib.dumps(english, fmt=plistlib.FMT_BINARY)
+                    russian_bytes = plistlib.dumps(russian, fmt=plistlib.FMT_BINARY)
+                else:
+                    english_bytes = strings_file(english).encode("utf-8")
+                    russian_bytes = strings_file(russian).encode("utf-8")
                 if directory_localization or dos_directory_localization:
                     english_entry = zipfile.ZipInfo(english_path)
                     if dos_directory_localization:
@@ -333,7 +340,7 @@ def create_ipa(
                     archive.writestr(english_path, english_bytes)
                 archive.writestr(
                     f"{app_root}/ru.lproj/GRVMgram.strings",
-                    strings_file(russian).encode("utf-8"),
+                    russian_bytes,
                 )
         if unsafe_member:
             archive.writestr("Payload/Telegram.app/../escape", b"unsafe")
@@ -425,6 +432,21 @@ class StringsTests(unittest.TestCase):
             path.write_bytes(b'"A" = "\xff";\n')
             with self.assertRaisesRegex(VALIDATOR.ValidationError, "strict UTF-8"):
                 VALIDATOR.parse_strings(path)
+
+    def test_parse_ipa_strings_wraps_binary_plist_recursion_errors(self) -> None:
+        value: object = "leaf"
+        for _ in range(200):
+            value = [value]
+        data = plistlib.dumps({"A": value}, fmt=plistlib.FMT_BINARY)
+        recursion_limit = sys.getrecursionlimit()
+        try:
+            sys.setrecursionlimit(100)
+            with self.assertRaisesRegex(
+                VALIDATOR.ValidationError, "invalid binary .strings plist"
+            ):
+                VALIDATOR.parse_ipa_strings(data, "fixture.strings")
+        finally:
+            sys.setrecursionlimit(recursion_limit)
 
     def test_localizations_require_identical_keys(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2010,6 +2032,13 @@ class IpaTests(unittest.TestCase):
             self.assertEqual(metadata["bundle_id"], "ph.telegra.Telegraph")
             self.assertEqual(metadata["version"], "12.6.2")
             self.assertEqual(metadata["build"], "3000")
+
+    def test_ipa_accepts_xcode_binary_plist_localizations(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "GRVMgram.ipa"
+            create_ipa(path, binary_localizations=True)
+            metadata = VALIDATOR.validate_ipa(path)
+            self.assertEqual(metadata["display_name"], "GRVMgram")
 
     def test_ipa_requires_all_release_metadata_keys(self) -> None:
         keys = (

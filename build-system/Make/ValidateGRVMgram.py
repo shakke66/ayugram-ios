@@ -295,6 +295,37 @@ def parse_strings(path: Path) -> dict[str, str]:
     return parse_strings_text(read_utf8(path), str(path))
 
 
+def parse_ipa_strings(data: bytes, source: str) -> dict[str, str]:
+    if data.startswith(b"bplist00"):
+        try:
+            value = plistlib.loads(data)
+        except (
+            KeyError,
+            plistlib.InvalidFileException,
+            RecursionError,
+            TypeError,
+            ValueError,
+        ) as error:
+            raise ValidationError(f"{source}: invalid binary .strings plist: {error}") from error
+        if not isinstance(value, dict):
+            raise ValidationError(f"{source}: binary .strings plist is not a dictionary")
+        result: dict[str, str] = {}
+        for key, localized in value.items():
+            if not isinstance(key, str) or not isinstance(localized, str):
+                raise ValidationError(
+                    f"{source}: binary .strings plist requires string keys and values"
+                )
+            if "\ufffd" in key or "\ufffd" in localized:
+                raise ValidationError(f"{source}: contains U+FFFD replacement character")
+            result[key] = localized
+        return result
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValidationError(f"{source}: not strict UTF-8: {error}") from error
+    return parse_strings_text(text, source)
+
+
 def format_tokens(value: str) -> list[str]:
     scrubbed = value.replace("%%", "")
     result: list[str] = []
@@ -1758,16 +1789,12 @@ def validate_ipa(path: Path) -> dict[str, str]:
                 raise ValidationError(f"missing IPA resource {resource_path}")
             _require_regular_zip_member(archive, resource_path)
             try:
-                resource_text = archive.read(resource_path).decode("utf-8")
+                resource_data = archive.read(resource_path)
             except (zipfile.BadZipFile, RuntimeError, NotImplementedError, OSError, zlib.error) as error:
                 raise ValidationError(
                     f"IPA archive read failed for {resource_path}: {error}"
                 ) from error
-            except UnicodeDecodeError as error:
-                raise ValidationError(
-                    f"{resource_path}: not strict UTF-8: {error}"
-                ) from error
-            localized_tables[language] = parse_strings_text(resource_text, resource_path)
+            localized_tables[language] = parse_ipa_strings(resource_data, resource_path)
         validate_table_pair(
             localized_tables["en"], localized_tables["ru"], label="IPA localization"
         )
