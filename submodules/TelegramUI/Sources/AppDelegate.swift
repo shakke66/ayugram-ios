@@ -1226,88 +1226,11 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
                 }
             }, appDelegate: self, testingEnvironment: isUITest)
 
-            self.grvmScreenCapturePrivacyController?.setEnabledSignal(
-                sharedContext.activeAccountContexts
-                |> mapToSignal { primary, _, _ -> Signal<Bool, NoError> in
-                    guard let primary else {
-                        return .single(false)
-                    }
-                    return grvmSettings(accountId: primary.account.peerId, accountManager: accountManager)
-                    |> map { $0.streamerModeEnabled }
-                }
-                |> distinctUntilChanged
-                |> deliverOnMainQueue
+            self.bindGRVMSharedContext(
+                sharedContext: sharedContext,
+                accountManager: accountManager,
+                application: application
             )
-            self.grvmScreenCapturePrivacyController?.setPresentationDataSignal(
-                sharedContext.presentationData
-            )
-            self.bindGRVMLocalCrashLifecycle(sharedContext: sharedContext, accountManager: accountManager)
-
-            let grvmActiveAccounts = sharedContext.activeAccountContexts
-            |> mapToSignal { primary, accounts, _ -> Signal<(AccountContext?, [(AccountRecordId, AccountContext, Int32)], [(PeerId, AyuGramSettings)]), NoError> in
-                let accountPeerIds = accounts.map { $0.1.account.peerId }
-                let initialSettings = combineLatest(accounts.map { _, context, _ -> Signal<(PeerId, AyuGramSettings), NoError> in
-                    return grvmSettings(accountId: context.account.peerId, accountManager: accountManager)
-                    |> take(1)
-                    |> map { settings in
-                        return (context.account.peerId, settings)
-                    }
-                })
-                return migrateGRVMSettings(accountIds: accountPeerIds, accountManager: accountManager)
-                |> then(initialSettings
-                |> map { initialSettings in
-                    return (primary, accounts, initialSettings)
-                })
-            }
-            |> deliverOnMainQueue
-            self.grvmActiveAccountsDisposable.set(grvmActiveAccounts.start(next: { [weak self] primary, accounts, initialSettings in
-                guard let self, let registry = self.grvmAccountFeatureRegistry else {
-                    return
-                }
-                let activeRecordIds = accounts.map { $0.0.int64 }
-                do {
-                    try registry.prepare(activeAccountRecordIds: activeRecordIds)
-                } catch {
-                    Logger.shared.log("App \(self.episodeId)", "GRVMgram archive startup failed: \(error)")
-                    return
-                }
-
-                let activePeerIds = Set(accounts.map { $0.1.account.peerId })
-                for peerId in registry.ownPeerIds().subtracting(activePeerIds) {
-                    registry.unregister(accountPeerId: peerId)
-                }
-                registry.setPrimaryAccount(primary?.account.peerId)
-                let initialSettingsByAccount = Dictionary(uniqueKeysWithValues: initialSettings)
-                for (recordId, context, _) in accounts {
-                    guard let initialSettings = initialSettingsByAccount[context.account.peerId] else {
-                        continue
-                    }
-                    registry.register(
-                        accountPeerId: context.account.peerId,
-                        accountRecordId: recordId,
-                        postbox: context.account.postbox,
-                        mediaBox: context.account.postbox.mediaBox,
-                        initialSettings: initialSettings
-                    )
-                }
-                self.ayuGramFeatureManager?.updateActiveAccounts(accounts.map { $0.1.account })
-                if #available(iOS 10.3, *), let primary {
-                    self.grvmAppIconDisposable.set((grvmSettings(accountId: primary.account.peerId, accountManager: accountManager)
-                    |> take(1)
-                    |> deliverOnMainQueue).start(next: { settings in
-                        let desiredIconName: String? = settings.selectedAppIcon == "default" ? nil : settings.selectedAppIcon
-                        if application.alternateIconName != desiredIconName {
-                            application.setAlternateIconName(desiredIconName, completionHandler: { error in
-                                if let error {
-                                    Logger.shared.log("App \(self.episodeId)", "failed to apply GRVMgram app icon \(String(describing: desiredIconName)) with error \(error.localizedDescription)")
-                                }
-                            })
-                        }
-                    }))
-                } else {
-                    self.grvmAppIconDisposable.set(nil)
-                }
-            }))
             
             presentationDataPromise.set(sharedContext.presentationData)
             
@@ -2097,6 +2020,94 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
                 hideBadge = false
             }
             UIApplication.shared.applicationIconBadgeNumber = hideBadge ? 0 : Int(count)
+        }))
+    }
+
+    private func bindGRVMSharedContext(
+        sharedContext: SharedAccountContextImpl,
+        accountManager: AccountManager<TelegramAccountManagerTypes>,
+        application: UIApplication
+    ) {
+        let screenCaptureEnabledSignal: Signal<Bool, NoError> = sharedContext.activeAccountContexts
+        |> mapToSignal { primary, _, _ -> Signal<Bool, NoError> in
+            guard let primary else {
+                return .single(false)
+            }
+            return grvmSettings(accountId: primary.account.peerId, accountManager: accountManager)
+            |> map { $0.streamerModeEnabled }
+        }
+        |> distinctUntilChanged
+        |> deliverOnMainQueue
+        self.grvmScreenCapturePrivacyController?.setEnabledSignal(screenCaptureEnabledSignal)
+        self.grvmScreenCapturePrivacyController?.setPresentationDataSignal(
+            sharedContext.presentationData
+        )
+        self.bindGRVMLocalCrashLifecycle(sharedContext: sharedContext, accountManager: accountManager)
+
+        let grvmActiveAccounts: Signal<(AccountContext?, [(AccountRecordId, AccountContext, Int32)], [(PeerId, AyuGramSettings)]), NoError> = sharedContext.activeAccountContexts
+        |> mapToSignal { primary, accounts, _ -> Signal<(AccountContext?, [(AccountRecordId, AccountContext, Int32)], [(PeerId, AyuGramSettings)]), NoError> in
+            let accountPeerIds = accounts.map { $0.1.account.peerId }
+            let initialSettings = combineLatest(accounts.map { _, context, _ -> Signal<(PeerId, AyuGramSettings), NoError> in
+                return grvmSettings(accountId: context.account.peerId, accountManager: accountManager)
+                |> take(1)
+                |> map { settings in
+                    return (context.account.peerId, settings)
+                }
+            })
+            return migrateGRVMSettings(accountIds: accountPeerIds, accountManager: accountManager)
+            |> then(initialSettings
+            |> map { initialSettings in
+                return (primary, accounts, initialSettings)
+            })
+        }
+        |> deliverOnMainQueue
+        self.grvmActiveAccountsDisposable.set(grvmActiveAccounts.start(next: { [weak self] primary, accounts, initialSettings in
+            guard let self, let registry = self.grvmAccountFeatureRegistry else {
+                return
+            }
+            let activeRecordIds = accounts.map { $0.0.int64 }
+            do {
+                try registry.prepare(activeAccountRecordIds: activeRecordIds)
+            } catch {
+                Logger.shared.log("App \(self.episodeId)", "GRVMgram archive startup failed: \(error)")
+                return
+            }
+
+            let activePeerIds = Set(accounts.map { $0.1.account.peerId })
+            for peerId in registry.ownPeerIds().subtracting(activePeerIds) {
+                registry.unregister(accountPeerId: peerId)
+            }
+            registry.setPrimaryAccount(primary?.account.peerId)
+            let initialSettingsByAccount = Dictionary(uniqueKeysWithValues: initialSettings)
+            for (recordId, context, _) in accounts {
+                guard let initialSettings = initialSettingsByAccount[context.account.peerId] else {
+                    continue
+                }
+                registry.register(
+                    accountPeerId: context.account.peerId,
+                    accountRecordId: recordId,
+                    postbox: context.account.postbox,
+                    mediaBox: context.account.postbox.mediaBox,
+                    initialSettings: initialSettings
+                )
+            }
+            self.ayuGramFeatureManager?.updateActiveAccounts(accounts.map { $0.1.account })
+            if #available(iOS 10.3, *), let primary {
+                self.grvmAppIconDisposable.set((grvmSettings(accountId: primary.account.peerId, accountManager: accountManager)
+                |> take(1)
+                |> deliverOnMainQueue).start(next: { settings in
+                    let desiredIconName: String? = settings.selectedAppIcon == "default" ? nil : settings.selectedAppIcon
+                    if application.alternateIconName != desiredIconName {
+                        application.setAlternateIconName(desiredIconName, completionHandler: { error in
+                            if let error {
+                                Logger.shared.log("App \(self.episodeId)", "failed to apply GRVMgram app icon \(String(describing: desiredIconName)) with error \(error.localizedDescription)")
+                            }
+                        })
+                    }
+                }))
+            } else {
+                self.grvmAppIconDisposable.set(nil)
+            }
         }))
     }
 

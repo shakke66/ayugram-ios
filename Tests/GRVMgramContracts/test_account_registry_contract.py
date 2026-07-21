@@ -63,9 +63,10 @@ class AccountRegistryContractTests(unittest.TestCase):
         self.assertIn("coordinator.updateSettings(settings)", register_on_queue[settings:])
 
         app_delegate = APP_DELEGATE.read_text(encoding="utf-8")
+        active_accounts_start = app_delegate.index("let grvmActiveAccounts:")
         active_accounts = app_delegate[
-            app_delegate.index("let grvmActiveAccounts =") :
-            app_delegate.index("if #available(iOS 10.3", app_delegate.index("let grvmActiveAccounts ="))
+            active_accounts_start :
+            app_delegate.index("if #available(iOS 10.3", active_accounts_start)
         ]
         self.assertIn("combineLatest(accounts.map", active_accounts)
         self.assertIn("grvmSettings(accountId: context.account.peerId", active_accounts)

@@ -40,6 +40,38 @@ class TelegramUICompileContractTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, pipeline)
 
+    def test_shared_context_grvm_bindings_are_isolated_from_producer(self) -> None:
+        pipeline = section(
+            self.app_delegate,
+            "let sharedContextSignal: Signal<",
+            "presentationDataPromise.set(sharedContext.presentationData)",
+        )
+        helper_start = self.app_delegate.find(
+            "private func bindGRVMSharedContext("
+        )
+        helper_end = self.app_delegate.find(
+            "private func bindGRVMLocalCrashLifecycle(", helper_start
+        )
+        self.assertGreaterEqual(helper_start, 0)
+        self.assertGreater(helper_end, helper_start)
+        helper = self.app_delegate[helper_start:helper_end]
+
+        self.assertIn("self.bindGRVMSharedContext(", pipeline)
+        self.assertNotIn("let grvmActiveAccounts =", pipeline)
+        for fragment in (
+            "sharedContext: SharedAccountContextImpl,",
+            "accountManager: AccountManager<TelegramAccountManagerTypes>,",
+            "application: UIApplication",
+            "let screenCaptureEnabledSignal: Signal<Bool, NoError> =",
+            "setEnabledSignal(screenCaptureEnabledSignal)",
+            "setPresentationDataSignal(",
+            "self.bindGRVMLocalCrashLifecycle(",
+            "let grvmActiveAccounts: Signal<(AccountContext?, [(AccountRecordId, AccountContext, Int32)], [(PeerId, AyuGramSettings)]), NoError> =",
+            "self.grvmAppIconDisposable.set(",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, helper)
+
     def test_chat_appearance_pipeline_has_explicit_signal_boundaries(self) -> None:
         method = section(
             self.history,
