@@ -10,6 +10,22 @@ public struct GRVMAccountSettings: Codable, Equatable {
     public init(values: [Int64: AyuGramSettings]) {
         self.values = values
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: StringCodingKey.self)
+        if let data = try? container.decode(Data.self, forKey: "values"),
+           let values = try? JSONDecoder().decode([Int64: AyuGramSettings].self, from: data) {
+            self.values = values
+        } else {
+            self.values = (try? container.decode([Int64: AyuGramSettings].self, forKey: "values")) ?? [:]
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: StringCodingKey.self)
+        let data = try JSONEncoder().encode(self.values)
+        try container.encode(data, forKey: "values")
+    }
 }
 
 public func grvmSettings(

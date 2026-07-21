@@ -41,6 +41,21 @@ class AccountSettingsContractTests(unittest.TestCase):
         self.assertIn("let existingEnvelope = entry?.get(GRVMAccountSettings.self)", source)
         self.assertIn("existingEnvelope == nil", source)
 
+    def test_account_envelope_uses_postbox_safe_data_payload(self) -> None:
+        source = ACCOUNT_SETTINGS.read_text(encoding="utf-8")
+        for fragment in (
+            "public init(from decoder: Decoder) throws",
+            'container.decode(Data.self, forKey: "values")',
+            "JSONDecoder().decode([Int64: AyuGramSettings].self, from: data)",
+            'container.decode([Int64: AyuGramSettings].self, forKey: "values")',
+            "public func encode(to encoder: Encoder) throws",
+            "let data = try JSONEncoder().encode(self.values)",
+            'try container.encode(data, forKey: "values")',
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+        self.assertNotIn('container.encode(self.values, forKey: "values")', source)
+
     def test_every_settings_controller_reads_and_writes_its_account(self) -> None:
         directory = ROOT / "submodules/AyuGramSettingsUI/Sources"
         for name in CONTROLLERS:
