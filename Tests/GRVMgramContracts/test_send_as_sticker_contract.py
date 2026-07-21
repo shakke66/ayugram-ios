@@ -42,10 +42,15 @@ class SendAsStickerContractTests(unittest.TestCase):
             "TGCameraCapturedVideo",
             "adjustments.sendAsGif",
             "TGMediaAssetSubtypePhotoLive",
-            "TGMediaLivePhotoModeOff",
+            "TGMediaLivePhotoMode.off",
             "image.images == nil",
         ):
             self.assertIn(token, self.picker)
+
+    def test_live_photo_mode_uses_swift_imported_enum_case(self) -> None:
+        sticker_methods = self._sticker_methods()
+        self.assertEqual(sticker_methods.count("TGMediaLivePhotoMode.off.rawValue"), 2)
+        self.assertNotIn("TGMediaLivePhotoModeOff", sticker_methods)
         self.assertIn(
             "editingContext.isForceLivePhotoEnabled()",
             self._static_eligibility_method(),
@@ -97,7 +102,7 @@ class SendAsStickerContractTests(unittest.TestCase):
             self.assertNotIn("LocalFileMediaResource", source)
 
     def _sticker_methods(self) -> str:
-        start = self.picker.find("private func sendSelectedImageAsSticker")
+        start = self.picker.find("private func isStaticStickerItem")
         end = self.picker.find("fileprivate func defaultTransitionView", start)
         self.assertGreaterEqual(start, 0)
         self.assertGreater(end, start)
