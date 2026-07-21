@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+APP_DELEGATE = ROOT / "submodules/TelegramUI/Sources/AppDelegate.swift"
 HISTORY = ROOT / "submodules/TelegramUI/Sources/ChatHistoryListNode.swift"
 CONTEXT_MENUS = (
     ROOT / "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift"
@@ -19,8 +20,25 @@ def section(source: str, start: str, end: str) -> str:
 class TelegramUICompileContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        cls.app_delegate = APP_DELEGATE.read_text(encoding="utf-8")
         cls.history = HISTORY.read_text(encoding="utf-8")
         cls.context_menus = CONTEXT_MENUS.read_text(encoding="utf-8")
+
+    def test_shared_context_pipeline_has_explicit_signal_boundaries(self) -> None:
+        pipeline = section(
+            self.app_delegate,
+            "var systemUserInterfaceStyle: WindowUserInterfaceStyle",
+            "self.context.set(self.sharedContextPromise.get()",
+        )
+        for fragment in (
+            "let sharedContextInputSignal: Signal<(AccountManager<TelegramAccountManagerTypes>, InitialPresentationDataAndSettings), NoError> =",
+            "-> (AccountManager<TelegramAccountManagerTypes>, InitialPresentationDataAndSettings) in",
+            "let sharedContextSignal: Signal<(SharedApplicationContext, LoggingSettings), NoError> = sharedContextInputSignal",
+            "let configuredSharedContextSignal: Signal<SharedApplicationContext, NoError> = sharedContextSignal",
+            "self.sharedContextPromise.set(configuredSharedContextSignal)",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, pipeline)
 
     def test_chat_appearance_pipeline_has_explicit_signal_boundaries(self) -> None:
         method = section(

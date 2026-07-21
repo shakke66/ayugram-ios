@@ -1186,11 +1186,13 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
             }
         }
         
-        let sharedContextSignal = currentPresentationDataAndSettings(accountManager: accountManager, systemUserInterfaceStyle: systemUserInterfaceStyle)
-        |> map { initialPresentationDataAndSettings -> (AccountManager, InitialPresentationDataAndSettings) in
+        let sharedContextInputSignal: Signal<(AccountManager<TelegramAccountManagerTypes>, InitialPresentationDataAndSettings), NoError> = currentPresentationDataAndSettings(accountManager: accountManager, systemUserInterfaceStyle: systemUserInterfaceStyle)
+        |> map { initialPresentationDataAndSettings -> (AccountManager<TelegramAccountManagerTypes>, InitialPresentationDataAndSettings) in
             return (accountManager, initialPresentationDataAndSettings)
         }
         |> deliverOnMainQueue
+
+        let sharedContextSignal: Signal<(SharedApplicationContext, LoggingSettings), NoError> = sharedContextInputSignal
         |> mapToSignal { accountManager, initialPresentationDataAndSettings -> Signal<(SharedApplicationContext, LoggingSettings), NoError> in
             self.mainWindow?.hostView.containerView.backgroundColor =  initialPresentationDataAndSettings.presentationData.theme.chatList.backgroundColor
             
@@ -1394,14 +1396,15 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
                 return (sharedApplicationContext, transaction.getSharedData(SharedDataKeys.loggingSettings)?.get(LoggingSettings.self) ?? LoggingSettings.defaultSettings)
             }
         }
-        self.sharedContextPromise.set(sharedContextSignal
+        let configuredSharedContextSignal: Signal<SharedApplicationContext, NoError> = sharedContextSignal
         |> mapToSignal { sharedApplicationContext, loggingSettings -> Signal<SharedApplicationContext, NoError> in
             Logger.shared.logToFile = loggingSettings.logToFile
             Logger.shared.logToConsole = loggingSettings.logToConsole
             Logger.shared.redactSensitiveData = loggingSettings.redactSensitiveData
             
             return .single(sharedApplicationContext)
-        })
+        }
+        self.sharedContextPromise.set(configuredSharedContextSignal)
             
         self.context.set(self.sharedContextPromise.get()
         |> deliverOnMainQueue
