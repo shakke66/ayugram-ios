@@ -215,6 +215,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     )
 }
 
+private struct GRVMActiveAccountsSnapshot {
+    let primary: AccountContext?
+    let accounts: [(AccountRecordId, AccountContext, Int32)]
+    let initialSettings: [(PeerId, AyuGramSettings)]
+}
+
 private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptivePresentationControllerDelegate {
     let id: UUID
     let bundle: GRVMLocalCrashExportBundle
@@ -2044,27 +2050,24 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
         )
         self.bindGRVMLocalCrashLifecycle(sharedContext: sharedContext, accountManager: accountManager)
 
-        let grvmActiveAccounts: Signal<(AccountContext?, [(AccountRecordId, AccountContext, Int32)], [(PeerId, AyuGramSettings)]), NoError> = sharedContext.activeAccountContexts
-        |> mapToSignal { primary, accounts, _ -> Signal<(AccountContext?, [(AccountRecordId, AccountContext, Int32)], [(PeerId, AyuGramSettings)]), NoError> in
-            let accountPeerIds = accounts.map { $0.1.account.peerId }
-            let initialSettings = combineLatest(accounts.map { _, context, _ -> Signal<(PeerId, AyuGramSettings), NoError> in
-                return grvmSettings(accountId: context.account.peerId, accountManager: accountManager)
-                |> take(1)
-                |> map { settings in
-                    return (context.account.peerId, settings)
-                }
-            })
-            return migrateGRVMSettings(accountIds: accountPeerIds, accountManager: accountManager)
-            |> then(initialSettings
-            |> map { initialSettings in
-                return (primary, accounts, initialSettings)
-            })
+        let grvmActiveAccountsSignal: Signal<GRVMActiveAccountsSnapshot, NoError> = sharedContext.activeAccountContexts
+        |> mapToSignal { primary, accounts, _ -> Signal<GRVMActiveAccountsSnapshot, NoError> in
+            return AppDelegate.makeGRVMActiveAccountsSnapshotSignal(
+                primary: primary,
+                accounts: accounts,
+                accountManager: accountManager
+            )
         }
+
+        let grvmActiveAccounts: Signal<GRVMActiveAccountsSnapshot, NoError> = grvmActiveAccountsSignal
         |> deliverOnMainQueue
-        self.grvmActiveAccountsDisposable.set(grvmActiveAccounts.start(next: { [weak self] primary, accounts, initialSettings in
+        self.grvmActiveAccountsDisposable.set(grvmActiveAccounts.start(next: { [weak self] snapshot in
             guard let self, let registry = self.grvmAccountFeatureRegistry else {
                 return
             }
+            let primary = snapshot.primary
+            let accounts = snapshot.accounts
+            let initialSettings = snapshot.initialSettings
             let activeRecordIds = accounts.map { $0.0.int64 }
             do {
                 try registry.prepare(activeAccountRecordIds: activeRecordIds)
@@ -2109,6 +2112,40 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
                 self.grvmAppIconDisposable.set(nil)
             }
         }))
+    }
+
+    private static func makeGRVMActiveAccountsSnapshotSignal(
+        primary: AccountContext?,
+        accounts: [(AccountRecordId, AccountContext, Int32)],
+        accountManager: AccountManager<TelegramAccountManagerTypes>
+    ) -> Signal<GRVMActiveAccountsSnapshot, NoError> {
+        let accountPeerIds: [PeerId] = accounts.map { $0.1.account.peerId }
+        let settingsSignals: [Signal<(PeerId, AyuGramSettings), NoError>] = accounts.map { _, context, _ -> Signal<(PeerId, AyuGramSettings), NoError> in
+            return grvmSettings(accountId: context.account.peerId, accountManager: accountManager)
+            |> take(1)
+            |> map { settings -> (PeerId, AyuGramSettings) in
+                return (context.account.peerId, settings)
+            }
+        }
+        let settingsSignal: Signal<[(PeerId, AyuGramSettings)], NoError> = combineLatest(settingsSignals)
+        let migratedSettingsSignal: Signal<Void, NoError> = migrateGRVMSettings(
+            accountIds: accountPeerIds,
+            accountManager: accountManager
+        )
+        let migrationCompletionSignal: Signal<GRVMActiveAccountsSnapshot, NoError> = migratedSettingsSignal
+        |> mapToSignal { _ -> Signal<GRVMActiveAccountsSnapshot, NoError> in
+            return .complete()
+        }
+        let snapshotSignal: Signal<GRVMActiveAccountsSnapshot, NoError> = settingsSignal
+        |> map { initialSettings -> GRVMActiveAccountsSnapshot in
+            return GRVMActiveAccountsSnapshot(
+                primary: primary,
+                accounts: accounts,
+                initialSettings: initialSettings
+            )
+        }
+        return migrationCompletionSignal
+        |> then(snapshotSignal)
     }
 
     private func bindGRVMLocalCrashLifecycle(

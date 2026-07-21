@@ -63,16 +63,20 @@ class AccountRegistryContractTests(unittest.TestCase):
         self.assertIn("coordinator.updateSettings(settings)", register_on_queue[settings:])
 
         app_delegate = APP_DELEGATE.read_text(encoding="utf-8")
-        active_accounts_start = app_delegate.index("let grvmActiveAccounts:")
-        active_accounts = app_delegate[
-            active_accounts_start :
-            app_delegate.index("if #available(iOS 10.3", active_accounts_start)
-        ]
-        self.assertIn("combineLatest(accounts.map", active_accounts)
-        self.assertIn("grvmSettings(accountId: context.account.peerId", active_accounts)
-        self.assertIn("|> take(1)", active_accounts)
+        snapshot_builder = swift_block(
+            app_delegate, "private static func makeGRVMActiveAccountsSnapshotSignal("
+        )
+        active_accounts = swift_block(
+            app_delegate, "private func bindGRVMSharedContext("
+        )
+        self.assertIn("let settingsSignals:", snapshot_builder)
+        self.assertIn("= accounts.map", snapshot_builder)
+        self.assertIn("combineLatest(settingsSignals)", snapshot_builder)
+        self.assertIn("grvmSettings(accountId: context.account.peerId", snapshot_builder)
+        self.assertIn("|> take(1)", snapshot_builder)
+        self.assertIn("let initialSettings = snapshot.initialSettings", active_accounts)
         self.assertIn("initialSettings: initialSettings", active_accounts)
-        snapshot = active_accounts.index("grvmSettings(accountId: context.account.peerId")
+        snapshot = active_accounts.index("let initialSettings = snapshot.initialSettings")
         register_call = active_accounts.index("registry.register(", snapshot)
         self.assertLess(snapshot, register_call)
 
@@ -250,14 +254,22 @@ class AccountRegistryContractTests(unittest.TestCase):
             "register(accountPeerId:",
         ):
             self.assertIn(token, source)
-        context = source.index("SharedAccountContextImpl(")
-        active = source.index("activeAccountContexts", context)
-        migrate = source.index("migrateGRVMSettings", active)
-        prepare = source.index("prepare(activeAccountRecordIds:", migrate)
-        register = source.index("register(accountPeerId:", prepare)
-        self.assertLess(context, active)
-        self.assertLess(active, migrate)
-        self.assertLess(migrate, prepare)
+        binding = swift_block(source, "private func bindGRVMSharedContext(")
+        snapshot_builder = swift_block(
+            source, "private static func makeGRVMActiveAccountsSnapshotSignal("
+        )
+        active = binding.index("activeAccountContexts")
+        snapshot_call = binding.index("makeGRVMActiveAccountsSnapshotSignal(", active)
+        prepare = binding.index("prepare(activeAccountRecordIds:", snapshot_call)
+        register = binding.index("registry.register(", prepare)
+        migrate = snapshot_builder.index("migrateGRVMSettings")
+        completion = snapshot_builder.index("let migrationCompletionSignal", migrate)
+        publish = snapshot_builder.index("return migrationCompletionSignal", completion)
+        self.assertLess(active, snapshot_call)
+        self.assertLess(migrate, completion)
+        self.assertIn("return .complete()", snapshot_builder[completion:publish])
+        self.assertIn("|> then(snapshotSignal)", snapshot_builder[publish:])
+        self.assertLess(snapshot_call, prepare)
         self.assertLess(prepare, register)
         self.assertIn('appendingPathComponent("ayugram_messages.db")', source)
         self.assertIn('appendingPathComponent("GRVMgramDeletedMedia"', source)

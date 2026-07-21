@@ -66,11 +66,35 @@ class TelegramUICompileContractTests(unittest.TestCase):
             "setEnabledSignal(screenCaptureEnabledSignal)",
             "setPresentationDataSignal(",
             "self.bindGRVMLocalCrashLifecycle(",
-            "let grvmActiveAccounts: Signal<(AccountContext?, [(AccountRecordId, AccountContext, Int32)], [(PeerId, AyuGramSettings)]), NoError> =",
+            "let grvmActiveAccounts: Signal<GRVMActiveAccountsSnapshot, NoError> =",
             "self.grvmAppIconDisposable.set(",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, helper)
+
+    def test_grvm_active_accounts_pipeline_has_staged_type_boundaries(self) -> None:
+        helper = section(
+            self.app_delegate,
+            "private func bindGRVMSharedContext(",
+            "private func bindGRVMLocalCrashLifecycle(",
+        )
+        self.assertIn("private struct GRVMActiveAccountsSnapshot {", self.app_delegate)
+        for fragment in (
+            "private static func makeGRVMActiveAccountsSnapshotSignal(",
+            "let settingsSignals: [Signal<(PeerId, AyuGramSettings), NoError>] =",
+            "let settingsSignal: Signal<[(PeerId, AyuGramSettings)], NoError> = combineLatest(settingsSignals)",
+            "let migratedSettingsSignal: Signal<Void, NoError> = migrateGRVMSettings(",
+            "let migrationCompletionSignal: Signal<GRVMActiveAccountsSnapshot, NoError> = migratedSettingsSignal",
+            "return .complete()",
+            "let snapshotSignal: Signal<GRVMActiveAccountsSnapshot, NoError> = settingsSignal",
+            "return migrationCompletionSignal",
+            "|> then(snapshotSignal)",
+            "let grvmActiveAccountsSignal: Signal<GRVMActiveAccountsSnapshot, NoError> = sharedContext.activeAccountContexts",
+            "let grvmActiveAccounts: Signal<GRVMActiveAccountsSnapshot, NoError> = grvmActiveAccountsSignal",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, helper)
+        self.assertNotIn("return migratedSettingsSignal\n        |> then(snapshotSignal)", helper)
 
     def test_chat_appearance_pipeline_has_explicit_signal_boundaries(self) -> None:
         method = section(
