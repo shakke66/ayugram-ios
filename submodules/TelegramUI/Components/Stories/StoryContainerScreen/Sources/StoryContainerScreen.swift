@@ -8,6 +8,7 @@ import SwiftSignalKit
 import AppBundle
 import MessageInputPanelComponent
 import TelegramCore
+import TelegramPresentationData
 import Postbox
 import UndoUI
 import ReactionSelectionNode

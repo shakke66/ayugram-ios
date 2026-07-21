@@ -449,6 +449,8 @@ class GhostRuntimeContractTests(unittest.TestCase):
         build = source(
             "submodules/TelegramUI/Components/Stories/StoryContainerScreen/BUILD"
         )
+        self.assertIn("import TelegramPresentationData", story)
+        self.assertIn('"//submodules/TelegramPresentationData"', build)
         self.assertIn("import AyuGramLib", story)
         self.assertIn('"//submodules/AyuGramLib:AyuGramLib"', build)
         self.assertIn("private var didHandleGhostStorySuggestion", story)
