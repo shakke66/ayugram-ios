@@ -341,7 +341,7 @@ private func grvmCanForwardLocalCopy(
        size.int64Value > 0 {
         return .single(true)
     }
-    return AyuGramHooks.restoreConsumableMedia?(accountPeerId, message) ?? .single(false)
+    return (AyuGramHooks.restoreConsumableMedia?(accountPeerId, message) ?? .single(false))
     |> map { restored in
         return restored
     }
@@ -1246,7 +1246,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
     return combineLatest(dataSignal, replayAvailableSignal, localCopyAvailableSignal)
     |> deliverOnMainQueue
     |> map { combinedData, replayAvailable, localCopyAvailable -> ContextController.Items in
-        let (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer) = combinedData
+        let (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, _, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer) = combinedData
         let isPremium = accountPeer?.isPremium ?? false
 
         var actions: [ContextMenuItem] = []

@@ -791,6 +791,7 @@ class MessageShotScopeContractTests(unittest.TestCase):
             MODEL: "import LocalizedPeerData",
             RENDERER: "import Display",
             CONTROLLER: "import PresentationDataUtils",
+            INPUT_PANELS: "import Postbox",
         }
         for path, required_import in required_imports.items():
             with self.subTest(path=path):

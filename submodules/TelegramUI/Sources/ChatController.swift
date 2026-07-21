@@ -6021,7 +6021,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 return
             }
 
-            (self.grvmHeaderContextMenuItems()
+            let _ = (self.grvmHeaderContextMenuItems()
             |> deliverOnMainQueue).startStandalone(next: { [weak self] additionalItems in
                 guard let self else {
                     return

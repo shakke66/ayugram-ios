@@ -352,6 +352,17 @@ class ContextMenuSemanticsContractTests(unittest.TestCase):
         self.assertNotIn("sendScheduledMessagesNow", repeat_action)
         self.assertNotIn("resendMessages", repeat_action)
 
+    def test_header_more_menu_explicitly_discards_standalone_disposable(self) -> None:
+        context_action = swift_block(
+            self.chat, "self.moreBarButton.contextAction ="
+        )
+        self.assertIn(
+            "let _ = (self.grvmHeaderContextMenuItems()", context_action
+        )
+        self.assertIn(
+            "|> deliverOnMainQueue).startStandalone(next:", context_action
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

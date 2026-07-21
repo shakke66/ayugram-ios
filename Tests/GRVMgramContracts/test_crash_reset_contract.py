@@ -538,6 +538,19 @@ class CrashLifecycleContractTests(unittest.TestCase):
         self.assertIn("return self.markGRVMLocalCrashOfferPresented(", offer)
         self.assertNotIn("owner.finish()\n                return", offer[offer.find("presented:"):])
 
+    def test_weak_offer_presented_closure_declares_zero_arguments(self) -> None:
+        text = source(APP_PATH)
+        offer_start = text.find("private func presentGRVMLocalCrashOffer(")
+        offer_end = text.find(
+            "private func markGRVMLocalCrashOfferPresented", offer_start
+        )
+        self.assertGreaterEqual(offer_start, 0)
+        self.assertGreater(offer_end, offer_start)
+        offer = text[offer_start:offer_end]
+
+        self.assertIn("presented: { [weak self] () -> Bool in", offer)
+        self.assertNotIn("presented: { [weak self] -> Bool in", offer)
+
     def test_confirmed_automatic_ui_is_cancelled_only_by_account_or_setting(self) -> None:
         confirmed = {"visible": True, "offer_handled": True}
         confirmed_after_resign = dict(confirmed)

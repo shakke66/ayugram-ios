@@ -2477,13 +2477,15 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
             return view.values[PreferencesKeys.appConfiguration]?.get(AppConfiguration.self) ?? .defaultValue
         }
 
-        let chatAppearance = grvmSettings(
+        let settingsSignal: Signal<AyuGramSettings, NoError> = grvmSettings(
             accountId: self.context.account.peerId,
             accountManager: self.context.sharedContext.accountManager
         )
+        let chatAppearanceValues: Signal<GRVMAppearanceSettings, NoError> = settingsSignal
         |> map { settings in
             return settings.grvmChatAppearanceSettings.appearance
         }
+        let chatAppearance: Signal<GRVMAppearanceSettings, NoError> = chatAppearanceValues
         |> distinctUntilChanged(isEqual: { lhs, rhs in
             return lhs.messageBubbleRadius == rhs.messageBubbleRadius
                 && lhs.codeFontName == rhs.codeFontName

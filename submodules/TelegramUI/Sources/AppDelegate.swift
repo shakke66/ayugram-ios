@@ -2468,7 +2468,7 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
                     accountPeerId: accountPeerId
                 )
             },
-            presented: { [weak self] -> Bool in
+            presented: { [weak self] () -> Bool in
                 guard let self else {
                     return false
                 }

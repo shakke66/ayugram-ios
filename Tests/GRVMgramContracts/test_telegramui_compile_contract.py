@@ -1,0 +1,69 @@
+import re
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+HISTORY = ROOT / "submodules/TelegramUI/Sources/ChatHistoryListNode.swift"
+CONTEXT_MENUS = (
+    ROOT / "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift"
+)
+
+
+def section(source: str, start: str, end: str) -> str:
+    start_index = source.index(start)
+    end_index = source.index(end, start_index)
+    return source[start_index:end_index]
+
+
+class TelegramUICompileContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.history = HISTORY.read_text(encoding="utf-8")
+        cls.context_menus = CONTEXT_MENUS.read_text(encoding="utf-8")
+
+    def test_chat_appearance_pipeline_has_explicit_signal_boundaries(self) -> None:
+        method = section(
+            self.history,
+            "private func beginPresentationDataManagement(",
+            "private func attemptReadingReactions()",
+        )
+        for fragment in (
+            "let settingsSignal: Signal<AyuGramSettings, NoError> = grvmSettings(",
+            "let chatAppearanceValues: Signal<GRVMAppearanceSettings, NoError> = settingsSignal",
+            "let chatAppearance: Signal<GRVMAppearanceSettings, NoError> = chatAppearanceValues",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, method)
+        self.assertNotIn("let chatAppearance = grvmSettings(", method)
+
+    def test_local_copy_fallback_groups_nil_coalescing_before_pipe(self) -> None:
+        method = section(
+            self.context_menus,
+            "private func grvmCanForwardLocalCopy(",
+            "func canEditMessage(context:",
+        )
+        self.assertRegex(
+            method,
+            re.compile(
+                r"return\s+\(\s*AyuGramHooks\.restoreConsumableMedia\?"
+                r"\(accountPeerId,\s*message\)\s*\?\?\s*\.single\(false\)\s*\)"
+                r"\s*\|>\s*map"
+            ),
+        )
+
+    def test_combined_data_discards_unused_privacy_tip(self) -> None:
+        menu = section(
+            self.context_menus,
+            "func contextMenuForChatPresentationInterfaceState(",
+            "private final class ChatReadReportContextItemNode",
+        )
+        binding = re.search(r"let\s*\((?P<items>[^)]*)\)\s*=\s*combinedData", menu)
+        self.assertIsNotNone(binding)
+        items = [item.strip() for item in binding.group("items").split(",")]
+        self.assertEqual(11, len(items))
+        self.assertEqual("_", items[5])
+
+
+if __name__ == "__main__":
+    unittest.main()
