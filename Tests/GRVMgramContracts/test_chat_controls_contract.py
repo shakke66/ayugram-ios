@@ -624,6 +624,10 @@ class ChatControlsContractTests(unittest.TestCase):
         panel = source(self.input_panel_path)
         calculate_metrics = swift_block(panel, "private func calculateTextFieldMetrics(")
         update_layout = swift_block(panel, "override public func updateLayout(")
+        update_action_buttons = swift_block(
+            panel,
+            "private func updateActionButtons(",
+        )
         attach_popup_should_begin = swift_block(
             panel,
             "self.attachmentButtonContextGesture.shouldBegin =",
@@ -639,6 +643,18 @@ class ChatControlsContractTests(unittest.TestCase):
         self.assertIn("if self.isAIEnabled && compose.showAiEditorButton", update_layout)
         self.assertIn("let aiButton", update_layout)
         self.assertIn("let inlineAiButton", update_layout)
+        self.assertIn(
+            normalized(
+                "self.updateActionButtons(hasText: inputHasText, "
+                "transition: transition, compose: compose)"
+            ),
+            normalized(update_layout),
+        )
+        self.assertIn(
+            normalized("compose: GRVMComposeSettings"),
+            normalized(update_action_buttons),
+        )
+        self.assertIn("!compose.showVoiceButton", update_action_buttons)
         self.assertIn("self.attachmentButton.isEnabled", attach_popup_should_begin)
         self.assertIn(
             normalized("compose.showAttachButton && compose.showAttachPopup"),

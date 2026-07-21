@@ -2312,7 +2312,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         
         self.mediaActionButtons.micButton.updateMode(mode: interfaceState.interfaceState.mediaRecordingMode, animated: transition.isAnimated)
         
-        self.updateActionButtons(hasText: inputHasText, transition: transition)
+        self.updateActionButtons(hasText: inputHasText, transition: transition, compose: compose)
         
         var mediaActionButtonsSize = CGSize(width: 40.0, height: 40.0)
         var sendActionButtonsSize = CGSize(width: 40.0, height: 40.0)
@@ -4499,7 +4499,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.updateTextHeight(animated: animated)
     }
     
-    private func updateActionButtons(hasText: Bool, transition: ContainedViewLayoutTransition) {
+    private func updateActionButtons(hasText: Bool, transition: ContainedViewLayoutTransition, compose: GRVMComposeSettings) {
         let alphaTransition: ContainedViewLayoutTransition = transition.isAnimated ? .animated(duration: 0.2, curve: .easeInOut) : .immediate
         let blurTransitionIn: ComponentTransition = transition.isAnimated ? .easeInOut(duration: 0.18) : .immediate
         let blurTransitionOut: ComponentTransition = transition.isAnimated ? .easeInOut(duration: 0.18) : .immediate
