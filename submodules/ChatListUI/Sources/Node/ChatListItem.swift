@@ -3771,7 +3771,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                                     peerRevealOptions = []
                                 }
                             } else if promoInfo == nil {
-                                peerRevealOptions = revealOptions(strings: item.presentationData.strings, theme: item.presentationData.theme, isPinned: isPinned, isMuted: !isAccountPeer ? (currentMutedIconImage != nil) : nil, location: item.chatListLocation, peerId: renderedPeer.peerId, accountPeerId: item.context.account.peerId, canDelete: true, isEditing: item.editing, filterData: item.filterData)
+                                peerRevealOptions = revealOptions(strings: item.presentationData.strings, theme: item.presentationData.theme, isPinned: isPinned, isMuted: renderedPeer.peerId != item.context.account.peerId ? (currentMutedIconImage != nil) : nil, location: item.chatListLocation, peerId: renderedPeer.peerId, accountPeerId: item.context.account.peerId, canDelete: true, isEditing: item.editing, filterData: item.filterData)
                                 if case let .chat(itemPeer) = contentPeer {
                                     peerLeftRevealOptions = leftRevealOptions(strings: item.presentationData.strings, theme: item.presentationData.theme, isUnread: unreadCount.unread, isEditing: item.editing, isPinned: isPinned, isSavedMessages: itemPeer.peerId == item.context.account.peerId, location: item.chatListLocation, peer: itemPeer.peers[itemPeer.peerId]!, filterData: item.filterData)
                                 } else {
