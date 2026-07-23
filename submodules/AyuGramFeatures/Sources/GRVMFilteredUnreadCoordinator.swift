@@ -128,7 +128,7 @@ public final class GRVMFilteredUnreadCoordinator {
             self.generation &+= 1
             self.predicate = nil
             self.materializedPeerIds.removeAll()
-            self.state.modify { _ in Snapshot() }
+            _ = self.state.modify { _ in Snapshot() }
             self.publish()
         }
     }
@@ -141,7 +141,7 @@ public final class GRVMFilteredUnreadCoordinator {
             self.generation &+= 1
             self.predicate = predicate
             self.materializedPeerIds.removeAll()
-            self.state.modify { state in
+            _ = self.state.modify { state in
                 var state = state
                 state.enabled = enabled
                 state.peers.removeAll()
@@ -344,7 +344,7 @@ public final class GRVMFilteredUnreadCoordinator {
 
     private func materializeInitialPeers() {
         let generation = self.generation
-        self.postbox.transaction { transaction -> Set<PeerId> in
+        let _ = self.postbox.transaction { transaction -> Set<PeerId> in
             var peerIds = transaction.getUnreadChatListPeerIds(
                 groupId: .root,
                 filterPredicate: nil,
@@ -378,7 +378,7 @@ public final class GRVMFilteredUnreadCoordinator {
         let postbox = self.postbox
         let accountPeerId = self.accountPeerId
 
-        postbox.transaction { transaction -> PeerSnapshot? in
+        let _ = postbox.transaction { transaction -> PeerSnapshot? in
             guard let peer = transaction.getPeer(peerId) else {
                 return nil
             }
@@ -496,7 +496,7 @@ public final class GRVMFilteredUnreadCoordinator {
                     return
                 }
                 self.materializedPeerIds.insert(peerId)
-                self.state.modify { state in
+                _ = self.state.modify { state in
                     var state = state
                     if let peerSnapshot {
                         state.peers[peerId] = peerSnapshot
