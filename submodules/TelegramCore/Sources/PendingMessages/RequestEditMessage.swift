@@ -109,9 +109,9 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                 pendingMediaContent = content.content
             }
         }
-        return postbox.transaction { transaction -> (Peer?, Message?, SimpleDictionary<PeerId, Peer>) in
+        return postbox.transaction { transaction -> (Peer?, Message?, SimpleDictionary<PeerId, Peer>, GRVMLocalPremiumEmojiTransport) in
             guard let message = transaction.getMessage(messageId) else {
-                return (nil, nil, SimpleDictionary())
+                return (nil, nil, SimpleDictionary(), .disabled)
             }
             
             for (_, file) in inlineStickers {
@@ -127,7 +127,7 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                             if let _ = scheduleInfoAttribute {
                                 break
                             } else {
-                                return (nil, nil, SimpleDictionary())
+                                return (nil, nil, SimpleDictionary(), .disabled)
                             }
                     }
                 }
@@ -142,16 +142,29 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                     }
                 }
             }
-            return (transaction.getPeer(messageId.peerId), message, peers)
+            return (
+                transaction.getPeer(messageId.peerId),
+                message,
+                peers,
+                grvmLocalPremiumEmojiTransport(
+                    transaction: transaction,
+                    accountPeerId: accountPeerId,
+                    peerId: messageId.peerId
+                )
+            )
         }
         |> mapError { _ -> RequestEditMessageInternalError in }
-        |> mapToSignal { peer, message, associatedPeers -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> in
+        |> mapToSignal { peer, message, associatedPeers, grvmEmojiTransport -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> in
             if let peer = peer, let message = message, let inputPeer = apiInputPeer(peer) {
                 var flags: Int32 = 1 << 11
                 
                 var apiEntities: [Api.MessageEntity]?
                 if let entities = entities {
-                    apiEntities = apiTextAttributeEntities(entities, associatedPeers: associatedPeers)
+                    apiEntities = apiTextAttributeEntities(
+                        entities,
+                        associatedPeers: associatedPeers,
+                        localPremiumEmojiTransport: grvmEmojiTransport
+                    )
                     flags |= Int32(1 << 3)
                 }
                 

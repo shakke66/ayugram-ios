@@ -55,7 +55,7 @@ private func effectiveAvatarCornerRadius(
     case .round:
         return configuredRadius
     case .roundedRect:
-        return appearance.singleCornerRadius ? configuredRadius : 0.25
+        return 0.25
     }
 }
 
@@ -448,6 +448,15 @@ public final class AvatarNode: ASDisplayNode {
                 return clipStyle
             }
             return .none
+        }
+
+        var normalizedCornerRadius: CGFloat {
+            if let params = self.params {
+                return params.cornerRadius
+            } else if let parameters = self.parameters {
+                return parameters.cornerRadius
+            }
+            return 0.0
         }
         
         public var badgeView: AvatarBadgeView? {
@@ -1355,6 +1364,7 @@ public final class AvatarNode: ASDisplayNode {
             displayDimensions: displayDimensions,
             storeUnrounded: storeUnrounded
         )
+        self.updateStoryIndicator(transition: .immediate)
     }
     
     public func setPeerV2(
@@ -1381,6 +1391,7 @@ public final class AvatarNode: ASDisplayNode {
             displayDimensions: displayDimensions,
             storeUnrounded: storeUnrounded
         )
+        self.updateStoryIndicator(transition: .immediate)
     }
     
     public func setPeer(
@@ -1411,10 +1422,12 @@ public final class AvatarNode: ASDisplayNode {
             storeUnrounded: storeUnrounded,
             cutoutRect: cutoutRect
         )
+        self.updateStoryIndicator(transition: .immediate)
     }
     
     public func setCustomLetters(_ letters: [String], explicitColor: AvatarNodeColorOverride? = nil, icon: AvatarNodeExplicitIcon? = nil) {
         self.contentNode.setCustomLetters(letters, explicitColor: explicitColor, icon: icon)
+        self.updateStoryIndicator(transition: .immediate)
     }
     
     public func setStoryStats(storyStats: StoryStats?, presentationParams: StoryPresentationParams, transition: ComponentTransition) {
@@ -1519,7 +1532,8 @@ public final class AvatarNode: ASDisplayNode {
                         unseenCount: storyStats.unseenCount
                     ),
                     progress: mappedProgress,
-                    isRoundedRect: self.contentNode.clipStyle == .roundedRect || storyPresentationParams.forceRoundedRect
+                    isRoundedRect: self.contentNode.clipStyle == .roundedRect || storyPresentationParams.forceRoundedRect,
+                    normalizedCornerRadius: storyPresentationParams.forceRoundedRect ? nil : self.contentNode.normalizedCornerRadius
                 )),
                 environment: {},
                 containerSize: indicatorSize

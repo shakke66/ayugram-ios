@@ -19,9 +19,14 @@ import PeerNameColorItem
 import BoostLevelIconComponent
 import ContextUI
 import AyuGramLib
+import AyuGramSettingsUI
 
 private let enabledPublicBioEntities: EnabledEntityTypes = [.allUrl, .mention, .hashtag]
 private let enabledPrivateBioEntities: EnabledEntityTypes = [.internalUrl, .mention, .hashtag]
+
+private enum GRVMPeerInfoItemId: Hashable {
+    case archives
+}
 
 enum InfoSection: Int, CaseIterable {
     case unofficial
@@ -49,6 +54,35 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
     var items: [InfoSection: [PeerInfoScreenItem]] = [:]
     for section in InfoSection.allCases {
         items[section] = []
+    }
+
+    func insertGRVMArchiveRow(anchorIds: [AnyHashable], peerId: PeerId) {
+        var sectionItems = items[.peerInfo] ?? []
+        guard !sectionItems.contains(where: { $0.id == GRVMPeerInfoItemId.archives }) else {
+            return
+        }
+        let anchorIndex = anchorIds.compactMap { anchorId in
+            sectionItems.firstIndex(where: { $0.id == anchorId })
+        }.first
+        let insertionIndex = anchorIndex.map { $0 + 1 } ?? sectionItems.count
+        sectionItems.insert(PeerInfoScreenLabeledValueItem(
+            id: GRVMPeerInfoItemId.archives,
+            label: "",
+            text: grvmStrings[.chatMenuTitle],
+            textColor: .primary,
+            action: { _, _ in
+                let controller = grvmDeletedMessagesController(
+                    context: context,
+                    peerId: peerId,
+                    threadId: chatLocation.threadId
+                )
+                interaction.getController()?.push(controller)
+            },
+            requestLayout: { animated in
+                interaction.requestLayout(animated)
+            }
+        ), at: insertionIndex)
+        items[.peerInfo] = sectionItems
     }
     
     let bioContextAction: (ASDisplayNode, ContextGesture?, CGPoint?) -> Void = { node, gesture, _ in
@@ -120,8 +154,6 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
 
         return PeerInfoScreenLabeledValueItem(id: itemId, label: "ID", text: idString, textColor: .primary, action: { _, _ in
             UIPasteboard.general.string = idString
-        }, longTapAction: { sourceNode in
-            openContextMenu(sourceNode, nil)
         }, contextAction: { sourceNode, gesture, _ in
             openContextMenu(sourceNode, gesture)
         }, requestLayout: { animated in
@@ -594,6 +626,7 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
                 }
             }
         }
+        insertGRVMArchiveRow(anchorIds: [ItemAbout, ItemDialogId], peerId: user.id)
     } else if let channel = data.peer as? TelegramChannel {
         let ItemUsername = 1
         let ItemUsernameInfo = 2
@@ -711,9 +744,7 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
             }
 
             var peerDate: (label: String, timestamp: Int32)?
-            if let cachedData = data.cachedData as? CachedChannelData, let invitedOn = cachedData.invitedOn, invitedOn > 0 {
-                peerDate = (grvmStrings[.peerJoined], invitedOn)
-            } else if channel.creationDate > 0 {
+            if channel.creationDate > 0 {
                 peerDate = (grvmStrings[.peerCreated], channel.creationDate)
             }
             if let peerDate {
@@ -878,6 +909,7 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
                 }
             }
         }
+        insertGRVMArchiveRow(anchorIds: [ItemAbout, ItemDialogId], peerId: channel.id)
     } else if let group = data.peer as? TelegramGroup {
         let ItemDialogId = 1
         let ItemCreationDate = 2
@@ -911,6 +943,7 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
                 }))
             }
         }
+        insertGRVMArchiveRow(anchorIds: [0, ItemDialogId], peerId: group.id)
     }
     
     if let peer = data.peer, let members = data.members, case let .shortList(_, memberList) = members {

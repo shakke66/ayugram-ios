@@ -170,7 +170,7 @@ private func _internal_translateTexts(
             toLang: toLang,
             tone: tone
         )
-    case .google, .yandex:
+    case .google:
         return grvmExternalTranslate(
             texts: texts.map(\.0),
             toLang: toLang,
@@ -203,7 +203,7 @@ private func _internal_translateText(
             toLang: toLang,
             tone: tone
         )
-    case .google, .yandex:
+    case .google:
         return grvmExternalTranslate(
             texts: [text],
             toLang: toLang,
@@ -298,7 +298,7 @@ private func _internal_translateMessagesByPeerId(account: Account, peerId: Engin
         switch provider {
         case .telegram:
             translatedMessageIds = messageIds
-        case .google, .yandex:
+        case .google:
             translatedMessageIds = externalMessages.map(\.id)
         }
 
@@ -362,7 +362,7 @@ private func _internal_translateMessagesByPeerId(account: Account, peerId: Engin
                         }
                     }
                 }
-            case .google, .yandex:
+            case .google:
                 guard messages.count == messageIds.count else {
                     return .fail(.invalidMessageId)
                 }

@@ -101,6 +101,16 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
             }
         }
     }
+
+    func resetStoryExpansion() {
+        for (_, itemNode) in self.itemNodes {
+            itemNode.listNode.startedScrollingAtUpperBound = false
+        }
+        if let pendingItemNode = self.pendingItemNode {
+            pendingItemNode.1.listNode.startedScrollingAtUpperBound = false
+        }
+        self.tempTopInset = 0.0
+    }
     
     var initialScrollingOffset: CGFloat?
     
@@ -251,7 +261,7 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
             if !self.isInlineMode, itemNode.listNode.isTracking && !self.currentItemNode.startedScrollingAtUpperBound && self.tempTopInset == 0.0 {
                 if case let .known(value) = offset {
                     if value < -1.0 {
-                        if let controller = self.controller, let storySubscriptions = controller.orderedStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
+                        if let controller = self.controller, let storySubscriptions = controller.effectiveStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
                             self.currentItemNode.startedScrollingAtUpperBound = true
                             self.tempTopInset = ChatListNavigationBar.storiesScrollHeight
                         }
@@ -295,7 +305,7 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
             if validLayout.inlineNavigationLocation != nil {
                 tempTopInset = 0.0
             } else if self.currentItemNode.startedScrollingAtUpperBound && !self.isInlineMode {
-                if let controller = self.controller, let storySubscriptions = controller.orderedStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
+                if let controller = self.controller, let storySubscriptions = controller.effectiveStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
                     tempTopInset = ChatListNavigationBar.storiesScrollHeight
                 } else {
                     tempTopInset = 0.0
@@ -1283,7 +1293,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 return false
             }
             
-            if let storySubscriptions = controller.orderedStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
+            if let storySubscriptions = controller.effectiveStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
                 if let navigationBarComponentView = self.navigationBarView.view as? ChatListNavigationBar.View {
                     if navigationBarComponentView.storiesUnlocked {
                         return true
@@ -1633,9 +1643,11 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
         var effectiveStorySubscriptions: EngineStorySubscriptions?
         if let controller = self.controller, case .forum = controller.location {
             effectiveStorySubscriptions = nil
+        } else if self.controller?.hideStories == true {
+            effectiveStorySubscriptions = nil
         } else {
-            if let controller = self.controller, let storySubscriptions = controller.orderedStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
-                effectiveStorySubscriptions = controller.orderedStorySubscriptions
+            if let controller = self.controller, let storySubscriptions = controller.effectiveStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
+                effectiveStorySubscriptions = storySubscriptions
             } else {
                 effectiveStorySubscriptions = EngineStorySubscriptions(accountItem: nil, items: [], hasMoreToken: nil)
             }
@@ -1788,7 +1800,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
             return
         }
         
-        if let controller = self.controller, let storySubscriptions = controller.orderedStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
+        if let controller = self.controller, let storySubscriptions = controller.effectiveStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
             let _ = storySubscriptions
         
             self.tempAllowAvatarExpansion = true
@@ -2115,7 +2127,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                         var manuallyAllow = false
                         
                         if isPrimary {
-                            if let storySubscriptions = controller.orderedStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
+                            if let storySubscriptions = controller.effectiveStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
                             } else {
                                 manuallyAllow = true
                             }
@@ -2371,9 +2383,15 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
     }
     
     func scrollToTopIfStoriesAreExpanded() {
+        self.mainContainerNode.resetStoryExpansion()
+        self.tempAllowAvatarExpansion = false
+        self.allowOverscrollStoryExpansion = false
+        self.currentOverscrollStoryExpansionTimestamp = nil
+        if let navigationBarComponentView = self.navigationBarView.view as? ChatListNavigationBar.View {
+            navigationBarComponentView.applyScroll(offset: 0.0, allowAvatarsExpansion: false, forceUpdate: true, transition: .immediate)
+        }
         if let contentOffset = self.mainContainerNode.contentOffset, case let .known(offset) = contentOffset, offset < 0.0 {
             self.mainContainerNode.scrollToTop(animated: true, adjustForTempInset: false)
-            self.mainContainerNode.tempTopInset = 0.0
         }
     }
 }

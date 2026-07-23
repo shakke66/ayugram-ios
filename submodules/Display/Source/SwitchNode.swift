@@ -18,15 +18,7 @@ private final class SwitchNodeView: UISwitch {
 }
 
 open class SwitchNode: ASDisplayNode {
-    public enum Style {
-        case standard
-        case md3
-    }
-
-    public static var defaultStyle: Style = .standard
-
     public var valueUpdated: ((Bool) -> Void)?
-    private let switchStyle: Style
     
     public var frameColor = UIColor(rgb: 0xe0e0e0) {
         didSet {
@@ -69,7 +61,6 @@ open class SwitchNode: ASDisplayNode {
     }
     
     override public init() {
-        self.switchStyle = Self.defaultStyle
         super.init()
         
         self.setViewBlock({
@@ -88,19 +79,6 @@ open class SwitchNode: ASDisplayNode {
         
         (self.view as! UISwitch).setOn(self._isOn, animated: false)
 
-        if case .md3 = self.switchStyle {
-            let nativeSize: CGSize
-            if #available(iOS 26.0, *) {
-                nativeSize = CGSize(width: 63.0, height: 28.0)
-            } else {
-                nativeSize = CGSize(width: 51.0, height: 31.0)
-            }
-            self.view.transform = CGAffineTransform(
-                scaleX: 52.0 / nativeSize.width,
-                y: 32.0 / nativeSize.height
-            )
-        }
-        
         (self.view as! UISwitch).addTarget(self, action: #selector(switchValueChanged(_:)), for: .valueChanged)
     }
     
@@ -112,15 +90,10 @@ open class SwitchNode: ASDisplayNode {
     }
     
     override open func calculateSizeThatFits(_ constrainedSize: CGSize) -> CGSize {
-        switch self.switchStyle {
-        case .standard:
-            if #available(iOS 26.0, *) {
-                return CGSize(width: 63.0, height: 28.0)
-            } else {
-                return CGSize(width: 51.0, height: 31.0)
-            }
-        case .md3:
-            return CGSize(width: 52.0, height: 32.0)
+        if #available(iOS 26.0, *) {
+            return CGSize(width: 63.0, height: 28.0)
+        } else {
+            return CGSize(width: 51.0, height: 31.0)
         }
     }
     

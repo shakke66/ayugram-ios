@@ -42,8 +42,11 @@ public func chatListFilterItems(context: AccountContext) -> Signal<(Int, [(ChatL
             keys.append(.basicPeer(peerId))
         }
         
-        return context.account.postbox.combinedView(keys: keys)
-        |> map { view -> (Int, [(ChatListFilter, Int, Bool)]) in
+        return combineLatest(
+            context.account.postbox.combinedView(keys: keys),
+            AyuGramHooks.filteredUnreadStateUpdates?(context.account.peerId) ?? .single(0)
+        )
+        |> map { view, _ -> (Int, [(ChatListFilter, Int, Bool)]) in
             guard let unreadCounts = view.views[unreadKey] as? UnreadMessageCountsView else {
                 return (0, [])
             }
@@ -63,44 +66,59 @@ public func chatListFilterItems(context: AccountContext) -> Signal<(Int, [(ChatL
             for entry in unreadCounts.entries {
                 switch entry {
                 case let .total(_, state):
-                    totalStates[.root] = state
+                    totalStates[.root] = AyuGramHooks.adjustedTotalUnreadState?(
+                        context.account.peerId,
+                        .root,
+                        state
+                    ) ?? state
                 case let .totalInGroup(groupId, state):
-                    totalStates[groupId] = state
+                    totalStates[groupId] = AyuGramHooks.adjustedTotalUnreadState?(
+                        context.account.peerId,
+                        groupId,
+                        state
+                    ) ?? state
                 case let .peer(peerId, state):
-                    if let state = state, state.isUnread {
-                        if let peerView = view.views[.basicPeer(peerId)] as? BasicPeerView, let peer = peerView.peer {
-                            let tag = context.account.postbox.seedConfiguration.peerSummaryCounterTags(peer, peerView.isContact)
-                            
-                            var peerCount = Int(state.count)
-                            if state.isUnread {
-                                peerCount = max(1, peerCount)
-                            }
-                            
-                            var isMuted = false
-                            if let notificationSettings = peerView.notificationSettings as? TelegramPeerNotificationSettings {
-                                if case .muted = notificationSettings.muteState {
-                                    isMuted = true
-                                } else if case .default = notificationSettings.muteState {
-                                    if let peer = peerView.peer {
-                                        if peer is TelegramUser {
-                                            isMuted = !globalNotificationSettings.privateChats.enabled
-                                        } else if peer is TelegramGroup {
-                                            isMuted = !globalNotificationSettings.groupChats.enabled
-                                        } else if let channel = peer as? TelegramChannel {
-                                            switch channel.info {
-                                            case .group:
+                    if let state {
+                        let adjustedState = AyuGramHooks.adjustedUnreadPeerReadState?(
+                            context.account.peerId,
+                            peerId,
+                            state
+                        ) ?? state
+                        if adjustedState.isUnread {
+                            if let peerView = view.views[.basicPeer(peerId)] as? BasicPeerView, let peer = peerView.peer {
+                                let tag = context.account.postbox.seedConfiguration.peerSummaryCounterTags(peer, peerView.isContact)
+
+                                var peerCount = Int(adjustedState.count)
+                                if adjustedState.isUnread {
+                                    peerCount = max(1, peerCount)
+                                }
+
+                                var isMuted = false
+                                if let notificationSettings = peerView.notificationSettings as? TelegramPeerNotificationSettings {
+                                    if case .muted = notificationSettings.muteState {
+                                        isMuted = true
+                                    } else if case .default = notificationSettings.muteState {
+                                        if let peer = peerView.peer {
+                                            if peer is TelegramUser {
+                                                isMuted = !globalNotificationSettings.privateChats.enabled
+                                            } else if peer is TelegramGroup {
                                                 isMuted = !globalNotificationSettings.groupChats.enabled
-                                            case .broadcast:
-                                                isMuted = !globalNotificationSettings.channels.enabled
+                                            } else if let channel = peer as? TelegramChannel {
+                                                switch channel.info {
+                                                case .group:
+                                                    isMuted = !globalNotificationSettings.groupChats.enabled
+                                                case .broadcast:
+                                                    isMuted = !globalNotificationSettings.channels.enabled
+                                                }
                                             }
                                         }
                                     }
                                 }
-                            }
-                            if isMuted {
-                                peerTagAndCount[peerId] = (tag, peerCount, false, peerView.groupId, true)
-                            } else {
-                                peerTagAndCount[peerId] = (tag, peerCount, true, peerView.groupId, false)
+                                if isMuted {
+                                    peerTagAndCount[peerId] = (tag, peerCount, false, peerView.groupId, true)
+                                } else {
+                                    peerTagAndCount[peerId] = (tag, peerCount, true, peerView.groupId, false)
+                                }
                             }
                         }
                     }

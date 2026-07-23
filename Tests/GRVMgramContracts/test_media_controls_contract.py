@@ -35,6 +35,17 @@ class MediaControlsContractTests(unittest.TestCase):
         for path, token in routes.items():
             self.assertIn(token, (ROOT / path).read_text(encoding="utf-8"))
 
+    def test_muted_gif_pause_state_reaches_the_playback_controls(self) -> None:
+        setup = setup_item(GALLERY.read_text(encoding="utf-8"))
+
+        self.assertIn("isAnimated = content.fileReference.media.isAnimated", setup)
+        self.assertEqual(2, setup.count("if !content.enableSound && !isAnimated {"))
+        self.assertNotIn(
+            "if !content.enableSound {\n                                        isPaused = false",
+            setup,
+        )
+        self.assertIn("footerContent = .playback(paused: true, seekable: seekable)", setup)
+
 
 if __name__ == "__main__":
     unittest.main()

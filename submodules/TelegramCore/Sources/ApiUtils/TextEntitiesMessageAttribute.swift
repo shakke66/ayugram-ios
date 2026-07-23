@@ -3,7 +3,39 @@ import Postbox
 import TelegramApi
 
 
-func apiEntitiesFromMessageTextEntities(_ entities: [MessageTextEntity], associatedPeers: SimpleDictionary<PeerId, Peer>) -> [Api.MessageEntity] {
+struct GRVMLocalPremiumEmojiTransport {
+    let enabled: Bool
+    let serverAllowedFileIds: Set<Int64>
+
+    static let disabled = GRVMLocalPremiumEmojiTransport(enabled: false, serverAllowedFileIds: [])
+}
+
+func grvmLocalPremiumEmojiTransport(transaction: Transaction, accountPeerId: PeerId, peerId: PeerId) -> GRVMLocalPremiumEmojiTransport {
+    guard peerId != accountPeerId,
+          AyuGramHooks.isLocalPremiumEnabled?(accountPeerId) == true,
+          let accountUser = transaction.getPeer(accountPeerId) as? TelegramUser,
+          !accountUser.flags.contains(.isPremium) else {
+        return .disabled
+    }
+
+    var serverAllowedFileIds = Set<Int64>()
+    if let cachedData = transaction.getPeerCachedData(peerId: peerId) as? CachedChannelData,
+       let emojiPack = cachedData.emojiPack {
+        for item in transaction.getItemCollectionItems(collectionId: emojiPack.id) {
+            if let item = item as? StickerPackItem {
+                serverAllowedFileIds.insert(item.file.fileId.id)
+            }
+        }
+    }
+
+    return GRVMLocalPremiumEmojiTransport(enabled: true, serverAllowedFileIds: serverAllowedFileIds)
+}
+
+func apiEntitiesFromMessageTextEntities(
+    _ entities: [MessageTextEntity],
+    associatedPeers: SimpleDictionary<PeerId, Peer>,
+    localPremiumEmojiTransport: GRVMLocalPremiumEmojiTransport = .disabled
+) -> [Api.MessageEntity] {
     var apiEntities: [Api.MessageEntity] = []
     
     for entity in entities {
@@ -53,7 +85,11 @@ func apiEntitiesFromMessageTextEntities(_ entities: [MessageTextEntity], associa
         case .Spoiler:
             apiEntities.append(.messageEntitySpoiler(.init(offset: offset, length: length)))
         case let .CustomEmoji(_, fileId):
-            apiEntities.append(.messageEntityCustomEmoji(.init(offset: offset, length: length, documentId: fileId)))
+            if localPremiumEmojiTransport.enabled && fileId > 0 && !localPremiumEmojiTransport.serverAllowedFileIds.contains(fileId) {
+                apiEntities.append(.messageEntityTextUrl(.init(offset: offset, length: length, url: "tg://emoji?id=\(fileId)")))
+            } else {
+                apiEntities.append(.messageEntityCustomEmoji(.init(offset: offset, length: length, documentId: fileId)))
+            }
         case let .FormattedDate(format, date):
             var flags: Int32 = 0
             switch format {
@@ -91,6 +127,14 @@ func apiEntitiesFromMessageTextEntities(_ entities: [MessageTextEntity], associa
     return apiEntities
 }
 
-func apiTextAttributeEntities(_ attribute: TextEntitiesMessageAttribute, associatedPeers: SimpleDictionary<PeerId, Peer>) -> [Api.MessageEntity] {
-    return apiEntitiesFromMessageTextEntities(attribute.entities, associatedPeers: associatedPeers)
+func apiTextAttributeEntities(
+    _ attribute: TextEntitiesMessageAttribute,
+    associatedPeers: SimpleDictionary<PeerId, Peer>,
+    localPremiumEmojiTransport: GRVMLocalPremiumEmojiTransport = .disabled
+) -> [Api.MessageEntity] {
+    return apiEntitiesFromMessageTextEntities(
+        attribute.entities,
+        associatedPeers: associatedPeers,
+        localPremiumEmojiTransport: localPremiumEmojiTransport
+    )
 }

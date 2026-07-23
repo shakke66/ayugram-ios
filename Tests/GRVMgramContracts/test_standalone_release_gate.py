@@ -103,15 +103,15 @@ class StandaloneReleaseGateTests(unittest.TestCase):
             "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/"
             "Sources/PeerInfoProfileItems.swift"
         )
-        for token in ("cachedData.invitedOn", "channel.creationDate", "group.creationDate"):
+        for token in ("channel.creationDate", "group.creationDate"):
             self.assertIn(token, profile)
+        self.assertNotIn("cachedData.invitedOn", profile)
 
-        saved_music = source(
+        saved_music_path = ROOT / (
             "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/"
             "Sources/GRVMSavedMusicColor.swift"
         )
-        self.assertIn("mediaBox.resourceData(resource, attemptSynchronously: true)", saved_music)
-        self.assertNotRegex(saved_music.lower(), r"urlsession|itunes|interactivefetched|fetchedmediaresource")
+        self.assertFalse(saved_music_path.exists())
 
         streamer = source("submodules/TelegramUI/Sources/GRVMScreenCapturePrivacyController.swift")
         self.assertIn("UIScreen.capturedDidChangeNotification", streamer)
@@ -202,12 +202,16 @@ class StandaloneReleaseGateTests(unittest.TestCase):
             "submodules/AyuGramLib/Sources/AyuGramSettings.swift",
         )
         added_fields = set(re.findall(r"^\+\s*public var ([A-Za-z_]\w*)\s*:", settings_diff, re.MULTILINE))
+        current_settings = source("submodules/AyuGramLib/Sources/AyuGramSettings.swift")
+        current_fields = set(
+            re.findall(r"^\s*public var ([A-Za-z_]\w*)\s*:", current_settings, re.MULTILINE)
+        )
         consumers = "\n".join(
             path.read_text(encoding="utf-8", errors="ignore")
             for path in changed_production_paths()
             if path.name != "AyuGramSettings.swift"
         )
-        for field in sorted(added_fields):
+        for field in sorted(added_fields & current_fields):
             with self.subTest(field=field):
                 self.assertIn(field, consumers, msg=f"Standalone setting has no implementation consumer: {field}")
 

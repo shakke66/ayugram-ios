@@ -119,8 +119,15 @@ extension ChatControllerImpl {
                         return
                     }
                     preparingLocalCopy = true
+                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                    let progressController = OverlayStatusController(
+                        theme: presentationData.theme,
+                        type: .loading(cancelled: nil)
+                    )
+                    controller?.present(progressController, in: .window(.root))
                     let _ = (localCopy
                     |> deliverOnMainQueue).startStandalone(next: { [weak controller] payload in
+                        progressController.dismiss()
                         preparingLocalCopy = false
                         preparedLocalCopy = payload
                         controller?.multiplePeersSelected?(
@@ -131,13 +138,36 @@ extension ChatControllerImpl {
                             forwardOptions,
                             nil
                         )
-                    }, error: { [weak self] error in
+                    }, error: { [weak controller] error in
+                        progressController.dismiss()
                         preparingLocalCopy = false
                         switch error {
                         case .unsupported:
-                            self?.controllerInteraction?.displayUndo(.info(title: nil, text: grvmStrings[.forwardLocalCopyUnsupported], timeout: nil, customUndoText: nil))
+                            controller?.present(UndoOverlayController(
+                                presentationData: presentationData,
+                                content: .info(
+                                    title: nil,
+                                    text: grvmStrings[.forwardLocalCopyUnsupported],
+                                    timeout: nil,
+                                    customUndoText: nil
+                                ),
+                                elevatedLayout: false,
+                                animateInAsReplacement: false,
+                                action: { _ in false }
+                            ), in: .current)
                         case .unavailable:
-                            self?.controllerInteraction?.displayUndo(.info(title: nil, text: grvmStrings[.forwardLocalCopyUnavailable], timeout: nil, customUndoText: nil))
+                            controller?.present(UndoOverlayController(
+                                presentationData: presentationData,
+                                content: .info(
+                                    title: nil,
+                                    text: grvmStrings[.forwardLocalCopyUnavailable],
+                                    timeout: nil,
+                                    customUndoText: nil
+                                ),
+                                elevatedLayout: false,
+                                animateInAsReplacement: false,
+                                action: { _ in false }
+                            ), in: .current)
                         }
                     })
                     return

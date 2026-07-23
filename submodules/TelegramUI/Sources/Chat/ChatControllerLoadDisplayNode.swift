@@ -128,6 +128,14 @@ import ComponentFlow
 import ComponentDisplayAdapters
 
 extension ChatControllerImpl {
+    func consumeSendActionOnViewUpdate() {
+        guard let action = self.layoutActionOnViewTransitionAction else {
+            return
+        }
+        self.layoutActionOnViewTransitionAction = nil
+        action()
+    }
+
     func reloadChatLocation(chatLocation: ChatLocation, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>, historyNode: ChatHistoryListNodeImpl, apply: @escaping ((ContainedViewLayoutTransition?) -> Void) -> Void) {
         self.contentDataReady.set(false)
         
@@ -872,10 +880,16 @@ extension ChatControllerImpl {
             guard let self else {
                 return
             }
-            self.layoutActionOnViewTransitionAction = f
+            var pendingAction: (() -> Void)? = f
+            let sendActionOnViewUpdate: () -> Void = {
+                let action = pendingAction
+                pendingAction = nil
+                action?()
+            }
+            self.layoutActionOnViewTransitionAction = sendActionOnViewUpdate
             
             self.chatDisplayNode.historyNode.layoutActionOnViewTransition = ({ [weak self] transition in
-                f()
+                sendActionOnViewUpdate()
                 if let strongSelf = self, let validLayout = strongSelf.validLayout {
                     strongSelf.layoutActionOnViewTransitionAction = nil
                     
@@ -1030,7 +1044,6 @@ extension ChatControllerImpl {
                 let _ = (strongSelf.shouldDivertMessagesToScheduled(messages: transformedMessages)
                 |> deliverOnMainQueue).start(next: { shouldDivert in
                     let signal: Signal<[MessageId?], NoError>
-                    var shouldOpenScheduledMessages = false
                     if forwardSourcePeerIds.count > 1 {
                         var forwardedMessages = forwardedMessages
                         if shouldDivert {
@@ -1044,7 +1057,6 @@ extension ChatControllerImpl {
                                     }
                                 }
                             }
-                            shouldOpenScheduledMessages = true
                         }
                         
                         var signals: [Signal<[MessageId?], NoError>] = []
@@ -1070,7 +1082,6 @@ extension ChatControllerImpl {
                                     return attributes
                                 }
                             }
-                            shouldOpenScheduledMessages = true
                         }
                         
                         signal = enqueueMessages(account: strongSelf.context.account, peerId: peerId, messages: transformedMessages)
@@ -1081,16 +1092,12 @@ extension ChatControllerImpl {
                         guard let strongSelf = self else {
                             return
                         }
+                        if messageIds.contains(where: { $0 != nil }) {
+                            strongSelf.consumeSendActionOnViewUpdate()
+                        }
                         if case .scheduledMessages = strongSelf.presentationInterfaceState.subject {
                         } else {
                             strongSelf.chatDisplayNode.historyNode.scrollToEndOfHistory()
-                            
-                            if shouldOpenScheduledMessages {
-                                if let layoutActionOnViewTransitionAction = strongSelf.layoutActionOnViewTransitionAction {
-                                    strongSelf.layoutActionOnViewTransitionAction = nil
-                                    layoutActionOnViewTransitionAction()
-                                }
-                            }
                         }
                     })
                     
@@ -4894,24 +4901,40 @@ extension ChatControllerImpl {
 
                 if case let .peer(peerId) = self.chatLocation {
                     self.chatUnreadCountDisposable?.dispose()
-                    self.chatUnreadCountDisposable = (self.context.engine.data.subscribe(
-                        TelegramEngine.EngineData.Item.Messages.PeerUnreadCount(id: peerId),
-                        TelegramEngine.EngineData.Item.Messages.TotalReadCounters(),
-                        TelegramEngine.EngineData.Item.Peer.NotificationSettings(id: peerId)
+                    let filteredUnreadStateUpdates = AyuGramHooks.filteredUnreadStateUpdates?(self.context.account.peerId) ?? .single(0)
+                    self.chatUnreadCountDisposable = (combineLatest(
+                        self.context.engine.data.subscribe(
+                            TelegramEngine.EngineData.Item.Messages.PeerReadCounters(id: peerId),
+                            TelegramEngine.EngineData.Item.Messages.TotalReadCounters(),
+                            TelegramEngine.EngineData.Item.Peer.NotificationSettings(id: peerId)
+                        ),
+                        filteredUnreadStateUpdates
                     )
-                    |> deliverOnMainQueue).startStrict(next: { [weak self] peerUnreadCount, totalReadCounters, notificationSettings in
+                    |> deliverOnMainQueue).startStrict(next: { [weak self] data, _ in
                         guard let strongSelf = self else {
                             return
                         }
-                        let unreadCount: Int32 = Int32(peerUnreadCount)
+                        let peerReadCounters = data.0
+                        let totalReadCounters = data.1
+                        let notificationSettings = data.2
+                        let rawUnreadState = peerReadCounters._asReadCounters()
+                        let adjustedUnreadState = rawUnreadState.flatMap { state in
+                            AyuGramHooks.adjustedUnreadPeerReadState?(
+                                strongSelf.context.account.peerId,
+                                peerId,
+                                state
+                            ) ?? state
+                        }
+                        let unreadCount: Int32 = adjustedUnreadState?.count ?? peerReadCounters.count
+                        let isUnread = adjustedUnreadState?.isUnread ?? (peerReadCounters.count > 0)
                         
                         let inAppSettings = strongSelf.context.sharedContext.currentInAppNotificationSettings.with { $0 }
-                        let totalChatCount: Int32 = renderedTotalUnreadCount(inAppSettings: inAppSettings, totalUnreadState: totalReadCounters._asCounters()).0
+                        let totalChatCount: Int32 = renderedTotalUnreadCount(inAppSettings: inAppSettings, totalUnreadState: totalReadCounters._asCounters(), accountPeerId: strongSelf.context.account.peerId).0
                         
                         var globalRemainingUnreadChatCount = totalChatCount
-                        if !notificationSettings._asNotificationSettings().isRemovedFromTotalUnreadCount(default: false) && unreadCount > 0 {
+                        if !notificationSettings._asNotificationSettings().isRemovedFromTotalUnreadCount(default: false) && isUnread {
                             if case .messages = inAppSettings.totalUnreadCountDisplayCategory {
-                                globalRemainingUnreadChatCount -= unreadCount
+                                globalRemainingUnreadChatCount -= max(1, unreadCount)
                             } else {
                                 globalRemainingUnreadChatCount -= 1
                             }

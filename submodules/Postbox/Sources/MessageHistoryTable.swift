@@ -3137,6 +3137,50 @@ final class MessageHistoryTable: Table {
         
         return (count, holes, messageIds)
     }
+
+    func incomingMessageIndicesAfterIndex(_ peerId: PeerId, namespace: MessageId.Namespace, afterIndex: MessageIndex) -> ([MessageIndex], Bool) {
+        precondition(afterIndex.id.peerId == peerId)
+
+        let namespaceAfterIndex = afterIndex.withNamespace(namespace)
+        let rangeStartKey: ValueBoxKey
+        if afterIndex.id.namespace == namespace {
+            rangeStartKey = self.key(namespaceAfterIndex)
+        } else {
+            // The history key is ordered as (peer, namespace, timestamp, id).
+            // A full key using Int32.min is not a lower bound for positive IDs:
+            // ValueBoxKey compares the signed fields as raw big-endian bytes,
+            // so 0x80000000 sorts after ordinary positive IDs.  Use the
+            // (peer, namespace, timestamp) prefix instead and apply the
+            // MessageIndex boundary check below to rows sharing the timestamp.
+            let timestampPrefix = ValueBoxKey(length: 8 + 4 + 4)
+            timestampPrefix.setInt64(0, value: peerId.toInt64())
+            timestampPrefix.setInt32(8, value: namespace)
+            timestampPrefix.setInt32(8 + 4, value: afterIndex.timestamp)
+            rangeStartKey = timestampPrefix
+        }
+        var indices: [MessageIndex] = []
+        self.valueBox.range(self.table, start: rangeStartKey, end: self.upperBound(peerId: peerId, namespace: namespace), values: { key, value in
+            let entry = self.readIntermediateEntry(key, value: value)
+            if entry.message.index > afterIndex
+                && !entry.message.flags.intersection(.IsIncomingMask).isEmpty
+                && !isLocallyDeletedMessage(MessageHistoryTable.renderMessageAttributes(entry.message)) {
+                indices.append(entry.message.index)
+            }
+            return true
+        }, limit: 0)
+
+        var holes = false
+        if let topIndex = self.topIndexEntry(peerId: peerId, namespace: namespace), afterIndex < topIndex, topIndex.id.id >= 1 {
+            // Hole ranges are keyed by message id and do not carry timestamps.
+            // Use the complete MessageIndex ordering for the eligibility check,
+            // then conservatively inspect the local id horizon through the top
+            // message. This avoids missing holes when timestamps and ids move
+            // in opposite directions across namespaces.
+            holes = !self.messageHistoryHoleIndexTable.closest(peerId: peerId, namespace: namespace, space: .everywhere, range: 1 ... topIndex.id.id).isEmpty
+        }
+
+        return (indices, holes)
+    }
     
     func outgoingMessageCountInRange(_ peerId: PeerId, namespace: MessageId.Namespace, fromIndex: MessageIndex, toIndex: MessageIndex) -> [MessageId] {
         var messageIds: [MessageId] = []

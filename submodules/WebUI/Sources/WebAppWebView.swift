@@ -89,12 +89,8 @@ function tgBrowserDisconnectObserver() {
 });
 """
 
-private let webviewViewportScale: CGFloat = 0.85
-
 final class WebAppWebView: WKWebView {
     var handleScriptMessage: (WKScriptMessage) -> Void = { _ in }
-    private let shouldIncreaseWebviewHeight: Bool
-    private let shouldIncreaseWebviewWidth: Bool
 
     var customInsets: UIEdgeInsets = .zero {
         didSet {
@@ -109,9 +105,6 @@ final class WebAppWebView: WKWebView {
     }
     
     init(account: Account) {
-        self.shouldIncreaseWebviewHeight = AyuGramHooks.shouldIncreaseWebviewHeight?(account.peerId) == true
-        self.shouldIncreaseWebviewWidth = AyuGramHooks.shouldIncreaseWebviewWidth?(account.peerId) == true
-
         let configuration = WKWebViewConfiguration()
                 
         if #available(iOS 17.0, *) {
@@ -164,15 +157,6 @@ final class WebAppWebView: WKWebView {
         }
         
         super.init(frame: CGRect(), configuration: configuration)
-
-        if AyuGramHooks.shouldSpoofWebviewAsAndroid?(account.peerId) == true {
-            self.customUserAgent = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-        }
-
-        if self.shouldIncreaseWebviewWidth {
-            let zoomScript = WKUserScript(source: "var meta = document.createElement('meta'); meta.name = 'viewport'; meta.content = 'width=device-width, initial-scale=\(webviewViewportScale), maximum-scale=3.0, user-scalable=yes'; var existing = document.querySelector('meta[name=viewport]'); if (existing) { existing.content = meta.content; } else { document.head.appendChild(meta); }", injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-            self.configuration.userContentController.addUserScript(zoomScript)
-        }
 
         self.disablesInteractiveKeyboardGestureRecognizer = true
         
@@ -245,14 +229,7 @@ final class WebAppWebView: WKWebView {
     }
         
     func updateMetrics(height: CGFloat, isExpanded: Bool, isStable: Bool, transition: ContainedViewLayoutTransition) {
-        let viewportHeight: CGFloat
-        if self.shouldIncreaseWebviewHeight && height.isFinite && height > 0.0 {
-            let increasedHeight = height / webviewViewportScale
-            viewportHeight = increasedHeight.isFinite && increasedHeight > 0.0 ? increasedHeight : height
-        } else {
-            viewportHeight = height
-        }
-        let viewportData = "{height:\(viewportHeight), is_expanded:\(isExpanded ? "true" : "false"), is_state_stable:\(isStable ? "true" : "false")}"
+        let viewportData = "{height:\(height), is_expanded:\(isExpanded ? "true" : "false"), is_state_stable:\(isStable ? "true" : "false")}"
         self.sendEvent(name: "viewport_changed", data: viewportData)
         
         let safeInsetsData = "{top:\(self.customInsets.top), bottom:\(self.customInsets.bottom), left:\(self.customInsets.left), right:\(self.customInsets.right)}"

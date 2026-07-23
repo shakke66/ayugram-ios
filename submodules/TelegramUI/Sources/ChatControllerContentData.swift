@@ -1999,12 +1999,20 @@ extension ChatControllerImpl {
                     if case let .peer(peerId) = chatLocation, let peerReadStateData = readStateData[peerId], let notificationSettings = peerReadStateData.notificationSettings {
                         
                         let inAppSettings = context.sharedContext.currentInAppNotificationSettings.with { $0 }
-                        let (count, _) = renderedTotalUnreadCount(inAppSettings: inAppSettings, totalUnreadState: peerReadStateData.totalState ?? ChatListTotalUnreadState(absoluteCounters: [:], filteredCounters: [:]))
+                        let (count, _) = renderedTotalUnreadCount(inAppSettings: inAppSettings, totalUnreadState: peerReadStateData.totalState ?? ChatListTotalUnreadState(absoluteCounters: [:], filteredCounters: [:]), accountPeerId: context.account.peerId)
                         
+                        let adjustedPeerReadState = peerReadStateData.readState.flatMap { readState in
+                            AyuGramHooks.adjustedUnreadPeerReadState?(context.account.peerId, peerId, readState) ?? readState
+                        }
+                        let adjustedPeerUnreadCount = adjustedPeerReadState.map { readState in
+                            max(readState.count, readState.markedUnread ? 1 : 0)
+                        } ?? peerReadStateData.unreadCount
+                        let adjustedPeerIsUnread = adjustedPeerReadState?.isUnread ?? (peerReadStateData.unreadCount > 0)
+
                         var globalRemainingUnreadChatCount = count
-                        if !notificationSettings.isRemovedFromTotalUnreadCount(default: false) && peerReadStateData.unreadCount > 0 {
+                        if !notificationSettings.isRemovedFromTotalUnreadCount(default: false) && adjustedPeerIsUnread {
                             if case .messages = inAppSettings.totalUnreadCountDisplayCategory {
-                                globalRemainingUnreadChatCount -= peerReadStateData.unreadCount
+                                globalRemainingUnreadChatCount -= adjustedPeerUnreadCount
                             } else {
                                 globalRemainingUnreadChatCount -= 1
                             }

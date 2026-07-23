@@ -13,13 +13,15 @@ import AyuGramLib
 
 private final class AyuGramChatsArguments {
     let context: AccountContext
+    let pushController: (ViewController) -> Void
     let updateBool: (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void
     let updateString: (WritableKeyPath<AyuGramSettings, String>, String) -> Void
     let updateInt32: (WritableKeyPath<AyuGramSettings, Int32>, Int32) -> Void
     let updateDouble: (WritableKeyPath<AyuGramSettings, Double>, Double) -> Void
 
-    init(context: AccountContext, updateBool: @escaping (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void, updateString: @escaping (WritableKeyPath<AyuGramSettings, String>, String) -> Void, updateInt32: @escaping (WritableKeyPath<AyuGramSettings, Int32>, Int32) -> Void, updateDouble: @escaping (WritableKeyPath<AyuGramSettings, Double>, Double) -> Void) {
+    init(context: AccountContext, pushController: @escaping (ViewController) -> Void, updateBool: @escaping (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void, updateString: @escaping (WritableKeyPath<AyuGramSettings, String>, String) -> Void, updateInt32: @escaping (WritableKeyPath<AyuGramSettings, Int32>, Int32) -> Void, updateDouble: @escaping (WritableKeyPath<AyuGramSettings, Double>, Double) -> Void) {
         self.context = context
+        self.pushController = pushController
         self.updateBool = updateBool
         self.updateString = updateString
         self.updateInt32 = updateInt32
@@ -40,10 +42,10 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
     case onlyAddedStickers(PresentationTheme, Bool)
     case showChannelReactions(PresentationTheme, Bool)
     case showGroupReactions(PresentationTheme, Bool)
+    case showPrivateReactions(PresentationTheme, Bool)
     case recentStickersCount(PresentationTheme, String, Int32)
     case channelsHeader(PresentationTheme)
     case quickAdmin(PresentationTheme, Bool)
-    case messageShot(PresentationTheme, Bool)
     case channelBottomButton(PresentationTheme, String, Int32)
     case messagesHeader(PresentationTheme)
     case showDeletedMark(PresentationTheme, Bool)
@@ -62,24 +64,22 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
     case showUserMessages(PresentationTheme, String, Int32)
     case showMessageDetails(PresentationTheme, String, Int32)
     case showRepeatMessage(PresentationTheme, String, Int32)
+    case showAddFilter(PresentationTheme, String, Int32)
     case messageFieldHeader(PresentationTheme)
     case showAttach(PresentationTheme, Bool)
-    case showAttachPopup(PresentationTheme, Bool)
-    case showCommands(PresentationTheme, Bool)
     case showTTL(PresentationTheme, Bool)
     case showEmoji(PresentationTheme, Bool)
-    case showEmojiPopup(PresentationTheme, Bool)
     case showVoice(PresentationTheme, Bool)
     case showGift(PresentationTheme, Bool)
     case showAiEditor(PresentationTheme, Bool)
 
     var section: ItemListSectionId {
         switch self {
-        case .stickersHeader, .onlyAddedStickers, .showChannelReactions, .showGroupReactions, .recentStickersCount: return AyuGramChatsSection.stickers.rawValue
-        case .channelsHeader, .quickAdmin, .messageShot, .channelBottomButton: return AyuGramChatsSection.channels.rawValue
+        case .stickersHeader, .onlyAddedStickers, .showChannelReactions, .showGroupReactions, .showPrivateReactions, .recentStickersCount: return AyuGramChatsSection.stickers.rawValue
+        case .channelsHeader, .quickAdmin, .channelBottomButton: return AyuGramChatsSection.channels.rawValue
         case .messagesHeader, .showDeletedMark, .showEditedMark, .deletedMark, .editedMark, .replaceWithIcons, .hideFastShare, .disableColoredReplies, .messageWidth, .semiTransparentDeleted: return AyuGramChatsSection.messages.rawValue
-        case .contextMenuHeader, .showReactionsPanel, .showViewsPanel, .showHideMessage, .showUserMessages, .showMessageDetails, .showRepeatMessage: return AyuGramChatsSection.contextMenu.rawValue
-        case .messageFieldHeader, .showAttach, .showAttachPopup, .showCommands, .showTTL, .showEmoji, .showEmojiPopup, .showVoice, .showGift, .showAiEditor: return AyuGramChatsSection.messageField.rawValue
+        case .contextMenuHeader, .showReactionsPanel, .showViewsPanel, .showHideMessage, .showUserMessages, .showMessageDetails, .showRepeatMessage, .showAddFilter: return AyuGramChatsSection.contextMenu.rawValue
+        case .messageFieldHeader, .showAttach, .showTTL, .showEmoji, .showVoice, .showGift, .showAiEditor: return AyuGramChatsSection.messageField.rawValue
         }
     }
 
@@ -89,10 +89,10 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         case .onlyAddedStickers: return 1
         case .showChannelReactions: return 2
         case .showGroupReactions: return 3
-        case .recentStickersCount: return 4
-        case .channelsHeader: return 5
-        case .quickAdmin: return 6
-        case .messageShot: return 7
+        case .showPrivateReactions: return 4
+        case .recentStickersCount: return 5
+        case .channelsHeader: return 6
+        case .quickAdmin: return 7
         case .channelBottomButton: return 8
         case .messagesHeader: return 9
         case .showDeletedMark: return 10
@@ -111,16 +111,14 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         case .showUserMessages: return 23
         case .showMessageDetails: return 24
         case .showRepeatMessage: return 25
-        case .messageFieldHeader: return 26
-        case .showAttach: return 27
-        case .showAttachPopup: return 28
-        case .showCommands: return 29
-        case .showTTL: return 30
-        case .showEmoji: return 31
-        case .showEmojiPopup: return 32
-        case .showVoice: return 33
-        case .showGift: return 34
-        case .showAiEditor: return 35
+        case .showAddFilter: return 26
+        case .messageFieldHeader: return 27
+        case .showAttach: return 28
+        case .showTTL: return 29
+        case .showEmoji: return 30
+        case .showVoice: return 31
+        case .showGift: return 32
+        case .showAiEditor: return 33
         }
     }
 
@@ -129,9 +127,9 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         case let (.onlyAddedStickers(_, lv), .onlyAddedStickers(_, rv)): return lv == rv
         case let (.showChannelReactions(_, lv), .showChannelReactions(_, rv)): return lv == rv
         case let (.showGroupReactions(_, lv), .showGroupReactions(_, rv)): return lv == rv
+        case let (.showPrivateReactions(_, lv), .showPrivateReactions(_, rv)): return lv == rv
         case let (.recentStickersCount(_, _, lv), .recentStickersCount(_, _, rv)): return lv == rv
         case let (.quickAdmin(_, lv), .quickAdmin(_, rv)): return lv == rv
-        case let (.messageShot(_, lv), .messageShot(_, rv)): return lv == rv
         case let (.channelBottomButton(_, _, lv), .channelBottomButton(_, _, rv)): return lv == rv
         case let (.showDeletedMark(_, lv), .showDeletedMark(_, rv)): return lv == rv
         case let (.showEditedMark(_, lv), .showEditedMark(_, rv)): return lv == rv
@@ -146,12 +144,10 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         case let (.showUserMessages(_, _, lv), .showUserMessages(_, _, rv)): return lv == rv
         case let (.showMessageDetails(_, _, lv), .showMessageDetails(_, _, rv)): return lv == rv
         case let (.showRepeatMessage(_, _, lv), .showRepeatMessage(_, _, rv)): return lv == rv
+        case let (.showAddFilter(_, _, lv), .showAddFilter(_, _, rv)): return lv == rv
         case let (.showAttach(_, lv), .showAttach(_, rv)): return lv == rv
-        case let (.showAttachPopup(_, lv), .showAttachPopup(_, rv)): return lv == rv
-        case let (.showCommands(_, lv), .showCommands(_, rv)): return lv == rv
         case let (.showTTL(_, lv), .showTTL(_, rv)): return lv == rv
         case let (.showEmoji(_, lv), .showEmoji(_, rv)): return lv == rv
-        case let (.showEmojiPopup(_, lv), .showEmojiPopup(_, rv)): return lv == rv
         case let (.showVoice(_, lv), .showVoice(_, rv)): return lv == rv
         case let (.showGift(_, lv), .showGift(_, rv)): return lv == rv
         case let (.showAiEditor(_, lv), .showAiEditor(_, rv)): return lv == rv
@@ -170,33 +166,37 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         case .stickersHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.stickersHeader], sectionId: self.section)
         case let .onlyAddedStickers(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.stickersOnlyAdded], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showOnlyAddedStickers, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.stickersOnlyAdded], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showOnlyAddedStickers, v) })
         case let .showChannelReactions(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.stickersChannelReactions], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showChannelReactions, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.stickersChannelReactions], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showChannelReactions, v) })
         case let .showGroupReactions(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.stickersGroupReactions], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showGroupReactions, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.stickersGroupReactions], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showGroupReactions, v) })
+        case let .showPrivateReactions(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.stickersPrivateReactions], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showPrivateReactions, v) })
         case let .recentStickersCount(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.stickersRecent], label: label, sectionId: self.section, style: .blocks, action: {
-                arguments.updateInt32(\.recentStickersCount, [20, 50, 100, 200][(([20, 50, 100, 200].firstIndex(of: value) ?? -1) + 1) % 4])
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.stickersRecent], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
+                arguments.pushController(ayuGramRecentStickersCountController(context: arguments.context, currentValue: value, onSelect: {
+                    arguments.updateInt32(\.recentStickersCount, $0)
+                }))
             })
         case .channelsHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.channelsHeader], sectionId: self.section)
         case let .quickAdmin(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.channelsQuickAdmin], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.quickAdminShortcuts, v) })
-        case let .messageShot(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.channelsMessageShot], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.messageShotFeature, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.channelsQuickAdmin], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.quickAdminShortcuts, v) })
         case let .channelBottomButton(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.channelsBottomButton], label: label, sectionId: self.section, style: .blocks, action: {
-                arguments.updateInt32(\.channelBottomButton, (value + 1) % 3)
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.channelsBottomButton], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
+                arguments.pushController(ayuGramChannelBottomButtonController(context: arguments.context, currentValue: value, onSelect: {
+                    arguments.updateInt32(\.channelBottomButton, $0)
+                }))
             })
         case .messagesHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.messagesHeader], sectionId: self.section)
         case let .showDeletedMark(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.deletedMarkVisible], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showDeletedMark, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.deletedMarkVisible], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showDeletedMark, v) })
         case let .showEditedMark(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.editedMarkVisible], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEditedMark, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.editedMarkVisible], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEditedMark, v) })
         case let .replaceWithIcons(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesIcons], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.replaceMarksWithIcons, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesIcons], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.replaceMarksWithIcons, v) })
         case let .deletedMark(theme, value):
             return ItemListSingleLineInputItem(
                 context: arguments.context,
@@ -226,93 +226,88 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
                 cleared: { arguments.updateString(\.editedMessageMark, "") }
             )
         case let .hideFastShare(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesFastShare], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideFastShareButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesFastShare], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideFastShareButton, v) })
         case let .disableColoredReplies(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesColoredReplies], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableColoredReplies, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesColoredReplies], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableColoredReplies, v) })
         case let .messageWidth(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.messagesWidth], label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.messagesWidth], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
                 arguments.updateDouble(\.messageWidthMultiplier, [1.0, 1.25, 1.5, 2.0][(([1.0, 1.25, 1.5, 2.0].firstIndex(where: { abs($0 - value) < 0.001 }) ?? -1) + 1) % 4])
             })
         case let .semiTransparentDeleted(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesTranslucent], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.semiTransparentDeletedMessages, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesTranslucent], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.semiTransparentDeletedMessages, v) })
         case .contextMenuHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.contextHeader], sectionId: self.section)
         case let .showReactionsPanel(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextReactions], label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextReactions], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showReactionsPanelInContextMenu, (value + 1) % 3)
             })
         case let .showViewsPanel(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextViews], label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextViews], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showViewsPanelInContextMenu, (value + 1) % 3)
             })
         case let .showHideMessage(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextHide], label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextHide], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showHideMessageInContextMenu, (value + 1) % 3)
             })
         case let .showUserMessages(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextUserMessages], label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextUserMessages], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showUserMessagesInContextMenu, (value + 1) % 3)
             })
         case let .showMessageDetails(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextDetails], label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextDetails], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showMessageDetailsInContextMenu, (value + 1) % 3)
             })
         case let .showRepeatMessage(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextRepeat], label: label, sectionId: self.section, style: .blocks, action: {
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextRepeat], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showRepeatMessageInContextMenu, (value + 1) % 3)
+            })
+        case let .showAddFilter(_, label, value):
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.contextAddFilter], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
+                arguments.updateInt32(\.showAddFilterInContextMenu, (value + 1) % 3)
             })
         case .messageFieldHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.fieldHeader], sectionId: self.section)
         case let .showAttach(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldAttach], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAttachButton, v) })
-        case let .showAttachPopup(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldAttachPopup], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAttachPopup, v) })
-        case let .showCommands(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldCommands], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showCommandsButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldAttach], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAttachButton, v) })
         case let .showTTL(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldTtl], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showTTLButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldTtl], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showTTLButton, v) })
         case let .showEmoji(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldEmoji], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEmojiButton, v) })
-        case let .showEmojiPopup(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldEmojiPopup], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEmojiPopup, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldEmoji], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showEmojiButton, v) })
         case let .showVoice(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldVoice], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showVoiceButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldVoice], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showVoiceButton, v) })
         case let .showGift(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldGift], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showGiftButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldGift], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showGiftButton, v) })
         case let .showAiEditor(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldAi], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAiEditorButton, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.fieldAi], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showAiEditorButton, v) })
         }
     }
 }
 
 private func ayuGramChatsEntries(settings: AyuGramSettings, presentationData: PresentationData) -> [AyuGramChatsEntry] {
     let strings = GRVMgramStrings(presentationData.strings)
-    let recentStickersLabel = "\(settings.recentStickersCount)"
-    let channelBottomLabels = [
-        strings[.channelsBottomHide],
-        strings[.channelsBottomMute],
-        strings[.channelsBottomDiscuss],
-    ]
-    let channelBottomLabel = settings.channelBottomButton < Int32(channelBottomLabels.count) ? channelBottomLabels[Int(settings.channelBottomButton)] : strings[.channelsBottomHide]
+    let recentStickersLabel = "\(min(200, max(1, settings.recentStickersCount)))"
+    let normalizedChannelBottomButton = grvmNormalizedChannelBottomButtonValue(settings.channelBottomButton)
+    let channelBottomLabel = normalizedChannelBottomButton == 1 ? strings[.channelsBottomDiscuss] : strings[.channelsBottomHide]
     let messageWidthLabel = String(format: "%.2f", settings.messageWidthMultiplier)
     let contextMenuLabels = [strings[.commonHidden], strings[.commonShown], strings[.commonWithModifier]]
-    let reactionsPanelLabel = settings.showReactionsPanelInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showReactionsPanelInContextMenu)] : strings[.commonHidden]
-    let viewsPanelLabel = settings.showViewsPanelInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showViewsPanelInContextMenu)] : strings[.commonHidden]
-    let hideMessageLabel = settings.showHideMessageInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showHideMessageInContextMenu)] : strings[.commonHidden]
-    let userMessagesLabel = settings.showUserMessagesInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showUserMessagesInContextMenu)] : strings[.commonHidden]
-    let messageDetailsLabel = settings.showMessageDetailsInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showMessageDetailsInContextMenu)] : strings[.commonHidden]
-    let repeatMessageLabel = settings.showRepeatMessageInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showRepeatMessageInContextMenu)] : strings[.commonHidden]
+    let reactionsPanelLabel = settings.showReactionsPanelInContextMenu >= 0 && settings.showReactionsPanelInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showReactionsPanelInContextMenu)] : strings[.commonHidden]
+    let viewsPanelLabel = settings.showViewsPanelInContextMenu >= 0 && settings.showViewsPanelInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showViewsPanelInContextMenu)] : strings[.commonHidden]
+    let hideMessageLabel = settings.showHideMessageInContextMenu >= 0 && settings.showHideMessageInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showHideMessageInContextMenu)] : strings[.commonHidden]
+    let userMessagesLabel = settings.showUserMessagesInContextMenu >= 0 && settings.showUserMessagesInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showUserMessagesInContextMenu)] : strings[.commonHidden]
+    let messageDetailsLabel = settings.showMessageDetailsInContextMenu >= 0 && settings.showMessageDetailsInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showMessageDetailsInContextMenu)] : strings[.commonHidden]
+    let repeatMessageLabel = settings.showRepeatMessageInContextMenu >= 0 && settings.showRepeatMessageInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showRepeatMessageInContextMenu)] : strings[.commonHidden]
+    let addFilterLabel = settings.showAddFilterInContextMenu >= 0 && settings.showAddFilterInContextMenu < Int32(contextMenuLabels.count) ? contextMenuLabels[Int(settings.showAddFilterInContextMenu)] : strings[.commonHidden]
 
     var entries: [AyuGramChatsEntry] = []
     entries.append(.stickersHeader(presentationData.theme))
     entries.append(.onlyAddedStickers(presentationData.theme, settings.showOnlyAddedStickers))
     entries.append(.showChannelReactions(presentationData.theme, settings.showChannelReactions))
     entries.append(.showGroupReactions(presentationData.theme, settings.showGroupReactions))
+    entries.append(.showPrivateReactions(presentationData.theme, settings.showPrivateReactions))
     entries.append(.recentStickersCount(presentationData.theme, recentStickersLabel, settings.recentStickersCount))
     entries.append(.channelsHeader(presentationData.theme))
     entries.append(.quickAdmin(presentationData.theme, settings.quickAdminShortcuts))
-    entries.append(.messageShot(presentationData.theme, settings.messageShotFeature))
-    entries.append(.channelBottomButton(presentationData.theme, channelBottomLabel, settings.channelBottomButton))
+    entries.append(.channelBottomButton(presentationData.theme, channelBottomLabel, normalizedChannelBottomButton))
     entries.append(.messagesHeader(presentationData.theme))
     entries.append(.showDeletedMark(presentationData.theme, settings.showDeletedMark))
     entries.append(.showEditedMark(presentationData.theme, settings.showEditedMark))
@@ -332,13 +327,11 @@ private func ayuGramChatsEntries(settings: AyuGramSettings, presentationData: Pr
     entries.append(.showUserMessages(presentationData.theme, userMessagesLabel, settings.showUserMessagesInContextMenu))
     entries.append(.showMessageDetails(presentationData.theme, messageDetailsLabel, settings.showMessageDetailsInContextMenu))
     entries.append(.showRepeatMessage(presentationData.theme, repeatMessageLabel, settings.showRepeatMessageInContextMenu))
+    entries.append(.showAddFilter(presentationData.theme, addFilterLabel, settings.showAddFilterInContextMenu))
     entries.append(.messageFieldHeader(presentationData.theme))
     entries.append(.showAttach(presentationData.theme, settings.showAttachButton))
-    entries.append(.showAttachPopup(presentationData.theme, settings.showAttachPopup))
-    entries.append(.showCommands(presentationData.theme, settings.showCommandsButton))
     entries.append(.showTTL(presentationData.theme, settings.showTTLButton))
     entries.append(.showEmoji(presentationData.theme, settings.showEmojiButton))
-    entries.append(.showEmojiPopup(presentationData.theme, settings.showEmojiPopup))
     entries.append(.showVoice(presentationData.theme, settings.showVoiceButton))
     entries.append(.showGift(presentationData.theme, settings.showGiftButton))
     entries.append(.showAiEditor(presentationData.theme, settings.showAiEditorButton))
@@ -346,8 +339,12 @@ private func ayuGramChatsEntries(settings: AyuGramSettings, presentationData: Pr
 }
 
 public func ayuGramChatsController(context: AccountContext) -> ViewController {
+    var pushControllerImpl: ((ViewController) -> Void)?
     let arguments = AyuGramChatsArguments(
         context: context,
+        pushController: { controller in
+            pushControllerImpl?(controller)
+        },
         updateBool: { keyPath, value in
             let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in var s = s; s[keyPath: keyPath] = value; return s }.startStandalone()
         },
@@ -372,5 +369,9 @@ public func ayuGramChatsController(context: AccountContext) -> ViewController {
         )
     }
 
-    return ItemListController(context: context, state: signal)
+    let controller = ItemListController(context: context, state: signal)
+    pushControllerImpl = { [weak controller] child in
+        controller?.push(child)
+    }
+    return controller
 }

@@ -35,7 +35,10 @@ public final class GRVMMessageFilterEngine {
         self.accountPeerId = accountPeerId
         self.settings = settings
         self.blockedPeerIds = blockedPeerIds
-        self.shadowBanPeerIds = Set(settings.shadowBanIds.map(PeerId.init))
+        self.shadowBanPeerIds = Set(GRVMShadowBanPolicy.normalizedPeerIds(
+            settings.shadowBanIds,
+            accountPeerId: accountPeerId.toInt64()
+        ).map(PeerId.init))
 
         var compiledFilters: [CompiledFilter] = []
         for filter in settings.filters {
@@ -55,11 +58,14 @@ public final class GRVMMessageFilterEngine {
     }
 
     public func isShadowBanned(_ peerId: PeerId) -> Bool {
-        return self.settings.enableFilters && self.shadowBanPeerIds.contains(peerId)
+        return self.settings.enableFilters
+            && peerId != self.accountPeerId
+            && self.shadowBanPeerIds.contains(peerId)
     }
 
     public func matchingFilterIds(for message: Message) -> [String] {
-        guard self.settings.enableFilters else {
+        guard self.settings.enableFilters,
+              message.effectivelyIncoming(self.accountPeerId) else {
             return []
         }
         let candidate = self.candidate(for: message)
@@ -73,7 +79,16 @@ public final class GRVMMessageFilterEngine {
     }
 
     public func isMessageHidden(_ message: Message) -> Bool {
-        guard self.settings.enableFilters else {
+        var visitedMessageIds = Set<MessageId>()
+        return self.isMessageHidden(message, visitedMessageIds: &visitedMessageIds)
+    }
+
+    private func isMessageHidden(_ message: Message, visitedMessageIds: inout Set<MessageId>) -> Bool {
+        guard self.settings.enableFilters,
+              message.effectivelyIncoming(self.accountPeerId) else {
+            return false
+        }
+        guard visitedMessageIds.insert(message.id).inserted else {
             return false
         }
 
@@ -83,6 +98,9 @@ public final class GRVMMessageFilterEngine {
         }
         if let forwardedAuthorId = message.forwardInfo?.author?.id {
             senderPeerIds.insert(forwardedAuthorId)
+        }
+        if let originalAuthorId = message.sourceAuthorInfo?.originalAuthor {
+            senderPeerIds.insert(originalAuthorId)
         }
         if !senderPeerIds.isDisjoint(with: self.shadowBanPeerIds) {
             return true
@@ -106,6 +124,15 @@ public final class GRVMMessageFilterEngine {
         if !applicableReversedFilters.isEmpty
             && !applicableReversedFilters.contains(where: { $0.matches(candidate) }) {
             return true
+        }
+        for attribute in message.attributes {
+            guard let replyAttribute = attribute as? ReplyMessageAttribute,
+                  let replyMessage = message.associatedMessages[replyAttribute.messageId] else {
+                continue
+            }
+            if self.isMessageHidden(replyMessage, visitedMessageIds: &visitedMessageIds) {
+                return true
+            }
         }
         return false
     }

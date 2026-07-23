@@ -26,13 +26,26 @@ def swift_block(source: str, signature: str) -> str:
 
 
 class GhostSettingsContractTests(unittest.TestCase):
-    def test_five_components_and_new_fields_exist(self) -> None:
-        models = MODELS.read_text(encoding="utf-8")
-        for case in ("readReceipts", "storyReads", "onlineStatus", "typingAndUploads", "goOfflineAfterOnline"):
-            self.assertIn(f"case {case}", models)
+    def test_four_surviving_components_exist_and_removed_models_are_gone(self) -> None:
+        self.assertFalse(MODELS.exists())
         settings = SETTINGS.read_text(encoding="utf-8")
-        for field in ("ghostLockedComponents", "goOfflineAfterOnline", "filters", "disableExternalLinkWarning", "increaseWebviewHeight", "increaseWebviewWidth"):
+        for field in (
+            "suppressReadReceipts",
+            "suppressStoryReads",
+            "suppressOnlineStatus",
+            "suppressTypingAndUploads",
+            "filters",
+            "disableExternalLinkWarning",
+        ):
             self.assertIn(f"var {field}:", settings)
+        for field in (
+            "ghostLockedComponents",
+            "goOfflineAfterOnline",
+            "readOnAction",
+            "increaseWebviewHeight",
+            "increaseWebviewWidth",
+        ):
+            self.assertNotIn(f"var {field}:", settings)
 
     def test_filter_shape_is_stable(self) -> None:
         source = FILTER.read_text(encoding="utf-8")
@@ -43,63 +56,80 @@ class GhostSettingsContractTests(unittest.TestCase):
         self.assertIn("bytes[6] = (bytes[6] & 0x0f) | 0x50", source)
         self.assertIn("bytes[8] = (bytes[8] & 0x3f) | 0x80", source)
 
-    def test_decoding_migrates_legacy_values_and_encoding_keeps_downgrade_keys(self) -> None:
+    def test_decoding_migrates_surviving_values_and_encoding_uses_canonical_ghost_keys(self) -> None:
         source = SETTINGS.read_text(encoding="utf-8")
         for key in (
-            "ghostLockedComponents",
-            "goOfflineAfterOnline",
+            "suppressReadReceipts",
+            "suppressStoryReads",
+            "suppressOnlineStatus",
+            "suppressTypingAndUploads",
+            "sendWithoutSoundMode",
             "filters",
             "disableExternalLinkWarning",
-            "increaseWebviewHeight",
-            "increaseWebviewWidth",
         ):
             self.assertGreaterEqual(source.count(f'forKey: "{key}"'), 2, key)
         self.assertIn("legacyMessageFilters.enumerated().map", source)
         self.assertIn("legacyReversedFilters.enumerated().map", source)
         self.assertIn("AyuMessageFilter.migratingLegacy", source)
-        self.assertIn("self.sendWithoutSound ? 2 : 0", source)
-        self.assertIn("?? self.increaseWebviewSize", source)
+        self.assertIn("self.sendWithoutSoundMode = sendWithoutSound ? 2 : 0", source)
         self.assertIn("GRVMTranslationProvider(rawValue:", source)
-        for legacy_key in (
+        for legacy_key in ("messageFilters", "reversedFilters"):
+            self.assertIn(f'container.encode(self.{legacy_key}, forKey: "{legacy_key}")', source)
+        for decode_only_key in (
             "sendWithoutSound",
-            "increaseWebviewSize",
+            "sendWithoutSoundOption",
             "suppressTypingStatus",
             "suppressUploadProgress",
-            "messageFilters",
-            "reversedFilters",
         ):
-            self.assertIn(f'container.encode(self.{legacy_key}, forKey: "{legacy_key}")', source)
+            self.assertIn(f'forKey: "{decode_only_key}"', source)
+            self.assertNotIn(
+                f'container.encode(self.{decode_only_key}, forKey: "{decode_only_key}")',
+                source,
+            )
+        for removed_key in (
+            "ghostLockedComponents",
+            "goOfflineAfterOnline",
+            "readOnAction",
+            "increaseWebviewSize",
+            "increaseWebviewHeight",
+            "increaseWebviewWidth",
+        ):
+            self.assertNotIn(f'forKey: "{removed_key}"', source)
 
-    def test_ghost_count_and_bulk_mutation_use_five_lockable_components(self) -> None:
+    def test_ghost_count_and_bulk_mutation_use_four_independent_components(self) -> None:
         source = SETTINGS.read_text(encoding="utf-8")
         count = swift_block(source, "public var ghostModeActiveCount")
-        self.assertIn("suppressTypingStatus || suppressUploadProgress", count)
-        self.assertIn("goOfflineAfterOnline", count)
-        self.assertNotIn("if suppressTypingStatus {", count)
-        self.assertNotIn("if suppressUploadProgress {", count)
+        for component in (
+            "suppressReadReceipts",
+            "suppressStoryReads",
+            "suppressOnlineStatus",
+            "suppressTypingAndUploads",
+        ):
+            self.assertIn(f"if {component}", count)
+        self.assertEqual(4, count.count("count += 1"))
+        self.assertNotIn("goOfflineAfterOnline", count)
 
         mutation = swift_block(source, "public mutating func setGhostModeEnabled")
         for component in (
-            "readReceipts",
-            "storyReads",
-            "onlineStatus",
-            "typingAndUploads",
-            "goOfflineAfterOnline",
+            "suppressReadReceipts",
+            "suppressStoryReads",
+            "suppressOnlineStatus",
+            "suppressTypingAndUploads",
         ):
-            self.assertIn(f".{component}", mutation)
-        self.assertIn("self.suppressTypingStatus = enabled", mutation)
-        self.assertIn("self.suppressUploadProgress = enabled", mutation)
-        self.assertNotIn("ghostLockedComponents.removeAll", mutation)
+            self.assertIn(f"self.{component} = enabled", mutation)
+        self.assertNotIn("goOfflineAfterOnline", mutation)
+        self.assertNotIn("ghostLockedComponents", mutation)
 
-    def test_mutually_exclusive_rows_normalize_every_mutation_path(self) -> None:
+    def test_removed_ghost_settings_have_no_schema_or_mutation_path(self) -> None:
         source = SETTINGS.read_text(encoding="utf-8")
-        self.assertIn("if readOnAction && useScheduledMessages", source)
-        self.assertIn("if useScheduledMessages && readOnAction", source)
-        self.assertIn(
-            "self.useScheduledMessages = useScheduledMessages && !readOnAction",
-            source,
-        )
-        self.assertIn("&& !self.readOnAction", source)
+        for removed in (
+            "GRVMGhostComponent",
+            "ghostLockedComponents",
+            "goOfflineAfterOnline",
+            "readOnAction",
+            "setReadOnAction",
+        ):
+            self.assertNotIn(removed, source)
 
     def test_identity_sensitive_hooks_are_account_aware(self) -> None:
         source = HOOKS.read_text(encoding="utf-8")
@@ -111,9 +141,7 @@ class GhostSettingsContractTests(unittest.TestCase):
             "shouldSuppressStoryRead: ((PeerId) -> Bool)",
             "shouldSuppressContentRead: ((PeerId) -> Bool)",
             "shouldSuppressUploadProgress: ((PeerId) -> Bool)",
-            "shouldForceOfflineAfterOnline: ((PeerId) -> Bool)",
             "shouldSuggestGhostForStories: ((PeerId) -> Bool)",
-            "shouldMarkReadAfterAction: ((PeerId) -> Bool)",
             "shouldUseScheduledMessages: ((PeerId) -> Bool)",
             "sendWithoutSoundMode: ((PeerId) -> Int32)",
             "isMessageHiddenByFilter: ((PeerId, Message) -> Bool)",
@@ -135,18 +163,23 @@ class GhostSettingsContractTests(unittest.TestCase):
             "shouldConfirmStickers: ((PeerId) -> Bool)",
             "shouldConfirmGIF: ((PeerId) -> Bool)",
             "shouldConfirmVoice: ((PeerId) -> Bool)",
-            "shouldSpoofWebviewAsAndroid: ((PeerId) -> Bool)",
-            "shouldIncreaseWebviewHeight: ((PeerId) -> Bool)",
-            "shouldIncreaseWebviewWidth: ((PeerId) -> Bool)",
         ):
             self.assertIn(signature, source)
+        for removed_hook in (
+            "shouldForceOfflineAfterOnline",
+            "shouldMarkReadAfterAction",
+            "shouldSpoofWebviewAsAndroid",
+            "shouldIncreaseWebviewHeight",
+            "shouldIncreaseWebviewWidth",
+        ):
+            self.assertNotIn(removed_hook, source)
 
     def test_translation_provider_lives_in_telegram_core(self) -> None:
         source = PROVIDER.read_text(encoding="utf-8")
         self.assertIn("enum GRVMTranslationProvider: Int32", source)
         self.assertIn("case telegram = 0", source)
         self.assertIn("case google = 1", source)
-        self.assertIn("case yandex = 2", source)
+        self.assertNotIn("case yandex", source)
 
 
 if __name__ == "__main__":

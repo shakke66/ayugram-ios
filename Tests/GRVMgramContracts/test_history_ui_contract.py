@@ -38,6 +38,10 @@ SAVED_MESSAGES_MENU = (
     TELEGRAM_UI
     / "Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift"
 )
+PROFILE_ITEMS = (
+    TELEGRAM_UI
+    / "Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift"
+)
 CHAT_LIST_MENU = ROOT / "submodules/ChatListUI/Sources/ChatListController.swift"
 LEGACY_DB = ROOT / "submodules/AyuGramLib/Sources/AyuDeletedMessagesDB.swift"
 ARCHIVE_MENU_ITEMS = (
@@ -53,6 +57,27 @@ def window(value: str, anchor: str, size: int) -> str:
 
 
 class HistoryUIContractTests(unittest.TestCase):
+    def test_profile_exposes_one_typed_chat_and_topic_scoped_archive_row(self) -> None:
+        value = PROFILE_ITEMS.read_text(encoding="utf-8")
+
+        for token in (
+            "import AyuGramSettingsUI",
+            "private enum GRVMPeerInfoItemId: Hashable",
+            "func insertGRVMArchiveRow(",
+            "anchorIds: [AnyHashable]",
+            "text: grvmStrings[.chatMenuTitle]",
+            "grvmDeletedMessagesController(",
+            "context: context",
+            "peerId: peerId",
+            "threadId: chatLocation.threadId",
+            "interaction.getController()?.push(controller)",
+            "anchorIds: [ItemAbout, ItemDialogId]",
+            "anchorIds: [0, ItemDialogId]",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, value)
+        self.assertEqual(4, value.count("insertGRVMArchiveRow("))
+
     def test_timestamp_reads_persistent_attributes_and_keeps_configurable_marks(self) -> None:
         value = TIMESTAMP.read_text(encoding="utf-8")
 
@@ -231,8 +256,8 @@ class HistoryUIContractTests(unittest.TestCase):
 
         for token in (
             "public func grvmDeletedMessagesController(",
-            "peerId: PeerId? = nil",
-            "threadId: Int64? = nil",
+            "peerId: PeerId",
+            "threadId: Int64?",
             "context.account.peerId",
             "AyuGramFeatures.deletedMessages?(",
             "peerId, threadId, query",
@@ -241,33 +266,30 @@ class HistoryUIContractTests(unittest.TestCase):
             "textUpdated:",
             "arguments.openMessage(message.key)",
             "subject: .message(id: .id(messageId)",
+            "ItemListTextWithLabelItem(",
+            "enabledEntityTypes: []",
+            "multiline: true",
+            "longTapAction:",
+            "arguments.removeMessage(message.key)",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, value)
         self.assertNotIn("ChatList_Search_NoResults", value)
-        self.assertIn(
-            '@available(*, deprecated, message: "Use grvmDeletedMessagesController(context:peerId:threadId:)")',
-            value,
-        )
+        self.assertNotIn("ayuGramDeletedMessagesController", value)
         message_item = window(value, "case let .message(_, _, message):", 2500)
         self.assertNotIn("action: {}", message_item)
         self.assertIn("arguments.openMessage(message.key)", message_item)
 
-    def test_main_settings_deleted_archive_keeps_account_wide_scope(self) -> None:
+    def test_main_settings_exposes_no_global_archive_or_history_routes(self) -> None:
         value = MAIN_CONTROLLER.read_text(encoding="utf-8")
-        item_start = value.index("func item(")
-        section_start = value.index("case .spyHistory:", item_start)
-        section = value[section_start : value.index("case .editHistory:", section_start)]
-
         for token in (
+            "spyHistory",
+            "editHistory",
             "grvmDeletedMessagesController(",
-            "context: arguments.context",
-            "peerId: nil",
-            "threadId: nil",
+            "ayuGramEditedMessagesController(",
         ):
             with self.subTest(token=token):
-                self.assertIn(token, section)
-        self.assertNotIn("ayuGramDeletedMessagesController(", section)
+                self.assertNotIn(token, value)
 
     def test_deleted_archive_navigation_is_late_bound_and_thread_aware(self) -> None:
         value = DELETED_CONTROLLER.read_text(encoding="utf-8")
@@ -394,16 +416,8 @@ class HistoryUIContractTests(unittest.TestCase):
 
     def test_bot_forum_archive_menu_uses_chat_location_scope(self) -> None:
         value = BOT_FORUM_MENU.read_text(encoding="utf-8")
-        section = window(value, "items.append(contentsOf: grvmArchiveContextMenuItems(", 500)
-
-        for token in (
-            "context: self.context",
-            "sourceController: self",
-            "peerId: peerId",
-            "threadId: self.chatLocation.threadId",
-        ):
-            with self.subTest(token=token):
-                self.assertIn(token, section)
+        self.assertNotIn("grvmArchiveContextMenuItems(", value)
+        self.assertNotIn("items.append(contentsOf: grvmArchiveContextMenuItems(", value)
 
     def test_forum_root_archive_menu_uses_peer_without_thread(self) -> None:
         value = CHAT_LIST_MENU.read_text(encoding="utf-8")
@@ -446,13 +460,16 @@ class HistoryUIContractTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, value)
 
-    def test_legacy_global_history_is_informational_and_database_api_is_retired(self) -> None:
-        edited = EDITED_CONTROLLER.read_text(encoding="utf-8")
+    def test_global_history_controller_is_removed_and_database_api_is_retired(self) -> None:
+        history = HISTORY_CONTROLLER.read_text(encoding="utf-8")
+        settings_build = SETTINGS_UI_BUILD.read_text(encoding="utf-8")
         legacy = LEGACY_DB.read_text(encoding="utf-8")
 
-        self.assertNotIn("AyuDeletedMessagesDB", edited)
-        self.assertIn("strings[.historyInfo]", edited)
-        self.assertIn("strings[.historyTitle]", edited)
+        self.assertFalse(EDITED_CONTROLLER.exists())
+        self.assertNotIn("AyuGramEditedMessagesController.swift", settings_build)
+        self.assertIn("public func grvmMessageHistoryController(", history)
+        self.assertIn("strings[.historyTitle]", history)
+        self.assertIn("strings[.historyCurrent]", history)
         self.assertIn("@available(*, deprecated", legacy)
         self.assertIn("public enum AyuDeletedMessagesDB", legacy)
         for token in (

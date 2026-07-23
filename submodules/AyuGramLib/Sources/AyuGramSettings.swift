@@ -5,29 +5,12 @@ import TelegramUIPreferences
 
 public struct AyuGramSettings: Codable, Equatable {
     // MARK: - Ghost Mode
-    public var ghostModeEnabled: Bool
-    public var ghostLockedComponents: Set<GRVMGhostComponent>
     public var suppressReadReceipts: Bool
     public var suppressStoryReads: Bool
     public var suppressOnlineStatus: Bool
-    public var suppressTypingStatus: Bool
-    public var suppressUploadProgress: Bool
-    public var goOfflineAfterOnline: Bool
-    public var readOnAction: Bool {
-        didSet {
-            if readOnAction && useScheduledMessages {
-                useScheduledMessages = false
-            }
-        }
-    }
-    public var useScheduledMessages: Bool {
-        didSet {
-            if useScheduledMessages && readOnAction {
-                readOnAction = false
-            }
-        }
-    }
-    public var sendWithoutSound: Bool
+    public var suppressTypingAndUploads: Bool
+    public var useScheduledMessages: Bool
+    public var sendWithoutSoundMode: Int32
 
     // MARK: - Message Saving (Spy Mode)
     public var saveDeletedMessages: Bool
@@ -57,10 +40,6 @@ public struct AyuGramSettings: Codable, Equatable {
     public var disableNotificationDelay: Bool
     public var showSecondsInMessages: Bool
     public var showDialogId: Int32
-    public var spoofWebviewAsAndroid: Bool
-    public var increaseWebviewSize: Bool
-    public var increaseWebviewHeight: Bool
-    public var increaseWebviewWidth: Bool
     public var disableExternalLinkWarning: Bool
     public var confirmSendSticker: Bool
     public var confirmSendGIF: Bool
@@ -70,11 +49,9 @@ public struct AyuGramSettings: Codable, Equatable {
     public var selectedAppIcon: String
     public var hideNotificationBadge: Bool
     public var hideNotificationCounters: Bool
-    public var md3StyleSwitches: Bool
     public var removeMessageBubbleTail: Bool
     public var disableCustomBackgrounds: Bool
     public var codeFontName: String
-    public var adaptiveCoverColor: Bool
     public var hideFolderCounters: Bool
     public var hideAllChatsFolder: Bool
     public var showGhostToggleInDrawer: Bool
@@ -88,15 +65,6 @@ public struct AyuGramSettings: Codable, Equatable {
     public var recentStickersCount: Int32
     public var channelBottomButton: Int32
     public var quickAdminShortcuts: Bool
-    public var messageShotFeature: Bool
-    public var messageShotShowBackground: Bool
-    public var messageShotShowDate: Bool
-    public var messageShotShowReactions: Bool
-    public var messageShotShowHeader: Bool
-    public var messageShotShowHeaderDecorations: Bool
-    public var messageShotColorfulReplies: Bool
-    public var messageShotRevealSpoilers: Bool
-    public var messageShotTheme: Int32
     public var showDeletedMark: Bool
     public var showEditedMark: Bool
     public var deletedMessageMark: String
@@ -117,12 +85,9 @@ public struct AyuGramSettings: Codable, Equatable {
 
     // MARK: - Message Field
     public var showAttachButton: Bool
-    public var showCommandsButton: Bool
     public var showTTLButton: Bool
     public var showEmojiButton: Bool
     public var showVoiceButton: Bool
-    public var showAttachPopup: Bool
-    public var showEmojiPopup: Bool
 
     // MARK: - Drawer / Sidebar
     public var showMyProfileInDrawer: Bool
@@ -157,11 +122,6 @@ public struct AyuGramSettings: Codable, Equatable {
     public var semiTransparentDeletedMessages: Bool
     public var hidePremiumStatuses: Bool
     public var avatarCorners: Int32
-    public var singleCornerRadius: Bool
-    public var messageBubbleRadius: Int32
-
-    // MARK: - Sending option (6.7.8)
-    public var sendWithoutSoundOption: Int32
 
     // MARK: - Filters (6.7.8)
     public var shadowBanIds: [Int64]
@@ -181,24 +141,18 @@ public struct AyuGramSettings: Codable, Equatable {
         if suppressReadReceipts { count += 1 }
         if suppressStoryReads { count += 1 }
         if suppressOnlineStatus { count += 1 }
-        if suppressTypingStatus || suppressUploadProgress { count += 1 }
-        if goOfflineAfterOnline { count += 1 }
+        if suppressTypingAndUploads { count += 1 }
         return count
     }
 
     public static var defaultSettings: AyuGramSettings {
         return AyuGramSettings(
-            ghostModeEnabled: false,
-            ghostLockedComponents: [],
             suppressReadReceipts: false,
             suppressStoryReads: false,
             suppressOnlineStatus: false,
-            suppressTypingStatus: false,
-            suppressUploadProgress: false,
-            goOfflineAfterOnline: false,
-            readOnAction: false,
+            suppressTypingAndUploads: false,
             useScheduledMessages: false,
-            sendWithoutSound: false,
+            sendWithoutSoundMode: 0,
             saveDeletedMessages: true,
             saveEditHistory: true,
             saveForBots: false,
@@ -213,10 +167,6 @@ public struct AyuGramSettings: Codable, Equatable {
             disableNotificationDelay: true,
             showSecondsInMessages: false,
             showDialogId: 0,
-            spoofWebviewAsAndroid: false,
-            increaseWebviewSize: true,
-            increaseWebviewHeight: true,
-            increaseWebviewWidth: true,
             disableExternalLinkWarning: false,
             confirmSendSticker: false,
             confirmSendGIF: false,
@@ -224,11 +174,9 @@ public struct AyuGramSettings: Codable, Equatable {
             selectedAppIcon: "default",
             hideNotificationBadge: false,
             hideNotificationCounters: false,
-            md3StyleSwitches: false,
             removeMessageBubbleTail: false,
             disableCustomBackgrounds: false,
             codeFontName: "",
-            adaptiveCoverColor: true,
             hideFolderCounters: false,
             hideAllChatsFolder: false,
             showGhostToggleInDrawer: true,
@@ -240,15 +188,6 @@ public struct AyuGramSettings: Codable, Equatable {
             recentStickersCount: 100,
             channelBottomButton: 1,
             quickAdminShortcuts: true,
-            messageShotFeature: true,
-            messageShotShowBackground: true,
-            messageShotShowDate: false,
-            messageShotShowReactions: false,
-            messageShotShowHeader: true,
-            messageShotShowHeaderDecorations: true,
-            messageShotColorfulReplies: true,
-            messageShotRevealSpoilers: true,
-            messageShotTheme: 0,
             showDeletedMark: true,
             showEditedMark: true,
             deletedMessageMark: "\u{1F9F9}",
@@ -265,12 +204,9 @@ public struct AyuGramSettings: Codable, Equatable {
             showRepeatMessageInContextMenu: 1,
             showAddFilterInContextMenu: 1,
             showAttachButton: true,
-            showCommandsButton: true,
             showTTLButton: true,
             showEmojiButton: true,
             showVoiceButton: true,
-            showAttachPopup: true,
-            showEmojiPopup: true,
             showMyProfileInDrawer: false,
             showBotsInDrawer: false,
             showCreateGroupInDrawer: true,
@@ -293,9 +229,6 @@ public struct AyuGramSettings: Codable, Equatable {
             semiTransparentDeletedMessages: false,
             hidePremiumStatuses: false,
             avatarCorners: 50,
-            singleCornerRadius: false,
-            messageBubbleRadius: 16,
-            sendWithoutSoundOption: 0,
             shadowBanIds: [],
             filters: [],
             messageFilters: [],
@@ -304,17 +237,12 @@ public struct AyuGramSettings: Codable, Equatable {
     }
 
     public init(
-        ghostModeEnabled: Bool,
-        ghostLockedComponents: Set<GRVMGhostComponent>,
         suppressReadReceipts: Bool,
         suppressStoryReads: Bool,
         suppressOnlineStatus: Bool,
-        suppressTypingStatus: Bool,
-        suppressUploadProgress: Bool,
-        goOfflineAfterOnline: Bool,
-        readOnAction: Bool,
+        suppressTypingAndUploads: Bool,
         useScheduledMessages: Bool,
-        sendWithoutSound: Bool,
+        sendWithoutSoundMode: Int32,
         saveDeletedMessages: Bool,
         saveEditHistory: Bool,
         saveForBots: Bool,
@@ -329,10 +257,6 @@ public struct AyuGramSettings: Codable, Equatable {
         disableNotificationDelay: Bool,
         showSecondsInMessages: Bool,
         showDialogId: Int32,
-        spoofWebviewAsAndroid: Bool,
-        increaseWebviewSize: Bool,
-        increaseWebviewHeight: Bool,
-        increaseWebviewWidth: Bool,
         disableExternalLinkWarning: Bool,
         confirmSendSticker: Bool,
         confirmSendGIF: Bool,
@@ -340,11 +264,9 @@ public struct AyuGramSettings: Codable, Equatable {
         selectedAppIcon: String,
         hideNotificationBadge: Bool,
         hideNotificationCounters: Bool,
-        md3StyleSwitches: Bool,
         removeMessageBubbleTail: Bool,
         disableCustomBackgrounds: Bool,
         codeFontName: String,
-        adaptiveCoverColor: Bool,
         hideFolderCounters: Bool,
         hideAllChatsFolder: Bool,
         showGhostToggleInDrawer: Bool,
@@ -356,15 +278,6 @@ public struct AyuGramSettings: Codable, Equatable {
         recentStickersCount: Int32,
         channelBottomButton: Int32,
         quickAdminShortcuts: Bool,
-        messageShotFeature: Bool,
-        messageShotShowBackground: Bool,
-        messageShotShowDate: Bool,
-        messageShotShowReactions: Bool,
-        messageShotShowHeader: Bool,
-        messageShotShowHeaderDecorations: Bool,
-        messageShotColorfulReplies: Bool,
-        messageShotRevealSpoilers: Bool,
-        messageShotTheme: Int32,
         showDeletedMark: Bool,
         showEditedMark: Bool,
         deletedMessageMark: String,
@@ -381,12 +294,9 @@ public struct AyuGramSettings: Codable, Equatable {
         showRepeatMessageInContextMenu: Int32,
         showAddFilterInContextMenu: Int32,
         showAttachButton: Bool,
-        showCommandsButton: Bool,
         showTTLButton: Bool,
         showEmojiButton: Bool,
         showVoiceButton: Bool,
-        showAttachPopup: Bool,
-        showEmojiPopup: Bool,
         showMyProfileInDrawer: Bool,
         showBotsInDrawer: Bool,
         showCreateGroupInDrawer: Bool,
@@ -409,25 +319,17 @@ public struct AyuGramSettings: Codable, Equatable {
         semiTransparentDeletedMessages: Bool,
         hidePremiumStatuses: Bool,
         avatarCorners: Int32,
-        singleCornerRadius: Bool,
-        messageBubbleRadius: Int32,
-        sendWithoutSoundOption: Int32,
         shadowBanIds: [Int64],
         filters: [AyuMessageFilter],
         messageFilters: [String],
         reversedFilters: [String]
     ) {
-        self.ghostModeEnabled = ghostModeEnabled
-        self.ghostLockedComponents = ghostLockedComponents
         self.suppressReadReceipts = suppressReadReceipts
         self.suppressStoryReads = suppressStoryReads
         self.suppressOnlineStatus = suppressOnlineStatus
-        self.suppressTypingStatus = suppressTypingStatus
-        self.suppressUploadProgress = suppressUploadProgress
-        self.goOfflineAfterOnline = goOfflineAfterOnline
-        self.readOnAction = readOnAction
-        self.useScheduledMessages = useScheduledMessages && !readOnAction
-        self.sendWithoutSound = sendWithoutSound
+        self.suppressTypingAndUploads = suppressTypingAndUploads
+        self.useScheduledMessages = useScheduledMessages
+        self.sendWithoutSoundMode = sendWithoutSoundMode
         self.saveDeletedMessages = saveDeletedMessages
         self.saveEditHistory = saveEditHistory
         self.saveForBots = saveForBots
@@ -442,10 +344,6 @@ public struct AyuGramSettings: Codable, Equatable {
         self.disableNotificationDelay = disableNotificationDelay
         self.showSecondsInMessages = showSecondsInMessages
         self.showDialogId = showDialogId
-        self.spoofWebviewAsAndroid = spoofWebviewAsAndroid
-        self.increaseWebviewSize = increaseWebviewSize
-        self.increaseWebviewHeight = increaseWebviewHeight
-        self.increaseWebviewWidth = increaseWebviewWidth
         self.disableExternalLinkWarning = disableExternalLinkWarning
         self.confirmSendSticker = confirmSendSticker
         self.confirmSendGIF = confirmSendGIF
@@ -453,11 +351,9 @@ public struct AyuGramSettings: Codable, Equatable {
         self.selectedAppIcon = selectedAppIcon
         self.hideNotificationBadge = hideNotificationBadge
         self.hideNotificationCounters = hideNotificationCounters
-        self.md3StyleSwitches = md3StyleSwitches
         self.removeMessageBubbleTail = removeMessageBubbleTail
         self.disableCustomBackgrounds = disableCustomBackgrounds
         self.codeFontName = codeFontName
-        self.adaptiveCoverColor = adaptiveCoverColor
         self.hideFolderCounters = hideFolderCounters
         self.hideAllChatsFolder = hideAllChatsFolder
         self.showGhostToggleInDrawer = showGhostToggleInDrawer
@@ -469,15 +365,6 @@ public struct AyuGramSettings: Codable, Equatable {
         self.recentStickersCount = recentStickersCount
         self.channelBottomButton = channelBottomButton
         self.quickAdminShortcuts = quickAdminShortcuts
-        self.messageShotFeature = messageShotFeature
-        self.messageShotShowBackground = messageShotShowBackground
-        self.messageShotShowDate = messageShotShowDate
-        self.messageShotShowReactions = messageShotShowReactions
-        self.messageShotShowHeader = messageShotShowHeader
-        self.messageShotShowHeaderDecorations = messageShotShowHeaderDecorations
-        self.messageShotColorfulReplies = messageShotColorfulReplies
-        self.messageShotRevealSpoilers = messageShotRevealSpoilers
-        self.messageShotTheme = messageShotTheme
         self.showDeletedMark = showDeletedMark
         self.showEditedMark = showEditedMark
         self.deletedMessageMark = deletedMessageMark
@@ -494,12 +381,9 @@ public struct AyuGramSettings: Codable, Equatable {
         self.showRepeatMessageInContextMenu = showRepeatMessageInContextMenu
         self.showAddFilterInContextMenu = showAddFilterInContextMenu
         self.showAttachButton = showAttachButton
-        self.showCommandsButton = showCommandsButton
         self.showTTLButton = showTTLButton
         self.showEmojiButton = showEmojiButton
         self.showVoiceButton = showVoiceButton
-        self.showAttachPopup = showAttachPopup
-        self.showEmojiPopup = showEmojiPopup
         self.showMyProfileInDrawer = showMyProfileInDrawer
         self.showBotsInDrawer = showBotsInDrawer
         self.showCreateGroupInDrawer = showCreateGroupInDrawer
@@ -522,9 +406,6 @@ public struct AyuGramSettings: Codable, Equatable {
         self.semiTransparentDeletedMessages = semiTransparentDeletedMessages
         self.hidePremiumStatuses = hidePremiumStatuses
         self.avatarCorners = avatarCorners
-        self.singleCornerRadius = singleCornerRadius
-        self.messageBubbleRadius = messageBubbleRadius
-        self.sendWithoutSoundOption = sendWithoutSoundOption
         self.shadowBanIds = shadowBanIds
         self.filters = filters
         self.messageFilters = messageFilters
@@ -534,17 +415,25 @@ public struct AyuGramSettings: Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: StringCodingKey.self)
 
-        self.ghostModeEnabled = try container.decodeIfPresent(Bool.self, forKey: "ghostModeEnabled") ?? false
-        self.ghostLockedComponents = try container.decodeIfPresent(Set<GRVMGhostComponent>.self, forKey: "ghostLockedComponents") ?? []
         self.suppressReadReceipts = try container.decodeIfPresent(Bool.self, forKey: "suppressReadReceipts") ?? false
         self.suppressStoryReads = try container.decodeIfPresent(Bool.self, forKey: "suppressStoryReads") ?? false
         self.suppressOnlineStatus = try container.decodeIfPresent(Bool.self, forKey: "suppressOnlineStatus") ?? false
-        self.suppressTypingStatus = try container.decodeIfPresent(Bool.self, forKey: "suppressTypingStatus") ?? false
-        self.suppressUploadProgress = try container.decodeIfPresent(Bool.self, forKey: "suppressUploadProgress") ?? false
-        self.goOfflineAfterOnline = try container.decodeIfPresent(Bool.self, forKey: "goOfflineAfterOnline") ?? false
-        self.readOnAction = try container.decodeIfPresent(Bool.self, forKey: "readOnAction") ?? false
-        self.useScheduledMessages = (try container.decodeIfPresent(Bool.self, forKey: "useScheduledMessages") ?? false) && !self.readOnAction
-        self.sendWithoutSound = try container.decodeIfPresent(Bool.self, forKey: "sendWithoutSound") ?? false
+        if let suppressTypingAndUploads = try container.decodeIfPresent(Bool.self, forKey: "suppressTypingAndUploads") {
+            self.suppressTypingAndUploads = suppressTypingAndUploads
+        } else {
+            let suppressTypingStatus = try container.decodeIfPresent(Bool.self, forKey: "suppressTypingStatus") ?? false
+            let suppressUploadProgress = try container.decodeIfPresent(Bool.self, forKey: "suppressUploadProgress") ?? false
+            self.suppressTypingAndUploads = suppressTypingStatus || suppressUploadProgress
+        }
+        self.useScheduledMessages = try container.decodeIfPresent(Bool.self, forKey: "useScheduledMessages") ?? false
+        if let sendWithoutSoundMode = try container.decodeIfPresent(Int32.self, forKey: "sendWithoutSoundMode") {
+            self.sendWithoutSoundMode = sendWithoutSoundMode
+        } else if let sendWithoutSoundOption = try container.decodeIfPresent(Int32.self, forKey: "sendWithoutSoundOption") {
+            self.sendWithoutSoundMode = sendWithoutSoundOption
+        } else {
+            let sendWithoutSound = try container.decodeIfPresent(Bool.self, forKey: "sendWithoutSound") ?? false
+            self.sendWithoutSoundMode = sendWithoutSound ? 2 : 0
+        }
 
         self.saveDeletedMessages = try container.decodeIfPresent(Bool.self, forKey: "saveDeletedMessages") ?? true
         self.saveEditHistory = try container.decodeIfPresent(Bool.self, forKey: "saveEditHistory") ?? true
@@ -564,10 +453,6 @@ public struct AyuGramSettings: Codable, Equatable {
         self.disableNotificationDelay = try container.decodeIfPresent(Bool.self, forKey: "disableNotificationDelay") ?? true
         self.showSecondsInMessages = try container.decodeIfPresent(Bool.self, forKey: "showSecondsInMessages") ?? false
         self.showDialogId = try container.decodeIfPresent(Int32.self, forKey: "showDialogId") ?? 0
-        self.spoofWebviewAsAndroid = try container.decodeIfPresent(Bool.self, forKey: "spoofWebviewAsAndroid") ?? false
-        self.increaseWebviewSize = try container.decodeIfPresent(Bool.self, forKey: "increaseWebviewSize") ?? true
-        self.increaseWebviewHeight = try container.decodeIfPresent(Bool.self, forKey: "increaseWebviewHeight") ?? self.increaseWebviewSize
-        self.increaseWebviewWidth = try container.decodeIfPresent(Bool.self, forKey: "increaseWebviewWidth") ?? self.increaseWebviewSize
         self.disableExternalLinkWarning = try container.decodeIfPresent(Bool.self, forKey: "disableExternalLinkWarning") ?? false
         self.confirmSendSticker = try container.decodeIfPresent(Bool.self, forKey: "confirmSendSticker") ?? false
         self.confirmSendGIF = try container.decodeIfPresent(Bool.self, forKey: "confirmSendGIF") ?? false
@@ -576,11 +461,9 @@ public struct AyuGramSettings: Codable, Equatable {
         self.selectedAppIcon = try container.decodeIfPresent(String.self, forKey: "selectedAppIcon") ?? "default"
         self.hideNotificationBadge = try container.decodeIfPresent(Bool.self, forKey: "hideNotificationBadge") ?? false
         self.hideNotificationCounters = try container.decodeIfPresent(Bool.self, forKey: "hideNotificationCounters") ?? false
-        self.md3StyleSwitches = try container.decodeIfPresent(Bool.self, forKey: "md3StyleSwitches") ?? false
         self.removeMessageBubbleTail = try container.decodeIfPresent(Bool.self, forKey: "removeMessageBubbleTail") ?? false
         self.disableCustomBackgrounds = try container.decodeIfPresent(Bool.self, forKey: "disableCustomBackgrounds") ?? false
         self.codeFontName = try container.decodeIfPresent(String.self, forKey: "codeFontName") ?? ""
-        self.adaptiveCoverColor = try container.decodeIfPresent(Bool.self, forKey: "adaptiveCoverColor") ?? true
         self.hideFolderCounters = try container.decodeIfPresent(Bool.self, forKey: "hideFolderCounters") ?? false
         self.hideAllChatsFolder = try container.decodeIfPresent(Bool.self, forKey: "hideAllChatsFolder") ?? false
         self.showGhostToggleInDrawer = try container.decodeIfPresent(Bool.self, forKey: "showGhostToggleInDrawer") ?? true
@@ -593,15 +476,6 @@ public struct AyuGramSettings: Codable, Equatable {
         self.recentStickersCount = try container.decodeIfPresent(Int32.self, forKey: "recentStickersCount") ?? 100
         self.channelBottomButton = try container.decodeIfPresent(Int32.self, forKey: "channelBottomButton") ?? 1
         self.quickAdminShortcuts = try container.decodeIfPresent(Bool.self, forKey: "quickAdminShortcuts") ?? true
-        self.messageShotFeature = try container.decodeIfPresent(Bool.self, forKey: "messageShotFeature") ?? true
-        self.messageShotShowBackground = try container.decodeIfPresent(Bool.self, forKey: "messageShotShowBackground") ?? true
-        self.messageShotShowDate = try container.decodeIfPresent(Bool.self, forKey: "messageShotShowDate") ?? false
-        self.messageShotShowReactions = try container.decodeIfPresent(Bool.self, forKey: "messageShotShowReactions") ?? false
-        self.messageShotShowHeader = try container.decodeIfPresent(Bool.self, forKey: "messageShotShowHeader") ?? true
-        self.messageShotShowHeaderDecorations = try container.decodeIfPresent(Bool.self, forKey: "messageShotShowHeaderDecorations") ?? true
-        self.messageShotColorfulReplies = try container.decodeIfPresent(Bool.self, forKey: "messageShotColorfulReplies") ?? true
-        self.messageShotRevealSpoilers = try container.decodeIfPresent(Bool.self, forKey: "messageShotRevealSpoilers") ?? true
-        self.messageShotTheme = try container.decodeIfPresent(Int32.self, forKey: "messageShotTheme") ?? 0
         self.showDeletedMark = try container.decodeIfPresent(Bool.self, forKey: "showDeletedMark") ?? true
         self.showEditedMark = try container.decodeIfPresent(Bool.self, forKey: "showEditedMark") ?? true
         self.deletedMessageMark = try container.decodeIfPresent(String.self, forKey: "deletedMessageMark") ?? "\u{1F9F9}"
@@ -620,12 +494,9 @@ public struct AyuGramSettings: Codable, Equatable {
         self.showAddFilterInContextMenu = try container.decodeIfPresent(Int32.self, forKey: "showAddFilterInContextMenu") ?? 1
 
         self.showAttachButton = try container.decodeIfPresent(Bool.self, forKey: "showAttachButton") ?? true
-        self.showCommandsButton = try container.decodeIfPresent(Bool.self, forKey: "showCommandsButton") ?? true
         self.showTTLButton = try container.decodeIfPresent(Bool.self, forKey: "showTTLButton") ?? true
         self.showEmojiButton = try container.decodeIfPresent(Bool.self, forKey: "showEmojiButton") ?? true
         self.showVoiceButton = try container.decodeIfPresent(Bool.self, forKey: "showVoiceButton") ?? true
-        self.showAttachPopup = try container.decodeIfPresent(Bool.self, forKey: "showAttachPopup") ?? true
-        self.showEmojiPopup = try container.decodeIfPresent(Bool.self, forKey: "showEmojiPopup") ?? true
 
         self.showMyProfileInDrawer = try container.decodeIfPresent(Bool.self, forKey: "showMyProfileInDrawer") ?? false
         self.showBotsInDrawer = try container.decodeIfPresent(Bool.self, forKey: "showBotsInDrawer") ?? false
@@ -651,9 +522,6 @@ public struct AyuGramSettings: Codable, Equatable {
         self.semiTransparentDeletedMessages = try container.decodeIfPresent(Bool.self, forKey: "semiTransparentDeletedMessages") ?? false
         self.hidePremiumStatuses = try container.decodeIfPresent(Bool.self, forKey: "hidePremiumStatuses") ?? false
         self.avatarCorners = try container.decodeIfPresent(Int32.self, forKey: "avatarCorners") ?? 50
-        self.singleCornerRadius = try container.decodeIfPresent(Bool.self, forKey: "singleCornerRadius") ?? false
-        self.messageBubbleRadius = try container.decodeIfPresent(Int32.self, forKey: "messageBubbleRadius") ?? 16
-        self.sendWithoutSoundOption = try container.decodeIfPresent(Int32.self, forKey: "sendWithoutSoundOption") ?? (self.sendWithoutSound ? 2 : 0)
         self.shadowBanIds = try container.decodeIfPresent([Int64].self, forKey: "shadowBanIds") ?? []
         let legacyMessageFilters = try container.decodeIfPresent([String].self, forKey: "messageFilters") ?? []
         let legacyReversedFilters = try container.decodeIfPresent([String].self, forKey: "reversedFilters") ?? []
@@ -675,17 +543,12 @@ public struct AyuGramSettings: Codable, Equatable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: StringCodingKey.self)
 
-        try container.encode(self.ghostModeEnabled, forKey: "ghostModeEnabled")
-        try container.encode(self.ghostLockedComponents, forKey: "ghostLockedComponents")
         try container.encode(self.suppressReadReceipts, forKey: "suppressReadReceipts")
         try container.encode(self.suppressStoryReads, forKey: "suppressStoryReads")
         try container.encode(self.suppressOnlineStatus, forKey: "suppressOnlineStatus")
-        try container.encode(self.suppressTypingStatus, forKey: "suppressTypingStatus")
-        try container.encode(self.suppressUploadProgress, forKey: "suppressUploadProgress")
-        try container.encode(self.goOfflineAfterOnline, forKey: "goOfflineAfterOnline")
-        try container.encode(self.readOnAction, forKey: "readOnAction")
+        try container.encode(self.suppressTypingAndUploads, forKey: "suppressTypingAndUploads")
         try container.encode(self.useScheduledMessages, forKey: "useScheduledMessages")
-        try container.encode(self.sendWithoutSound, forKey: "sendWithoutSound")
+        try container.encode(self.sendWithoutSoundMode, forKey: "sendWithoutSoundMode")
 
         try container.encode(self.saveDeletedMessages, forKey: "saveDeletedMessages")
         try container.encode(self.saveEditHistory, forKey: "saveEditHistory")
@@ -704,10 +567,6 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.disableNotificationDelay, forKey: "disableNotificationDelay")
         try container.encode(self.showSecondsInMessages, forKey: "showSecondsInMessages")
         try container.encode(self.showDialogId, forKey: "showDialogId")
-        try container.encode(self.spoofWebviewAsAndroid, forKey: "spoofWebviewAsAndroid")
-        try container.encode(self.increaseWebviewSize, forKey: "increaseWebviewSize")
-        try container.encode(self.increaseWebviewHeight, forKey: "increaseWebviewHeight")
-        try container.encode(self.increaseWebviewWidth, forKey: "increaseWebviewWidth")
         try container.encode(self.disableExternalLinkWarning, forKey: "disableExternalLinkWarning")
         try container.encode(self.confirmSendSticker, forKey: "confirmSendSticker")
         try container.encode(self.confirmSendGIF, forKey: "confirmSendGIF")
@@ -716,11 +575,9 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.selectedAppIcon, forKey: "selectedAppIcon")
         try container.encode(self.hideNotificationBadge, forKey: "hideNotificationBadge")
         try container.encode(self.hideNotificationCounters, forKey: "hideNotificationCounters")
-        try container.encode(self.md3StyleSwitches, forKey: "md3StyleSwitches")
         try container.encode(self.removeMessageBubbleTail, forKey: "removeMessageBubbleTail")
         try container.encode(self.disableCustomBackgrounds, forKey: "disableCustomBackgrounds")
         try container.encode(self.codeFontName, forKey: "codeFontName")
-        try container.encode(self.adaptiveCoverColor, forKey: "adaptiveCoverColor")
         try container.encode(self.hideFolderCounters, forKey: "hideFolderCounters")
         try container.encode(self.hideAllChatsFolder, forKey: "hideAllChatsFolder")
         try container.encode(self.showGhostToggleInDrawer, forKey: "showGhostToggleInDrawer")
@@ -733,15 +590,6 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.recentStickersCount, forKey: "recentStickersCount")
         try container.encode(self.channelBottomButton, forKey: "channelBottomButton")
         try container.encode(self.quickAdminShortcuts, forKey: "quickAdminShortcuts")
-        try container.encode(self.messageShotFeature, forKey: "messageShotFeature")
-        try container.encode(self.messageShotShowBackground, forKey: "messageShotShowBackground")
-        try container.encode(self.messageShotShowDate, forKey: "messageShotShowDate")
-        try container.encode(self.messageShotShowReactions, forKey: "messageShotShowReactions")
-        try container.encode(self.messageShotShowHeader, forKey: "messageShotShowHeader")
-        try container.encode(self.messageShotShowHeaderDecorations, forKey: "messageShotShowHeaderDecorations")
-        try container.encode(self.messageShotColorfulReplies, forKey: "messageShotColorfulReplies")
-        try container.encode(self.messageShotRevealSpoilers, forKey: "messageShotRevealSpoilers")
-        try container.encode(self.messageShotTheme, forKey: "messageShotTheme")
         try container.encode(self.showDeletedMark, forKey: "showDeletedMark")
         try container.encode(self.showEditedMark, forKey: "showEditedMark")
         try container.encode(self.deletedMessageMark, forKey: "deletedMessageMark")
@@ -760,12 +608,9 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.showAddFilterInContextMenu, forKey: "showAddFilterInContextMenu")
 
         try container.encode(self.showAttachButton, forKey: "showAttachButton")
-        try container.encode(self.showCommandsButton, forKey: "showCommandsButton")
         try container.encode(self.showTTLButton, forKey: "showTTLButton")
         try container.encode(self.showEmojiButton, forKey: "showEmojiButton")
         try container.encode(self.showVoiceButton, forKey: "showVoiceButton")
-        try container.encode(self.showAttachPopup, forKey: "showAttachPopup")
-        try container.encode(self.showEmojiPopup, forKey: "showEmojiPopup")
 
         try container.encode(self.showMyProfileInDrawer, forKey: "showMyProfileInDrawer")
         try container.encode(self.showBotsInDrawer, forKey: "showBotsInDrawer")
@@ -791,9 +636,6 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.semiTransparentDeletedMessages, forKey: "semiTransparentDeletedMessages")
         try container.encode(self.hidePremiumStatuses, forKey: "hidePremiumStatuses")
         try container.encode(self.avatarCorners, forKey: "avatarCorners")
-        try container.encode(self.singleCornerRadius, forKey: "singleCornerRadius")
-        try container.encode(self.messageBubbleRadius, forKey: "messageBubbleRadius")
-        try container.encode(self.sendWithoutSoundOption, forKey: "sendWithoutSoundOption")
         try container.encode(self.shadowBanIds, forKey: "shadowBanIds")
         try container.encode(self.filters, forKey: "filters")
         try container.encode(self.messageFilters, forKey: "messageFilters")
@@ -801,31 +643,14 @@ public struct AyuGramSettings: Codable, Equatable {
     }
 
     public mutating func setGhostModeEnabled(_ enabled: Bool) {
-        self.ghostModeEnabled = enabled
-        if !self.ghostLockedComponents.contains(.readReceipts) {
-            self.suppressReadReceipts = enabled
-        }
-        if !self.ghostLockedComponents.contains(.storyReads) {
-            self.suppressStoryReads = enabled
-        }
-        if !self.ghostLockedComponents.contains(.onlineStatus) {
-            self.suppressOnlineStatus = enabled
-        }
-        if !self.ghostLockedComponents.contains(.typingAndUploads) {
-            self.suppressTypingStatus = enabled
-            self.suppressUploadProgress = enabled
-        }
-        if !self.ghostLockedComponents.contains(.goOfflineAfterOnline) {
-            self.goOfflineAfterOnline = enabled
-        }
+        self.suppressReadReceipts = enabled
+        self.suppressStoryReads = enabled
+        self.suppressOnlineStatus = enabled
+        self.suppressTypingAndUploads = enabled
     }
 
     public mutating func setGhostMode(_ enabled: Bool) {
         self.setGhostModeEnabled(enabled)
-    }
-
-    public mutating func setReadOnAction(_ enabled: Bool) {
-        self.readOnAction = enabled
     }
 
     public mutating func setScheduledMessages(_ enabled: Bool) {

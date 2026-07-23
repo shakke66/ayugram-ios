@@ -16,9 +16,16 @@ private struct GRVMConsumableMediaPreparation {
     let message: Message
     let key: GRVMMessageKey
     let resources: [GRVMMediaResourceReference]
+    let fetchResources: [GRVMConsumableMediaFetchResource]
     let plannedMedia: [GRVMArchivedMedia]
     let requiredPrimaryIds: [String]
     let alreadyPrepared: Bool
+}
+
+private struct GRVMConsumableMediaFetchResource {
+    let resource: MediaResource
+    let reference: MediaResourceReference
+    let userContentType: MediaResourceUserContentType
 }
 
 private struct GRVMConsumableMediaRestoreContext {
@@ -151,8 +158,18 @@ public final class GRVMMessageArchiveCoordinator {
 
     func prepare() throws {
         let deleted = try store.deletedKeys(accountId: accountRecordId.int64)
+        let visibleDeleted = try store.deletedKeys(
+            accountId: accountRecordId.int64,
+            excludingSenderId: self.accountPeerId.toInt64()
+        )
         let revised = try store.revisedKeys(accountId: accountRecordId.int64)
-        self.index.replace(GRVMMessageArchiveSnapshot(deleted: deleted, revised: revised))
+        _ = try? store.beginExcludedSenderCleanup(
+            accountId: accountRecordId.int64,
+            senderId: self.accountPeerId.toInt64()
+        )
+        self.index.replace(GRVMMessageArchiveSnapshot(deleted: visibleDeleted, revised: revised))
+
+        assert(visibleDeleted.isSubset(of: deleted))
 
         self.disposables.add(self.mediaBox.didRemoveResourceIds.start(next: { [weak self] ids in
             guard let self, !ids.isEmpty else {
@@ -347,7 +364,9 @@ public final class GRVMMessageArchiveCoordinator {
                     }
                     do {
                         let keys = try self.store.finalizeDeletedCleanup(id: job.id)
-                        self.index.removeDeleted(Set(keys))
+                        let keySet = Set(keys)
+                        self.index.removeDeleted(keySet)
+                        self.index.removeRevised(keySet)
                         subscriber.putNext(ids)
                         subscriber.putCompletion()
                     } catch {
@@ -531,6 +550,7 @@ public final class GRVMMessageArchiveCoordinator {
                         message: freshMessage,
                         key: key,
                         resources: [],
+                        fetchResources: [],
                         plannedMedia: [],
                         requiredPrimaryIds: [],
                         alreadyPrepared: true
@@ -539,6 +559,8 @@ public final class GRVMMessageArchiveCoordinator {
 
                 var selectedResourceSet = Set<MediaResourceId>()
                 var preservedMedia: [Media] = []
+                var fetchResources: [GRVMConsumableMediaFetchResource] = []
+                let messageReference = MessageReference(freshMessage)
                 for media in freshMessage.media {
                     if let image = media as? TelegramMediaImage {
                         guard let representation = largestImageRepresentation(image.representations) else {
@@ -546,9 +568,25 @@ public final class GRVMMessageArchiveCoordinator {
                         }
                         selectedResourceSet.insert(representation.resource.id)
                         preservedMedia.append(image)
+                        fetchResources.append(GRVMConsumableMediaFetchResource(
+                            resource: representation.resource,
+                            reference: MediaResourceReference.media(
+                                media: AnyMediaReference.message(message: messageReference, media: image),
+                                resource: representation.resource
+                            ),
+                            userContentType: .image
+                        ))
                     } else if let file = media as? TelegramMediaFile {
                         selectedResourceSet.insert(file.resource.id)
                         preservedMedia.append(file)
+                        fetchResources.append(GRVMConsumableMediaFetchResource(
+                            resource: file.resource,
+                            reference: MediaResourceReference.media(
+                                media: AnyMediaReference.message(message: messageReference, media: file),
+                                resource: file.resource
+                            ),
+                            userContentType: MediaResourceUserContentType(file: file)
+                        ))
                     } else {
                         return nil
                     }
@@ -562,17 +600,9 @@ public final class GRVMMessageArchiveCoordinator {
                 }
                 let requiredPrimaryIds = requiredResources.map { $0.id.stringRepresentation }.sorted()
                 guard Set(requiredPrimaryIds) == Set(selectedResourceSet.map(\.stringRepresentation)),
-                      requiredResources.count == requiredPrimaryIds.count else {
+                      requiredResources.count == requiredPrimaryIds.count,
+                      fetchResources.count == requiredResources.count else {
                     return nil
-                }
-                for resource in requiredResources {
-                    guard let path = self.mediaBox.completedResourcePath(id: resource.id) else {
-                        return nil
-                    }
-                    let fileSize = grvmPositiveFileSize(path)
-                    guard fileSize > 0 else {
-                        return nil
-                    }
                 }
                 let plannedMedia = requiredResources.map {
                     self.mediaStore.plannedRecord(accountId: self.accountRecordId.int64, resource: $0)
@@ -581,6 +611,7 @@ public final class GRVMMessageArchiveCoordinator {
                     message: freshMessage,
                     key: key,
                     resources: requiredResources,
+                    fetchResources: fetchResources,
                     plannedMedia: plannedMedia,
                     requiredPrimaryIds: requiredPrimaryIds,
                     alreadyPrepared: false
@@ -593,6 +624,52 @@ public final class GRVMMessageArchiveCoordinator {
                 if preparation.alreadyPrepared {
                     return Signal<Bool, NoError>.single(preparation.alreadyPrepared)
                 }
+
+                let fetchSignals: [Signal<Bool, NoError>] = preparation.fetchResources.map { fetchResource in
+                    let fetch = fetchedMediaResource(
+                        mediaBox: self.mediaBox,
+                        userLocation: .peer(preparation.message.id.peerId),
+                        userContentType: fetchResource.userContentType,
+                        reference: fetchResource.reference,
+                        continueInBackground: true
+                    )
+                    |> map { _ -> Bool in
+                        return true
+                    }
+                    |> `catch` { _ -> Signal<Bool, NoError> in
+                        return .single(false)
+                    }
+
+                    return fetch
+                    |> mapToSignal { fetched -> Signal<Bool, NoError> in
+                        guard fetched else {
+                            return .single(false)
+                        }
+                        return self.mediaBox.resourceData(
+                            fetchResource.resource,
+                            option: .complete(waitUntilFetchStatus: true),
+                            attemptSynchronously: false
+                        )
+                        |> filter { $0.complete }
+                        |> take(1)
+                        |> map { data -> Bool in
+                            return data.complete && grvmPositiveFileSize(data.path) > 0
+                        }
+                    }
+                }
+
+                return combineLatest(fetchSignals)
+                |> mapToSignal { fetched -> Signal<Bool, NoError> in
+                    guard fetched.allSatisfy({ $0 }) else {
+                        return .single(false)
+                    }
+                    for resource in preparation.resources {
+                        guard let path = self.mediaBox.completedResourcePath(id: resource.id),
+                              grvmPositiveFileSize(path) > 0 else {
+                            return .single(false)
+                        }
+                    }
+
                 let requiredPrimaryIds = preparation.requiredPrimaryIds
                 guard let reservation = try? self.store.reserveConsumableMedia(
                     key: preparation.key,
@@ -702,6 +779,7 @@ public final class GRVMMessageArchiveCoordinator {
                     }
                     }
                 )
+                }
             }
         }
     }
@@ -830,6 +908,9 @@ public final class GRVMMessageArchiveCoordinator {
 
         var uniqueMessages: [GRVMMessageKey: Message] = [:]
         for message in messages {
+            if message.author?.id == self.accountPeerId {
+                continue
+            }
             let directBot = message.id.peerId.namespace == Namespaces.Peer.CloudUser
                 && (message.peers[message.id.peerId] as? TelegramUser)?.botInfo != nil
             if directBot && !settings.saveForBots {
@@ -1017,6 +1098,42 @@ public final class GRVMMessageArchiveCoordinator {
         }
     }
 
+    public func removeDeletedMessage(_ key: GRVMMessageKey) -> Signal<[MessageId], GRVMClearDeletedError> {
+        return Signal { subscriber in
+            let waiterId = UUID()
+            self.queue.async { [weak self] in
+                guard let self,
+                      self.isAcceptingOperations,
+                      key.accountId == self.accountRecordId.int64 else {
+                    subscriber.putError(.archiveUnavailable)
+                    return
+                }
+                let job: GRVMCleanupJob?
+                do {
+                    job = try self.store.beginDeletedCleanup(key: key)
+                } catch {
+                    subscriber.putError(.databaseFinalizationFailed)
+                    return
+                }
+                guard let job else {
+                    subscriber.putNext([])
+                    subscriber.putCompletion()
+                    return
+                }
+                self.addCleanupWaiter(jobId: job.id, waiterId: waiterId, subscriber: subscriber)
+                self.startCleanupExecutorIfNeeded()
+            }
+            return ActionDisposable { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.queue.async {
+                    self.removeCleanupWaiter(waiterId)
+                }
+            }
+        }
+    }
+
     public func hasEditHistory(_ id: MessageId) -> Bool {
         return self.index.snapshot().revised.contains(where: {
             $0.accountId == self.accountRecordId.int64
@@ -1046,7 +1163,7 @@ public final class GRVMMessageArchiveCoordinator {
                     peerId: peerId?.toInt64(),
                     threadId: threadId,
                     limit: Int32.max
-                ))) ?? []
+                ), excludingSenderId: self.accountPeerId.toInt64())) ?? []
                 let filtered: [GRVMArchivedMessage]
                 if let query, !query.isEmpty {
                     filtered = result.filter { message in

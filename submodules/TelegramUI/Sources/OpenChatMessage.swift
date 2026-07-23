@@ -292,7 +292,7 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
                     control = .seek(time)
                 }
                 if !params.consumeOnOpen {
-                    location = .singleMessage(params.message.id)
+                    location = .recentActions(params.message)
                     if file.isVoice || file.isInstantVideo {
                         playerType = .voice
                     } else if file.isMusic {

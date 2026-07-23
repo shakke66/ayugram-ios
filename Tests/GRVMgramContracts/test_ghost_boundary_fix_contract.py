@@ -11,9 +11,7 @@ ACCOUNT_AWARE_HOOKS = (
     "shouldSuppressStoryRead",
     "shouldSuppressContentRead",
     "shouldSuppressUploadProgress",
-    "shouldForceOfflineAfterOnline",
     "shouldSuggestGhostForStories",
-    "shouldMarkReadAfterAction",
     "shouldUseScheduledMessages",
     "sendWithoutSoundMode",
     "isMessageHiddenByFilter",
@@ -35,9 +33,6 @@ ACCOUNT_AWARE_HOOKS = (
     "shouldConfirmStickers",
     "shouldConfirmGIF",
     "shouldConfirmVoice",
-    "shouldSpoofWebviewAsAndroid",
-    "shouldIncreaseWebviewHeight",
-    "shouldIncreaseWebviewWidth",
 )
 
 
@@ -119,11 +114,6 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
             "submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift": (
                 "isMessageHiddenByFilter?(context.account.peerId, message)",
             ),
-            "submodules/WebUI/Sources/WebAppWebView.swift": (
-                "shouldSpoofWebviewAsAndroid?(account.peerId)",
-                "shouldIncreaseWebviewHeight?(account.peerId)",
-                "shouldIncreaseWebviewWidth?(account.peerId)",
-            ),
             "submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/StringForMessageTimestampStatus.swift": (
                 "shouldShowSeconds?(accountPeerId)",
             ),
@@ -133,8 +123,8 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
             "submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift": (
                 "shouldImproveLinkPreviews?(item.context.account.peerId)",
             ),
-            "submodules/TelegramUI/Components/ChatListHeaderComponent/Sources/ChatListHeaderComponent.swift": (
-                "shouldHideStories?(component.context.account.peerId)",
+            "submodules/ChatListUI/Sources/ChatListController.swift": (
+                "shouldHideStories?(context.account.peerId)",
             ),
             "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift": (
                 "shouldShowDialogID?(context.account.peerId)",
@@ -166,7 +156,7 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
         self.assertIn("self.postbox.transaction", suppression)
         self.assertNotIn("signal = .complete()", suppression)
 
-    def test_runtime_uses_canonical_silent_webview_and_combined_typing(self) -> None:
+    def test_runtime_uses_canonical_silent_mode_and_combined_typing(self) -> None:
         manager = source(
             "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
         )
@@ -175,7 +165,7 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
             manager,
         )
         self.assertIn(
-            "settings.ghostModeEnabled\n                && (settings.suppressTypingStatus || settings.suppressUploadProgress)",
+            "return settings.suppressTypingAndUploads",
             manager,
         )
         self.assertIn(
@@ -187,7 +177,8 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
             manager,
         )
         send_mode = swift_block(manager, "AyuGramHooks.sendWithoutSoundMode =")
-        self.assertIn("settings.sendWithoutSoundOption", send_mode)
+        self.assertIn("settings.sendWithoutSoundMode", send_mode)
+        self.assertNotIn("settings.sendWithoutSoundOption", send_mode)
         self.assertNotRegex(send_mode, r"\.sendWithoutSound\b")
 
         runtime_paths = (
@@ -208,38 +199,19 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
         )
         self.assertNotIn("shouldIncreaseWebviewSize", runtime)
         self.assertNotIn("shouldSendWithoutSound?()", runtime)
-
-        core = source("submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift")
-        for key in ("commonNever", "commonInGhost", "commonAlways"):
-            self.assertIn(f"strings[.{key}]", core)
-        self.assertIn("settings.sendWithoutSoundOption = value", core)
-        self.assertIn("ItemListDisclosureItem", swift_block(core, "case let .sendWithoutSoundMode("))
-        self.assertNotIn("toggleSendWithoutSound", core)
-        general = source(
-            "submodules/AyuGramSettingsUI/Sources/AyuGramGeneralController.swift"
-        )
-        self.assertIn(
-            "entries.append(.increaseWebviewHeight(presentationData.theme, settings.increaseWebviewHeight))",
-            general,
-        )
-        self.assertIn(
-            "entries.append(.increaseWebviewWidth(presentationData.theme, settings.increaseWebviewWidth))",
-            general,
-        )
-        self.assertIn(r"arguments.updateBool(\.increaseWebviewHeight, v)", general)
-        self.assertIn(r"arguments.updateBool(\.increaseWebviewWidth, v)", general)
-        self.assertNotIn("updateWebviewSize", general)
+        for removed in (
+            "spoofWebviewAsAndroid",
+            "increaseWebviewHeight",
+            "increaseWebviewWidth",
+            "shouldSpoofWebviewAsAndroid",
+            "shouldIncreaseWebviewHeight",
+            "shouldIncreaseWebviewWidth",
+        ):
+            self.assertNotIn(removed, runtime)
         chat = source("submodules/TelegramUI/Sources/ChatController.swift")
         self.assertIn(
             "sendWithoutSoundMode?(self.context.account.peerId)",
             chat,
-        )
-        webview = source("submodules/WebUI/Sources/WebAppWebView.swift")
-        self.assertIn("if self.shouldIncreaseWebviewWidth {", webview)
-        self.assertIn("if self.shouldIncreaseWebviewHeight &&", webview)
-        self.assertNotIn(
-            "shouldIncreaseWebviewHeight || shouldIncreaseWebviewWidth",
-            webview,
         )
 
     def test_chat_send_gate_preserves_in_ghost_and_always_silent_modes(self) -> None:
@@ -257,20 +229,10 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
             send_gate,
         )
 
-        switch_body = re.search(
-            r"switch\s+settings\.sendWithoutSoundOption\s*\{\s*"
-            r"case\s+2:\s*return\s+(-?\d+)\s*"
-            r"case\s+1:\s*return\s+settings\.ghostModeEnabled\s*\?\s*"
-            r"(-?\d+)\s*:\s*(-?\d+)\s*"
-            r"default:\s*return\s+(-?\d+)\s*\}",
-            send_mode,
-            re.S,
-        )
-        self.assertIsNotNone(switch_body)
-        always_mode, ghost_on_mode, ghost_off_mode, default_mode = map(
-            int,
-            switch_body.groups(),
-        )
+        self.assertIn("case 2:\n                return 2", send_mode)
+        self.assertIn("case 1:\n                return self.isGhostActive(settings) ? 1 : 0", send_mode)
+        self.assertIn("default:\n                return 0", send_mode)
+        self.assertNotIn("settings.ghostModeEnabled", send_mode)
         settings_lookup = swift_block(
             manager,
             "private func settings(accountPeerId:",
@@ -278,29 +240,41 @@ class GhostBoundaryFixContractTests(unittest.TestCase):
         self.assertIn("registry.service(accountPeerId: accountPeerId)", settings_lookup)
         self.assertIn("settings(accountPeerId: accountPeerId)", send_mode)
 
-        def effective_mode(mode: int, ghost_mode_enabled: bool) -> int:
+        active = swift_block(manager, "private func isGhostActive(_ settings:")
+        for token in (
+            "settings.suppressReadReceipts",
+            "settings.suppressStoryReads",
+            "settings.suppressOnlineStatus",
+            "settings.suppressTypingAndUploads",
+        ):
+            self.assertIn(token, active)
+        self.assertNotIn("settings.ghostModeEnabled", active)
+        self.assertNotIn("settings.useScheduledMessages", active)
+
+        def effective_mode(mode: int, ghost_components: tuple[bool, ...]) -> int:
             if mode == 2:
-                return always_mode
+                return 2
             if mode == 1:
-                return ghost_on_mode if ghost_mode_enabled else ghost_off_mode
-            return default_mode
+                return 1 if any(ghost_components) else 0
+            return 0
 
         def gate_is_silent(mode: int) -> bool:
             return mode == 1 or mode == 2
 
         cases = (
-            (0, False, False),
-            (0, True, False),
-            (1, False, False),
-            (1, True, True),
-            (2, False, True),
-            (2, True, True),
+            (0, (False, False, False, False), False),
+            (0, (True, False, False, False), False),
+            (1, (False, False, False, False), False),
+            (1, (True, False, False, False), True),
+            (1, (False, False, False, True), True),
+            (2, (False, False, False, False), True),
+            (2, (True, True, True, True), True),
         )
-        for mode, ghost_mode_enabled, expected in cases:
-            with self.subTest(mode=mode, ghost_mode_enabled=ghost_mode_enabled):
+        for mode, ghost_components, expected in cases:
+            with self.subTest(mode=mode, ghost_components=ghost_components):
                 self.assertEqual(
                     expected,
-                    gate_is_silent(effective_mode(mode, ghost_mode_enabled)),
+                    gate_is_silent(effective_mode(mode, ghost_components)),
                 )
 
     def test_translation_provider_normalizes_init_decode_and_direct_mutation(self) -> None:

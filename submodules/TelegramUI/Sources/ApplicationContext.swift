@@ -116,6 +116,7 @@ final class AuthorizedApplicationContext {
     private let loggedOutDisposable = MetaDisposable()
     private let inAppNotificationSettingsDisposable = MetaDisposable()
     private let notificationMessagesDisposable = MetaDisposable()
+    private let notificationFilterStateDisposable = MetaDisposable()
     private let termsOfServiceUpdatesDisposable = MetaDisposable()
     private let termsOfServiceProceedToBotDisposable = MetaDisposable()
     private let watchNavigateToMessageDisposable = MetaDisposable()
@@ -303,14 +304,17 @@ final class AuthorizedApplicationContext {
                 }
             ))
             |> map { chatListIndexMap -> [([Message], PeerGroupId, Bool, MessageHistoryThreadData?)] in
-                return messageList.filter { item in
-                    guard let message = item.0.first else {
-                        return false
+                return messageList.compactMap { item in
+                    let visibleMessages = item.0.filter { message in
+                        return AyuGramHooks.isMessageHiddenByFilter?(context.account.peerId, message) != true
+                    }
+                    guard !visibleMessages.isEmpty, let message = visibleMessages.first else {
+                        return nil
                     }
                     if let maybeChatListIndex = chatListIndexMap[message.id.peerId], maybeChatListIndex != nil {
-                        return true
+                        return (visibleMessages, item.1, item.2, item.3)
                     } else {
-                        return false
+                        return nil
                     }
                 }
             }
@@ -485,6 +489,23 @@ final class AuthorizedApplicationContext {
                         })
                     }
                 }
+            }
+        }))
+
+        let messageFilterStateUpdates = AyuGramHooks.messageFilterStateUpdates?(context.account.peerId)
+        ?? Signal<Int64, NoError>.single(0)
+        self.notificationFilterStateDisposable.set((messageFilterStateUpdates
+        |> deliverOnMainQueue).start(next: { [weak self] _ in
+            guard let strongSelf = self, strongSelf.notificationController.isNodeLoaded else {
+                return
+            }
+            strongSelf.notificationController.removeItems { item in
+                guard let notificationItem = item as? ChatMessageNotificationItem else {
+                    return false
+                }
+                return notificationItem.messages.contains(where: { message in
+                    return AyuGramHooks.isMessageHiddenByFilter?(context.account.peerId, message) == true
+                })
             }
         }))
         
@@ -814,6 +835,7 @@ final class AuthorizedApplicationContext {
         self.loggedOutDisposable.dispose()
         self.inAppNotificationSettingsDisposable.dispose()
         self.notificationMessagesDisposable.dispose()
+        self.notificationFilterStateDisposable.dispose()
         self.termsOfServiceUpdatesDisposable.dispose()
         self.passcodeLockDisposable.dispose()
         self.passcodeStatusDisposable.dispose()

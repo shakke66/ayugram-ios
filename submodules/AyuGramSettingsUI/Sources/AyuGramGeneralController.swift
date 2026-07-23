@@ -26,7 +26,6 @@ private final class AyuGramGeneralArguments {
 private enum AyuGramGeneralSection: Int32 {
     case translation
     case general
-    case webview
     case confirmations
 }
 
@@ -42,10 +41,6 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
     case filterZalgo(PresentationTheme, Bool)
     case improveLinkPreviews(PresentationTheme, Bool)
     case disableExternalLinkWarning(PresentationTheme, Bool)
-    case webviewHeader(PresentationTheme)
-    case spoofAndroid(PresentationTheme, Bool)
-    case increaseWebviewHeight(PresentationTheme, Bool)
-    case increaseWebviewWidth(PresentationTheme, Bool)
     case confirmHeader(PresentationTheme)
     case confirmSticker(PresentationTheme, Bool)
     case confirmGIF(PresentationTheme, Bool)
@@ -55,7 +50,6 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
         switch self {
         case .translationHeader, .translationProvider: return AyuGramGeneralSection.translation.rawValue
         case .generalHeader, .hideStories, .disableSimilarChannels, .disableNotificationDelay, .showSeconds, .showDialogId, .filterZalgo, .improveLinkPreviews, .disableExternalLinkWarning: return AyuGramGeneralSection.general.rawValue
-        case .webviewHeader, .spoofAndroid, .increaseWebviewHeight, .increaseWebviewWidth: return AyuGramGeneralSection.webview.rawValue
         case .confirmHeader, .confirmSticker, .confirmGIF, .confirmVoice: return AyuGramGeneralSection.confirmations.rawValue
         }
     }
@@ -73,10 +67,6 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
         case .filterZalgo: return 8
         case .improveLinkPreviews: return 9
         case .disableExternalLinkWarning: return 10
-        case .webviewHeader: return 11
-        case .spoofAndroid: return 12
-        case .increaseWebviewHeight: return 13
-        case .increaseWebviewWidth: return 14
         case .confirmHeader: return 15
         case .confirmSticker: return 16
         case .confirmGIF: return 17
@@ -90,9 +80,6 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
         case let (.disableSimilarChannels(_, lv), .disableSimilarChannels(_, rv)): return lv == rv
         case let (.disableNotificationDelay(_, lv), .disableNotificationDelay(_, rv)): return lv == rv
         case let (.showSeconds(_, lv), .showSeconds(_, rv)): return lv == rv
-        case let (.spoofAndroid(_, lv), .spoofAndroid(_, rv)): return lv == rv
-        case let (.increaseWebviewHeight(_, lv), .increaseWebviewHeight(_, rv)): return lv == rv
-        case let (.increaseWebviewWidth(_, lv), .increaseWebviewWidth(_, rv)): return lv == rv
         case let (.confirmSticker(_, lv), .confirmSticker(_, rv)): return lv == rv
         case let (.confirmGIF(_, lv), .confirmGIF(_, rv)): return lv == rv
         case let (.confirmVoice(_, lv), .confirmVoice(_, rv)): return lv == rv
@@ -116,45 +103,37 @@ private enum AyuGramGeneralEntry: ItemListNodeEntry {
         case .translationHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.translationHeader], sectionId: self.section)
         case let .translationProvider(_, label, value):
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.translationProvider], label: label, sectionId: self.section, style: .blocks, action: {
-                arguments.updateInt32(\.translationProvider, (value + 1) % 3)
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.translationProvider], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
+                arguments.updateInt32(\.translationProvider, (value + 1) % 2)
             })
         case .generalHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.generalHeader], sectionId: self.section)
         case let .hideStories(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalHideStories], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideStories, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalHideStories], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideStories, v) })
         case let .disableSimilarChannels(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalSimilarChannels], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableSimilarChannels, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalSimilarChannels], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableSimilarChannels, v) })
         case let .disableNotificationDelay(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalNotificationDelay], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableNotificationDelay, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalNotificationDelay], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableNotificationDelay, v) })
         case let .showSeconds(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalSeconds], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showSecondsInMessages, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalSeconds], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showSecondsInMessages, v) })
         case let .showDialogId(_, label, value):
             return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.generalPeerId], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.updateInt32(\.showDialogId, (value + 1) % 3)
             })
         case let .filterZalgo(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalZalgo], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.filterZalgo, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalZalgo], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.filterZalgo, v) })
         case let .improveLinkPreviews(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalLinkPreviews], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.improveLinkPreviews, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalLinkPreviews], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.improveLinkPreviews, v) })
         case let .disableExternalLinkWarning(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalLinkWarning], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableExternalLinkWarning, v) })
-        case .webviewHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.webviewHeader], sectionId: self.section)
-        case let .spoofAndroid(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.webviewAndroid], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.spoofWebviewAsAndroid, v) })
-        case let .increaseWebviewHeight(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.webviewHeight], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.increaseWebviewHeight, v) })
-        case let .increaseWebviewWidth(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.webviewWidth], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.increaseWebviewWidth, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalLinkWarning], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableExternalLinkWarning, v) })
         case .confirmHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.confirmationsHeader], sectionId: self.section)
         case let .confirmSticker(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.confirmationsSticker], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendSticker, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.confirmationsSticker], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendSticker, v) })
         case let .confirmGIF(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.confirmationsGif], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendGIF, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.confirmationsGif], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendGIF, v) })
         case let .confirmVoice(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.confirmationsVoice], value: value, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendVoice, v) })
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.confirmationsVoice], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendVoice, v) })
         }
     }
 }
@@ -164,28 +143,25 @@ private func ayuGramGeneralEntries(settings: AyuGramSettings, presentationData: 
     let providerNames = [
         strings[.translationTelegram],
         strings[.translationGoogle],
-        strings[.translationYandex],
     ]
-    let providerLabel = settings.translationProvider < Int32(providerNames.count) ? providerNames[Int(settings.translationProvider)] : strings[.translationTelegram]
+    let normalizedTranslationProvider = settings.translationProvider >= 0 && settings.translationProvider < Int32(providerNames.count) ? settings.translationProvider : 0
+    let providerLabel = providerNames[Int(normalizedTranslationProvider)]
     let dialogIdLabels = [strings[.commonOff], strings[.peerIdApi], strings[.peerIdBotApi]]
-    let dialogIdLabel = settings.showDialogId < Int32(dialogIdLabels.count) ? dialogIdLabels[Int(settings.showDialogId)] : strings[.commonOff]
+    let normalizedDialogId = settings.showDialogId >= 0 && settings.showDialogId < Int32(dialogIdLabels.count) ? settings.showDialogId : 0
+    let dialogIdLabel = dialogIdLabels[Int(normalizedDialogId)]
 
     var entries: [AyuGramGeneralEntry] = []
     entries.append(.translationHeader(presentationData.theme))
-    entries.append(.translationProvider(presentationData.theme, providerLabel, settings.translationProvider))
+    entries.append(.translationProvider(presentationData.theme, providerLabel, normalizedTranslationProvider))
     entries.append(.generalHeader(presentationData.theme))
     entries.append(.hideStories(presentationData.theme, settings.hideStories))
     entries.append(.disableSimilarChannels(presentationData.theme, settings.disableSimilarChannels))
     entries.append(.disableNotificationDelay(presentationData.theme, settings.disableNotificationDelay))
     entries.append(.showSeconds(presentationData.theme, settings.showSecondsInMessages))
-    entries.append(.showDialogId(presentationData.theme, dialogIdLabel, settings.showDialogId))
+    entries.append(.showDialogId(presentationData.theme, dialogIdLabel, normalizedDialogId))
     entries.append(.filterZalgo(presentationData.theme, settings.filterZalgo))
     entries.append(.improveLinkPreviews(presentationData.theme, settings.improveLinkPreviews))
     entries.append(.disableExternalLinkWarning(presentationData.theme, settings.disableExternalLinkWarning))
-    entries.append(.webviewHeader(presentationData.theme))
-    entries.append(.spoofAndroid(presentationData.theme, settings.spoofWebviewAsAndroid))
-    entries.append(.increaseWebviewHeight(presentationData.theme, settings.increaseWebviewHeight))
-    entries.append(.increaseWebviewWidth(presentationData.theme, settings.increaseWebviewWidth))
     entries.append(.confirmHeader(presentationData.theme))
     entries.append(.confirmSticker(presentationData.theme, settings.confirmSendSticker))
     entries.append(.confirmGIF(presentationData.theme, settings.confirmSendGIF))

@@ -141,9 +141,12 @@ private func grvmHistoryAttributedText(
     let date = dateFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(version.timestamp)))
     let label = version.isCurrent
         ? strings[.historyCurrent]
-        : strings.format(.historyRevision, version.version)
+        : strings.format(.historyRevision, version.version + 1)
+    let timestamp = version.isCurrent
+        ? strings.format(.historyMessageDate, date)
+        : strings.format(.historyRevisionSavedAt, date)
     let result = NSMutableAttributedString(
-        string: strings.format(.historyEntryHeader, label, date),
+        string: strings.format(.historyEntryHeader, label, timestamp),
         font: Font.semibold(14.0),
         textColor: presentationData.theme.list.itemSecondaryTextColor
     )

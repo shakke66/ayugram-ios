@@ -537,6 +537,7 @@ def prepare_fresh_row_stable_id_fail_closed(text: str) -> str:
     boundary_candidates = [
         position
         for anchor in (
+            "fetchedMediaResource(",
             "completedResourcePath",
             "reserveConsumableMedia(",
             "mediaStore.archive(",
@@ -597,6 +598,7 @@ def prepare_positive_marker_idempotent_success(text: str, row: str) -> bool:
     boundary_candidates = [
         position
         for anchor in (
+            "fetchedMediaResource(",
             "completedResourcePath",
             "reserveConsumableMedia(",
             "mediaStore.archive(",
@@ -658,11 +660,23 @@ def prepare_terminal_marker_fail_closed(text: str) -> bool:
         text[:marker_position],
         re.IGNORECASE,
     )
-    terminal_validation = re.search(
+    terminal_validation = None
+    for candidate in re.finditer(
         r"(?s)\b(?P<records>[A-Za-z_]\w*)\.(?:allSatisfy|all)\s*"
-        r"(?:\(\s*)?\{.*?\.complete.*?(?:byteCount|size)\s*>\s*0",
+        r"(?:\(\s*)?\{(?P<body>[^}]*)\}",
         text[:marker_position],
-    )
+    ):
+        body = candidate.group("body")
+        if ".complete" not in body or re.search(r"(?:byteCount|size)\s*>\s*0", body) is None:
+            continue
+        records = candidate.group("records")
+        if re.search(
+            rf"(?s)\b{re.escape(records)}\.(?:map|compactMap).*?"
+            r"resourceId.*?\.sorted\(\)",
+            text[candidate.end() : marker_position],
+        ):
+            terminal_validation = candidate
+            break
     if required_binding is None or terminal_validation is None:
         return False
     required_ids = required_binding.group("required")
@@ -987,16 +1001,34 @@ def burn_eligible(case: BurnCase) -> bool:
     )
 
 
-def burn_execution_steps(prepared: bool) -> tuple[str, str]:
-    preparation = "prepare:complete" if prepared else "prepare:failed"
-    return preparation, "consume:force"
+def burn_execution_steps(
+    *, preservation_enabled: bool, prepared: bool
+) -> tuple[str, ...]:
+    if not preservation_enabled:
+        return ("consume:force",)
+    if prepared:
+        return "prepare:complete", "consume:force"
+    return "prepare:failed", "error:burn"
 
 
 def burn_execution_events(
-    *, eligible: bool, confirmed: bool, prepared: bool, account: str, message_id: str
+    *,
+    eligible: bool,
+    confirmed: bool,
+    preservation_enabled: bool,
+    prepared: bool,
+    account: str,
+    message_id: str,
 ) -> tuple[tuple[str, str, str], ...]:
     if not eligible or not confirmed:
         return ()
+    if not preservation_enabled:
+        return (("consume:force", account, message_id),)
+    if not prepared:
+        return (
+            ("prepare", account, message_id),
+            ("error:burn", account, message_id),
+        )
     return (
         ("prepare", account, message_id),
         ("consume:force", account, message_id),
@@ -2514,7 +2546,7 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
             prepare,
             rf"grvmMediaResources\(\s*{re.escape(row_name)}\s*\)",
         )
-        probe_position = prepare.find("completedResourcePath")
+        probe_position = prepare.find("fetchedMediaResource(")
         idempotent_prefix = prepare[row_binding.end() : probe_position]
         self.assertTrue(
             prepare_positive_marker_idempotent_success(prepare, row_name),
@@ -2529,8 +2561,22 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
             r"(?s)(?:self\.)?messageKey\([^)]*\).*?accountRecordId|"
             r"accountRecordId.*?(?:self\.)?messageKey\(",
         )
-        for forbidden in ("network.request", "fetchedResource", "resourceData(", "fetchResource"):
-            self.assertNotContains(prepare, forbidden)
+        self.assertContainsAll(
+            prepare,
+            "fetchedMediaResource(",
+            "MediaResourceReference.media(",
+            "MessageReference(",
+            "resourceData(",
+            "option: .complete(waitUntilFetchStatus: true)",
+            "|> filter { $0.complete }",
+            "completedResourcePath",
+        )
+        self.assertMatches(
+            prepare,
+            r"(?s)fetchedMediaResource\(.*?\|>\s*`catch`.*?\.single\(false\)",
+        )
+        self.assertLess(prepare.find("fetchedMediaResource("), prepare.find("completedResourcePath"))
+        self.assertLess(prepare.find("completedResourcePath"), prepare.find("reserveConsumableMedia("))
 
     def test_prepare_persists_every_terminal_record_before_attaching_marker(self) -> None:
         prepare = swift_block(
@@ -2567,8 +2613,9 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
         self.assertIsNotNone(required_binding, msg="Preparation must retain the required primary-ID set")
         required_ids = required_binding.group("required")
         terminal_validation = re.search(
-            r"(?s)\b([A-Za-z_][A-Za-z0-9_]*)\.(?:allSatisfy|all)\s*"
-            r"(?:\(\s*)?\{.*?\.complete.*?(?:byteCount|size)\s*>\s*0",
+            r"(?s)\b([A-Za-z_][A-Za-z0-9_]*)\.allSatisfy\s*\{\s*"
+            r"\$0\.copyState\s*==\s*\.complete\s*&&\s*"
+            r"\$0\.byteCount\s*>\s*0",
             prepare,
         )
         self.assertIsNotNone(
@@ -2948,7 +2995,8 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
             self.assertNotContains(reference_query, "revision_id")
         finalize = swift_block(store, "public func finalizeDeletedCleanup(")
         self.assertContains(finalize, "DELETE FROM archived_message_media")
-        self.assertContains(finalize, "revision_id = 0")
+        self.assertNotContains(finalize, "revision_id = 0")
+        self.assertContains(finalize, "DELETE FROM edit_revisions")
         self.assertContains(finalize, "references == 0")
         self.assertContains(store, "if references == 0")
 
@@ -3238,28 +3286,64 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         for name, changes in exclusions.items():
             with self.subTest(name=name):
                 self.assertFalse(burn_eligible(replace(eligible, **changes)))
-        self.assertEqual("consume:force", burn_execution_steps(True)[-1])
-        self.assertEqual("consume:force", burn_execution_steps(False)[-1])
-        expected_events = (
+        self.assertEqual(
+            ("consume:force",),
+            burn_execution_steps(preservation_enabled=False, prepared=False),
+        )
+        self.assertEqual(
+            ("prepare:complete", "consume:force"),
+            burn_execution_steps(preservation_enabled=True, prepared=True),
+        )
+        self.assertEqual(
+            ("prepare:failed", "error:burn"),
+            burn_execution_steps(preservation_enabled=True, prepared=False),
+        )
+        prepared_events = (
             ("prepare", "account-a", "message-7"),
             ("consume:force", "account-a", "message-7"),
         )
-        for prepared in (False, True):
-            self.assertEqual(
-                expected_events,
-                burn_execution_events(
-                    eligible=True,
-                    confirmed=True,
-                    prepared=prepared,
-                    account="account-a",
-                    message_id="message-7",
-                ),
-            )
+        self.assertEqual(
+            prepared_events,
+            burn_execution_events(
+                eligible=True,
+                confirmed=True,
+                preservation_enabled=True,
+                prepared=True,
+                account="account-a",
+                message_id="message-7",
+            ),
+        )
+        self.assertEqual(
+            (
+                ("prepare", "account-a", "message-7"),
+                ("error:burn", "account-a", "message-7"),
+            ),
+            burn_execution_events(
+                eligible=True,
+                confirmed=True,
+                preservation_enabled=True,
+                prepared=False,
+                account="account-a",
+                message_id="message-7",
+            ),
+        )
+        self.assertEqual(
+            (("consume:force", "account-a", "message-7"),),
+            burn_execution_events(
+                eligible=True,
+                confirmed=True,
+                preservation_enabled=False,
+                prepared=False,
+                account="account-a",
+                message_id="message-7",
+            ),
+        )
         self.assertEqual(
             (),
             burn_execution_events(
                 eligible=True,
                 confirmed=False,
+                preservation_enabled=True,
                 prepared=True,
                 account="account-a",
                 message_id="message-7",
@@ -3311,7 +3395,9 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             action,
             "textAlertController",
             "destructiveAction",
+            "shouldSaveDeletedMessages",
             "prepareConsumableMedia",
+            "strings[.burnError]",
             "markMessageContentAsConsumedInteractively",
             "force: true",
         )
@@ -3333,8 +3419,9 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             action,
             "textAlertController",
             "destructiveAction",
-            "prepareConsumableMedia",
             "force: true",
+            "shouldSaveDeletedMessages",
+            "prepareConsumableMedia",
         )
         confirmation_candidates = [
             call
@@ -3345,13 +3432,19 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         confirmation = confirmation_candidates[0]
         self.assertContainsAll(
             confirmation,
+            "shouldSaveDeletedMessages",
             "prepareConsumableMedia",
+            "burnError",
             "markMessageContentAsConsumedInteractively",
             "force: true",
         )
-        self.assertTrue(
+        self.assertFalse(
             burn_confirmation_ignores_prepare_bool(confirmation),
-            msg="Confirmed Burn must ignore prepare Bool and always enqueue the same forced consume",
+            msg="Preservation-enabled Burn must branch on the preparation Bool",
+        )
+        self.assertMatches(
+            confirmation,
+            r"(?s)guard\s+prepared\s+else\s*\{.*?burnError.*?return.*?\}.*?consume",
         )
         alert_call = next(
             (call for call in swift_calls(action, "textAlertController") if "destructiveAction" in call),
@@ -3483,14 +3576,18 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             "consumeOnOpen: Bool = true",
             "self.consumeOnOpen = consumeOnOpen",
         )
-        self.assertContains(chat_controller, "consumeOnOpen: params.consumeOnOpen")
+        self.assertContains(chat_controller, "let grvmPreservedReplay")
+        self.assertContains(chat_controller, "standalone = true")
+        self.assertContains(chat_controller, "consumeOnOpen: grvmPreservedReplay ? false : params.consumeOnOpen")
         self.assertGreaterEqual(open_chat.count("params.consumeOnOpen"), 2)
         self.assertContains(open_chat, "consumeOnOpen: params.consumeOnOpen")
         self.assertContains(open_chat, "consumeViewOnce: params.consumeOnOpen")
         self.assertContainsAll(
             gallery_data,
             "consumeOnOpen: Bool = true",
+            "message.containsSecretMedia && consumeOnOpen",
             "SecretMediaPreviewController(context: context, messageId: message.id, consumeOnOpen: consumeOnOpen)",
+            ".standaloneMessage(message, mediaSubject)",
         )
         self.assertContainsAll(
             secret_preview,
@@ -3551,13 +3648,14 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         self.assertContainsAll(
             replay_branch,
             "!params.consumeOnOpen",
-            ".singleMessage(params.message.id)",
+            ".recentActions(params.message)",
         )
+        self.assertNotContains(replay_branch, ".singleMessage(")
         self.assertNotContains(replay_branch, ".messages(")
         self.assertOrdered(
             audio,
             "if !params.consumeOnOpen",
-            ".singleMessage(params.message.id)",
+            ".recentActions(params.message)",
             "consumeViewOnce: params.consumeOnOpen",
         )
 
@@ -3828,7 +3926,7 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             local_copy_temp_cleanup(("temp-created", "return-resource")),
         )
 
-    def test_local_copy_availability_uses_marker_media_only_when_visible_media_expired(self) -> None:
+    def test_local_copy_availability_is_pure_and_prefers_durable_marker_media(self) -> None:
         context_menu = source(
             "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift"
         )
@@ -3836,22 +3934,22 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         self.assertContainsAll(
             eligibility,
             "GRVMPreservedConsumableMediaAttribute",
-            "TelegramMediaExpiredContent",
-            "marker.media",
-            "restoreConsumableMedia",
+            "marker?.media",
+            "completedResourcePath",
+            ".single(marker != nil)",
         )
         self.assertMatches(
             eligibility,
-            r"(?s)if\s+message\.media\.contains.*?TelegramMediaExpiredContent.*?"
-            r"media\s*=\s*marker\.media.*?else.*?media\s*=\s*message\.media",
+            r"(?s)(?:let|var)\s+media\s*=\s*marker\?\.media\s*\?\?\s*message\.media",
         )
         self.assertRegex(
             eligibility,
             r"(?s)(?:if|guard)\s+let\s+image\s*=\s*media\[0\]\s+as\?\s+TelegramMediaImage",
         )
-        self.assertNotContains(eligibility, "marker?.media ?? message.media")
+        self.assertNotContains(eligibility, "restoreConsumableMedia")
+        self.assertNotContains(eligibility, "accountPeerId")
 
-    def test_local_copy_enqueue_reloads_fresh_row_before_selecting_marker_media(self) -> None:
+    def test_local_copy_enqueue_reloads_fresh_row_and_prefers_saved_marker_media(self) -> None:
         enqueue = swift_block(
             source("submodules/TelegramUI/Sources/GRVMPreservedMediaEnqueue.swift"),
             "func GRVMPreservedMediaEnqueue(",
@@ -3861,8 +3959,7 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             "context.account.postbox.transaction",
             "transaction.getMessage(message.id)",
             "stableId == message.stableId",
-            "TelegramMediaExpiredContent",
-            "marker.media",
+            "marker?.media",
         )
         fresh_binding = re.search(
             r"guard\s+let\s+(?P<fresh>[A-Za-z_]\w*)\s*=\s*"
@@ -3883,17 +3980,15 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         )
         self.assertMatches(
             enqueue,
-            r"(?s)if\s+message\.media\.contains.*?TelegramMediaExpiredContent.*?"
-            r"media\s*=\s*marker\.media.*?else.*?media\s*=\s*message\.media",
+            r"(?s)(?:let|var)\s+media\s*=\s*marker\?\.media\s*\?\?\s*message\.media",
         )
         self.assertOrdered(
             enqueue,
             "transaction.getMessage(message.id)",
-            "TelegramMediaExpiredContent",
+            "marker?.media ?? message.media",
             "restoreConsumableMedia",
             "FileManager.default.temporaryDirectory",
         )
-        self.assertNotContains(enqueue, "marker?.media ?? message.media")
 
     def test_safe_entity_fixture_uses_utf16_ranges_and_drops_custom_emoji(self) -> None:
         text = "A\U0001f600B"
@@ -4188,8 +4283,8 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             "TelegramMediaImage",
             "TelegramMediaFile",
             "completedResourcePath",
-            "restoreConsumableMedia",
-            "accountPeerId",
+            "marker?.media ?? message.media",
+            ".single(marker != nil)",
         )
         self.assertAnyContains(eligibility, "!message.text.isEmpty", "message.text.isEmpty == false")
         self.assertAnyContains(
@@ -4203,22 +4298,16 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             eligibility,
             r"(?s)completedResourcePath.*?(?:fileSize|byteCount|size).*?>\s*0",
         )
-        restore_calls = swift_calls(eligibility, "restoreConsumableMedia")
-        self.assertEqual(1, len(restore_calls))
-        self.assertRegex(restore_calls[0], r"(?s)accountPeerId\s*,\s*message\b")
+        self.assertNotContains(eligibility, "restoreConsumableMedia")
+        self.assertNotContains(eligibility, "accountPeerId")
         self.assertTrue(
             any(
-                "context.account.peerId" in call
+                "context: context" in call
                 for call in swift_calls(context_menu, "grvmCanForwardLocalCopy")
             ),
-            msg="Local-copy eligibility must receive the exact account peer ID",
+            msg="Local-copy eligibility must use the exact account MediaBox without restoring it",
         )
         self.assertContains(eligibility, ".single(false)")
-        self.assertRegex(
-            eligibility,
-            r"(?s)restoreConsumableMedia.*?\|>\s*(?:map|mapToSignal)\s*\{\s*"
-            r"(?P<restored>[A-Za-z_]\w*)\s+in.*?return\s+(?P=restored)",
-        )
         self.assertContains(interaction, "public var grvmForwardLocalCopy: ((Message) -> Void)?")
         self.assertContains(chat_controller, "controllerInteraction.grvmForwardLocalCopy = { [weak self] message in")
         self.assertTrue(local_item)
@@ -4255,9 +4344,21 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         error_switch = swift_block(common_forward, "switch error")
         for error_case in ("case .unsupported", "case .unavailable"):
             error_branch = switch_case(error_switch, error_case)
-            self.assertContains(error_branch, "displayUndo")
+            self.assertContainsAll(
+                error_branch,
+                "controller?.present",
+                "UndoOverlayController",
+            )
+            self.assertNotContains(error_branch, "displayUndo")
             self.assertNotContains(error_branch, "chatMessagePaymentAlertController")
             self.assertNotContains(error_branch, "enqueueMessages(")
+        preparation = swift_block(common_forward, "if let localCopy")
+        self.assertContainsAll(
+            preparation,
+            "OverlayStatusController",
+            "controller?.present",
+            "progressController.dismiss()",
+        )
 
     def test_local_copy_temp_lifetime_is_owned_until_stock_enqueue(self) -> None:
         enqueue = source("submodules/TelegramUI/Sources/GRVMPreservedMediaEnqueue.swift")

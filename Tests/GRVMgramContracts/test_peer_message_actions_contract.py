@@ -2137,7 +2137,7 @@ class PeerMessageUIContractTests(unittest.TestCase):
 
         self.assertIn("grvmArchiveContextMenuItems(", avatar)
         self.assertIn("grvmArchiveContextMenuItems(", forum)
-        self.assertIn("grvmArchiveContextMenuItems(", bot)
+        self.assertNotIn("grvmArchiveContextMenuItems(", bot)
 
     def test_jump_calls_existing_lower_bound_helper_without_reimplementing_history(self) -> None:
         chat = source(self.chat_path)
@@ -2162,6 +2162,10 @@ class PeerMessageCallbackCopyContractTests(unittest.TestCase):
         "submodules/TelegramUI/Components/Chat/ChatMessageItemView/Sources/"
         "ChatMessageItemView.swift"
     )
+    action_buttons_path = (
+        "submodules/TelegramUI/Components/Chat/ChatMessageActionButtonsNode/Sources/"
+        "ChatMessageActionButtonsNode.swift"
+    )
 
     def test_behavior_fixture_prefers_utf8_then_lowercase_two_digit_hex(self) -> None:
         self.assertEqual("callback payload", callback_copy_text(b"callback payload"))
@@ -2182,6 +2186,17 @@ class PeerMessageCallbackCopyContractTests(unittest.TestCase):
             ".joined()",
         ):
             self.assertIn(token, callback)
+
+        action_buttons = source(self.action_buttons_path)
+        recognizer_gate = swift_control_statement(
+            action_buttons,
+            "node.longTapRecognizer?.isEnabled = true",
+            keywords=("switch",),
+        )
+        self.assertIn("case .url, .callback:", recognizer_gate)
+        self.assertEqual(1, recognizer_gate.count("isEnabled = true"))
+        self.assertIn("default:", recognizer_gate)
+        self.assertIn("isEnabled = false", recognizer_gate)
 
     def test_callback_sheet_copies_only_on_copy_action_and_never_executes_callback(self) -> None:
         method = swift_block(

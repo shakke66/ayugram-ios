@@ -15,6 +15,7 @@ private struct GRVMDeletedArguments {
     let context: AccountContext
     let updateQuery: (String) -> Void
     let openMessage: (GRVMMessageKey) -> Void
+    let removeMessage: (GRVMMessageKey) -> Void
 }
 
 private final class GRVMDeletedControllerHolder {
@@ -119,15 +120,19 @@ private enum GRVMDeletedEntry: ItemListNodeEntry {
             let formatter = DateFormatter()
             formatter.dateStyle = .short
             formatter.timeStyle = .short
-            return ItemListDisclosureItem(
+            return ItemListTextWithLabelItem(
                 presentationData: presentationData,
-                icon: nil,
-                title: display,
                 label: formatter.string(from: Date(timeIntervalSince1970: TimeInterval(message.deletedAt))),
-                sectionId: self.section,
+                text: display,
                 style: .blocks,
+                enabledEntityTypes: [],
+                multiline: true,
+                sectionId: self.section,
                 action: {
                     arguments.openMessage(message.key)
+                },
+                longTapAction: {
+                    arguments.removeMessage(message.key)
                 }
             )
         }
@@ -152,7 +157,8 @@ private func grvmDeletedEntries(
 
 func grvmClearDeletedErrorController(
     _ error: GRVMClearDeletedError,
-    presentationData: PresentationData
+    presentationData: PresentationData,
+    title: String? = nil
 ) -> AlertController {
     let strings = GRVMgramStrings(presentationData.strings)
     let text: String
@@ -166,7 +172,7 @@ func grvmClearDeletedErrorController(
     }
     return standardTextAlertController(
         theme: AlertControllerTheme(presentationData: presentationData),
-        title: strings[.deletedClearErrorTitle],
+        title: title ?? strings[.deletedClearErrorTitle],
         text: text,
         actions: [
             TextAlertAction(
@@ -181,8 +187,8 @@ func grvmClearDeletedErrorController(
 /// Displays the active account's deleted-message archive for one chat or topic scope.
 public func grvmDeletedMessagesController(
     context: AccountContext,
-    peerId: PeerId? = nil,
-    threadId: Int64? = nil
+    peerId: PeerId,
+    threadId: Int64?
 ) -> ViewController {
     let queryPromise = ValuePromise<String>("", ignoreRepeated: true)
     let refreshCounter = Atomic<Int>(value: 0)
@@ -259,6 +265,45 @@ public func grvmDeletedMessagesController(
                     subject: .message(id: .id(messageId), highlight: nil, timecode: nil, setupReply: false)
                 ))
             })
+        },
+        removeMessage: { key in
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let strings = GRVMgramStrings(presentationData.strings)
+            let alert = standardTextAlertController(
+                theme: AlertControllerTheme(presentationData: presentationData),
+                title: strings[.deletedRemoveTitle],
+                text: strings[.deletedRemoveText],
+                actions: [
+                    TextAlertAction(
+                        type: .genericAction,
+                        title: presentationData.strings.Common_Cancel,
+                        action: {}
+                    ),
+                    TextAlertAction(
+                        type: .destructiveAction,
+                        title: strings[.deletedRemoveAction],
+                        action: {
+                            let cleanup = AyuGramFeatures.removeDeletedMessage?(
+                                context.account.peerId, key
+                            ) ?? .fail(.archiveUnavailable)
+                            let _ = (cleanup
+                            |> deliverOnMainQueue).start(next: { _ in
+                                refreshToken.set(refreshCounter.modify { $0 + 1 })
+                            }, error: { error in
+                                controllerHolder.controller?.present(
+                                    grvmClearDeletedErrorController(
+                                        error,
+                                        presentationData: presentationData,
+                                        title: strings[.deletedRemoveErrorTitle]
+                                    ),
+                                    in: .window(.root)
+                                )
+                            })
+                        }
+                    )
+                ]
+            )
+            controllerHolder.controller?.present(alert, in: .window(.root))
         }
     )
 
@@ -322,10 +367,4 @@ public func grvmDeletedMessagesController(
     controller = ItemListController(context: context, state: signal)
     controllerHolder.controller = controller
     return controller!
-}
-
-@available(*, deprecated, message: "Use grvmDeletedMessagesController(context:peerId:threadId:)")
-/// Compatibility entry point for the former global archive screen.
-public func ayuGramDeletedMessagesController(context: AccountContext) -> ViewController {
-    return grvmDeletedMessagesController(context: context)
 }

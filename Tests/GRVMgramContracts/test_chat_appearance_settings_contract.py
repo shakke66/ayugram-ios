@@ -16,16 +16,6 @@ class ChatAppearanceSettingsContractTests(unittest.TestCase):
         fields = {
             "showPrivateReactions": "true",
             "showAddFilterInContextMenu": "1",
-            "showAttachPopup": "true",
-            "showEmojiPopup": "true",
-            "messageShotShowBackground": "true",
-            "messageShotShowDate": "false",
-            "messageShotShowReactions": "false",
-            "messageShotShowHeader": "true",
-            "messageShotShowHeaderDecorations": "true",
-            "messageShotColorfulReplies": "true",
-            "messageShotRevealSpoilers": "true",
-            "messageShotTheme": "0",
         }
         for name, default in fields.items():
             with self.subTest(name=name):
@@ -42,12 +32,10 @@ class ChatAppearanceSettingsContractTests(unittest.TestCase):
         required = [
             "min(200, max(1, self.recentStickersCount))",
             "min(50, max(0, self.avatarCorners))",
-            "min(16, max(0, self.messageBubbleRadius))",
             "min(4.0, max(0.5, self.messageWidthMultiplier))",
             "(clampedWidth * 20.0).rounded() / 20.0",
             "GRVMContextMenuVisibility(rawValue:",
-            "GRVMChannelBottomButtonMode(rawValue:",
-            "GRVMMessageShotTheme(rawValue:",
+            "GRVMChannelBottomButtonMode(normalizingRawValue:",
         ]
         for fragment in required:
             self.assertIn(fragment, policy)

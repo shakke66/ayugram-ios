@@ -892,7 +892,7 @@ public final class ChatListHeaderComponent: Component {
             }
             
             var storyListTransition = transition
-            if let storySubscriptions = component.storySubscriptions, AyuGramHooks.shouldHideStories?(component.context.account.peerId) != true {
+            if let storySubscriptions = component.storySubscriptions {
                 let storyPeerList: ComponentView<Empty>
                 if let current = self.storyPeerList {
                     storyPeerList = current
@@ -906,15 +906,12 @@ public final class ChatListHeaderComponent: Component {
                 var primaryTitleHasLock = false
                 var primaryTitleHasActivity = false
                 var primaryTitlePeerStatus: StoryPeerListComponent.PeerStatus?
-                let hidePremiumStatuses = AyuGramHooks.chatAppearance(
-                    accountPeerId: component.context.account.peerId
-                ).appearance.hidePremiumStatuses
                 if let primaryContent = component.primaryContent {
                     if let chatListTitle = primaryContent.chatListTitle {
                         primaryTitle = chatListTitle.text
                         primaryTitleHasLock = chatListTitle.isPasscodeSet
                         primaryTitleHasActivity = chatListTitle.activity
-                        if !hidePremiumStatuses, let peerStatus = chatListTitle.peerStatus {
+                        if let peerStatus = chatListTitle.peerStatus {
                             switch peerStatus {
                             case .premium:
                                 primaryTitlePeerStatus = .premium
@@ -980,6 +977,9 @@ public final class ChatListHeaderComponent: Component {
                     environment: {},
                     containerSize: CGSize(width: availableSize.width, height: ChatListNavigationBar.storiesScrollHeight)
                 )
+            } else if let storyPeerList = self.storyPeerList {
+                self.storyPeerList = nil
+                storyPeerList.view?.removeFromSuperview()
             }
             
             var secondaryContentTransition = transition
@@ -1183,12 +1183,6 @@ public final class ChatListHeaderComponent: Component {
         
         public func emojiStatus() -> PeerEmojiStatus? {
             guard let component = self.component else {
-                return nil
-            }
-            let hidePremiumStatuses = AyuGramHooks.chatAppearance(
-                accountPeerId: component.context.account.peerId
-            ).appearance.hidePremiumStatuses
-            guard !hidePremiumStatuses else {
                 return nil
             }
             if let _ = component.storySubscriptions, let primaryContent = component.primaryContent, let chatListTitle = primaryContent.chatListTitle, let peerStatus = chatListTitle.peerStatus, case let .emoji(emojiStatus) = peerStatus {

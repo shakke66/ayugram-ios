@@ -12,16 +12,17 @@ def source(relative_path: str) -> str:
 
 class AppearanceConsumerContractTests(unittest.TestCase):
     def test_app_icon_picker_uses_native_bindings_and_persists_after_success(self) -> None:
-        text = source(
+        picker = source(
+            "submodules/AyuGramSettingsUI/Sources/AyuGramAppIconPicker.swift"
+        )
+        appearance = source(
             "submodules/AyuGramSettingsUI/Sources/AyuGramAppearanceController.swift"
         )
         for fragment in [
             "getAvailableAlternateIcons()",
             "getAlternateIconName()",
-            "sharedContext.mainWindow?.present(",
-            "grvmAppIconPicker(",
-            "on: .root",
-            'let storedName = icon.isDefault ? "default" : icon.name',
+            "public func ayuGramAppIconPicker(",
+            'let storedIdentifier = icon.isDefault ? "default" : icon.name',
             "icon.isDefault ? currentName == nil : icon.name == currentName",
             "requestSetAlternateIconName(icon.isDefault ? nil : icon.name",
             "var requestInFlight = false",
@@ -30,33 +31,54 @@ class AppearanceConsumerContractTests(unittest.TestCase):
             "Queue.mainQueue().async",
             "requestInFlight = false",
             "guard success else",
-            "updateString(\\.selectedAppIcon, storedName)",
-            'let title = grvmAppIconTitle(icon.isDefault ? "default" : icon.name, strings: strings)',
+            "onSelect(storedIdentifier)",
+            "grvmAppIconDisplayTitle(displayIdentifier, strings: strings)",
             '"default": .appIconDefault',
             r'"\u{2713} \(title)"',
         ]:
             with self.subTest(fragment=fragment):
-                self.assertIn(fragment, text)
+                self.assertIn(fragment, picker)
+        for fragment in [
+            "sharedContext.mainWindow?.present(",
+            "ayuGramAppIconPicker(",
+            "on: .root",
+            "arguments.updateString(\\.selectedAppIcon, rawIdentifier)",
+        ]:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, appearance)
         self.assertRegex(
-            text,
+            picker,
             re.compile(
                 r"Queue\.mainQueue\(\)\.async\s*\{\s*"
                 r"requestInFlight = false\s*guard success else",
                 re.DOTALL,
             ),
         )
-        self.assertNotIn("ayuGramAppIconOptions", text)
-        self.assertNotIn("updateString(\\.selectedAppIcon, icon.name)", text)
+        self.assertLess(picker.index("guard success else"), picker.index("onSelect(storedIdentifier)"))
+        self.assertNotIn("ayuGramAppIconOptions", picker + appearance)
+        self.assertNotIn("updateString(\\.selectedAppIcon, icon.name)", appearance)
 
     def test_badge_consumers_receive_the_exact_active_account(self) -> None:
         app_delegate = source("submodules/TelegramUI/Sources/AppDelegate.swift")
+        reset_badge = app_delegate[
+            app_delegate.index("    private func resetBadge()") : app_delegate.index(
+                "    private func bindGRVMSharedContext", app_delegate.index("    private func resetBadge()")
+            )
+        ]
         for fragment in [
-            "Signal<(AuthorizedApplicationContext?, Int32), NoError>",
-            "map { (context, $0) }",
+            "Signal<(AuthorizedApplicationContext?, Int32, Bool), NoError>",
+            "combineLatest(",
+            "context.applicationBadge",
+            "grvmSettings(",
             "context.context.account.peerId",
-            "appearance.hideNotificationBadge",
+            "context.context.sharedContext.accountManager",
+            "settings.hideNotificationBadge",
+            "map { count, hideBadge in",
+            "return (context, count, hideBadge)",
+            "start(next: { _, count, hideBadge in",
         ]:
-            self.assertIn(fragment, app_delegate)
+            self.assertIn(fragment, reset_badge)
+        self.assertNotIn("AyuGramHooks.chatAppearance", reset_badge)
         self.assertNotIn("AyuGramHooks.shouldHideNotificationBadge?()", app_delegate)
 
         root = source("submodules/TelegramUI/Sources/TelegramRootController.swift")

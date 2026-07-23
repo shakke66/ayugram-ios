@@ -63,6 +63,7 @@ enum ChatHistoryViewUpdateType {
 
 public struct ChatHistoryCombinedInitialReadStateData {
     public let unreadCount: Int32
+    public let readState: CombinedPeerReadState?
     public let totalState: ChatListTotalUnreadState?
     public let notificationSettings: PeerNotificationSettings?
 }
@@ -595,6 +596,8 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
     private var currentEarlierPrefetchMessages: [(Message, Media)] = []
     private var currentLaterPrefetchMessages: [(Message, Media)] = []
     private var currentPrefetchDirectionIsToLater: Bool = false
+    private var filterBackfillEarlierAnchor: MessageIndex?
+    private var filterBackfillLaterAnchor: MessageIndex?
     
     private var maxVisibleMessageIndexReported: MessageIndex?
     var maxVisibleMessageIndexUpdated: ((MessageIndex) -> Void)?
@@ -1581,6 +1584,13 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
             }
         }
         
+        let messageFilterStateUpdates = AyuGramHooks.messageFilterStateUpdates?(context.account.peerId)
+        ?? Signal<Int64, NoError>.single(0)
+        historyViewUpdate = combineLatest(historyViewUpdate, messageFilterStateUpdates)
+        |> map { update, _ in
+            return update
+        }
+
         let previousView = self.previousView
         let automaticDownloadNetworkType = context.account.networkType
         |> map { type -> MediaAutoDownloadNetworkType in
@@ -2487,8 +2497,7 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
         }
         let chatAppearance: Signal<GRVMAppearanceSettings, NoError> = chatAppearanceValues
         |> distinctUntilChanged(isEqual: { lhs, rhs in
-            return lhs.messageBubbleRadius == rhs.messageBubbleRadius
-                && lhs.codeFontName == rhs.codeFontName
+            return lhs.codeFontName == rhs.codeFontName
                 && lhs.removeMessageBubbleTail == rhs.removeMessageBubbleTail
         })
         
@@ -2508,7 +2517,7 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
                 
                 let animatedEmojiConfig = ChatHistoryAnimatedEmojiConfiguration.with(appConfiguration: appConfiguration)
                 
-                if !didSetPresentationData || previousTheme !== presentationData.theme || previousStrings !== presentationData.strings || previousWallpaper != presentationData.chatWallpaper || previousAnimatedEmojiScale != animatedEmojiConfig.scale || previousChatAppearance?.messageBubbleRadius != chatAppearance.messageBubbleRadius || previousChatAppearance?.codeFontName != chatAppearance.codeFontName || previousChatAppearance?.removeMessageBubbleTail != chatAppearance.removeMessageBubbleTail {
+                if !didSetPresentationData || previousTheme !== presentationData.theme || previousStrings !== presentationData.strings || previousWallpaper != presentationData.chatWallpaper || previousAnimatedEmojiScale != animatedEmojiConfig.scale || previousChatAppearance?.codeFontName != chatAppearance.codeFontName || previousChatAppearance?.removeMessageBubbleTail != chatAppearance.removeMessageBubbleTail {
                     didSetPresentationData = true
                     previousChatAppearance = chatAppearance
                     
@@ -3305,49 +3314,85 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
             return VisibleMessageRange(lowerBound: range.lowerBound, upperBound: range.upperBound)
         })
         
-        if let loaded = displayedRange.visibleRange, let firstEntry = historyView.filteredEntries.first, let lastEntry = historyView.filteredEntries.last {
+        if let rawFirstEntry = historyView.originalView.entries.first, let rawLastEntry = historyView.originalView.entries.last {
             var mathesFirst = false
-            if loaded.firstIndex <= 5 {
-                var firstHasGroups = false
-                for index in (max(0, historyView.filteredEntries.count - 5) ..< historyView.filteredEntries.count).reversed() {
-                    switch historyView.filteredEntries[index] {
-                    case .MessageEntry:
-                        break
-                    case .MessageGroupEntry:
-                        firstHasGroups = true
-                    default:
-                        break
-                    }
-                }
-                if firstHasGroups {
-                    mathesFirst = loaded.firstIndex <= 1
-                } else {
-                    mathesFirst = loaded.firstIndex <= 5
-                }
-            }
-            
             var mathesLast = false
-            if loaded.lastIndex >= historyView.filteredEntries.count - 5 {
-                var lastHasGroups = false
-                for index in 0 ..< min(5, historyView.filteredEntries.count) {
-                    switch historyView.filteredEntries[index] {
-                    case .MessageEntry:
-                        break
-                    case .MessageGroupEntry:
-                        lastHasGroups = true
-                    default:
-                        break
+            if let loaded = displayedRange.visibleRange, !historyView.filteredEntries.isEmpty {
+                if loaded.firstIndex <= 5 {
+                    var firstHasGroups = false
+                    for index in (max(0, historyView.filteredEntries.count - 5) ..< historyView.filteredEntries.count).reversed() {
+                        switch historyView.filteredEntries[index] {
+                        case .MessageEntry:
+                            break
+                        case .MessageGroupEntry:
+                            firstHasGroups = true
+                        default:
+                            break
+                        }
+                    }
+                    if firstHasGroups {
+                        mathesFirst = loaded.firstIndex <= 1
+                    } else {
+                        mathesFirst = loaded.firstIndex <= 5
                     }
                 }
-                if lastHasGroups {
-                    mathesLast = loaded.lastIndex >= historyView.filteredEntries.count - 1
-                } else {
-                    mathesLast = loaded.lastIndex >= historyView.filteredEntries.count - 5
+
+                if loaded.lastIndex >= historyView.filteredEntries.count - 5 {
+                    var lastHasGroups = false
+                    for index in 0 ..< min(5, historyView.filteredEntries.count) {
+                        switch historyView.filteredEntries[index] {
+                        case .MessageEntry:
+                            break
+                        case .MessageGroupEntry:
+                            lastHasGroups = true
+                        default:
+                            break
+                        }
+                    }
+                    if lastHasGroups {
+                        mathesLast = loaded.lastIndex >= historyView.filteredEntries.count - 1
+                    } else {
+                        mathesLast = loaded.lastIndex >= historyView.filteredEntries.count - 5
+                    }
                 }
             }
-            
-            if mathesFirst && historyView.originalView.laterId != nil {
-                let locationInput: ChatHistoryLocation = .Navigation(index: .message(lastEntry.index), anchorIndex: .message(lastEntry.index), count: historyMessageCount, highlight: false)
+
+            let hasNoVisibleEntries = historyView.filteredEntries.isEmpty
+                && !historyView.originalView.entries.isEmpty
+            if hasNoVisibleEntries {
+                if historyView.originalView.earlierId != nil && historyView.originalView.laterId == nil {
+                    mathesLast = true
+                } else if historyView.originalView.laterId != nil && historyView.originalView.earlierId == nil {
+                    mathesFirst = true
+                } else if self.currentPrefetchDirectionIsToLater {
+                    mathesFirst = historyView.originalView.laterId != nil
+                } else {
+                    mathesLast = historyView.originalView.earlierId != nil
+                }
+            }
+
+            let canRequestLater = mathesFirst
+                && historyView.originalView.laterId != nil
+                && self.filterBackfillLaterAnchor != rawLastEntry.index
+            let canRequestEarlier = mathesLast
+                && historyView.originalView.earlierId != nil
+                && self.filterBackfillEarlierAnchor != rawFirstEntry.index
+            let requestLater: Bool
+            if canRequestLater && canRequestEarlier {
+                requestLater = self.currentPrefetchDirectionIsToLater
+            } else {
+                requestLater = canRequestLater
+            }
+
+            if requestLater {
+                self.filterBackfillLaterAnchor = rawLastEntry.index
+                let locationInput: ChatHistoryLocation = .Navigation(index: .message(rawLastEntry.index), anchorIndex: .message(rawLastEntry.index), count: historyMessageCount, highlight: false)
+                if self.chatHistoryLocationValue?.content != locationInput {
+                    self.chatHistoryLocationValue = ChatHistoryLocationInput(content: locationInput, id: self.takeNextHistoryLocationId())
+                }
+            } else if canRequestEarlier {
+                self.filterBackfillEarlierAnchor = rawFirstEntry.index
+                let locationInput: ChatHistoryLocation = .Navigation(index: .message(rawFirstEntry.index), anchorIndex: .message(rawFirstEntry.index), count: historyMessageCount, highlight: false)
                 if self.chatHistoryLocationValue?.content != locationInput {
                     self.chatHistoryLocationValue = ChatHistoryLocationInput(content: locationInput, id: self.takeNextHistoryLocationId())
                 }
@@ -3355,13 +3400,9 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
                 if self.chatHistoryLocationValue == historyView.locationInput {
                     self.chatHistoryLocationValue = ChatHistoryLocationInput(content: .Navigation(index: .upperBound, anchorIndex: .upperBound, count: historyMessageCount, highlight: false), id: self.takeNextHistoryLocationId())
                 }
-            } else if mathesLast {
-                let locationInput: ChatHistoryLocation = .Navigation(index: .message(firstEntry.index), anchorIndex: .message(firstEntry.index), count: historyMessageCount, highlight: false)
-                if historyView.originalView.earlierId != nil {
-                    if self.chatHistoryLocationValue?.content != locationInput {
-                        self.chatHistoryLocationValue = ChatHistoryLocationInput(content: locationInput, id: self.takeNextHistoryLocationId())
-                    }
-                } else if case let .customChatContents(customChatContents) = self.subject, case .hashTagSearch = customChatContents.kind {
+            } else if mathesLast, historyView.originalView.earlierId == nil {
+                let locationInput: ChatHistoryLocation = .Navigation(index: .message(rawFirstEntry.index), anchorIndex: .message(rawFirstEntry.index), count: historyMessageCount, highlight: false)
+                if case let .customChatContents(customChatContents) = self.subject, case .hashTagSearch = customChatContents.kind {
                     if self.chatHistoryLocationValue?.content != locationInput {
                         self.chatHistoryLocationValue = ChatHistoryLocationInput(content: locationInput, id: self.takeNextHistoryLocationId())
                         customChatContents.loadMore()

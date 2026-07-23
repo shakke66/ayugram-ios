@@ -7,8 +7,6 @@
 "GRVMgram.Main.Appearance" = "Appearance";
 "GRVMgram.Main.Chats" = "Chats";
 "GRVMgram.Main.Other" = "Other";
-"GRVMgram.Main.Deleted" = "Deleted Messages";
-"GRVMgram.Main.History" = "Edit History";
 
 // Common GRVMgram choices
 "GRVMgram.Common.Default" = "Default";
@@ -33,23 +31,13 @@
 "GRVMgram.Ghost.Online" = "Don't Send Online Status";
 "GRVMgram.Ghost.Typing" = "Don't Send Typing or Upload Status";
 "GRVMgram.Ghost.Upload" = "Don't Send Upload Progress";
-"GRVMgram.Ghost.AutoOffline" = "Go Offline After Going Online";
-"GRVMgram.Ghost.LockedComponents" = "Locked Components";
-"GRVMgram.Ghost.LockedCount" = "%d/5";
-"GRVMgram.Ghost.Component.ReadReceipts" = "Read Receipts";
-"GRVMgram.Ghost.Component.StoryViews" = "Story Views";
-"GRVMgram.Ghost.Component.OnlineStatus" = "Online Status";
-"GRVMgram.Ghost.Component.TypingUploads" = "Typing and Upload Status";
-"GRVMgram.Ghost.Component.AutoOffline" = "Go Offline After Going Online";
-"GRVMgram.Ghost.ReadOnAction" = "Mark Read on Action";
-"GRVMgram.Ghost.ReadOnAction.Info" = "Mark messages read after sending, reacting, or voting.";
 "GRVMgram.Ghost.StoryPrompt" = "Suggest Ghost Mode for Stories";
 "GRVMgram.Ghost.StoryPrompt.Info" = "Ask before opening a story when private viewing is disabled.";
 "GRVMgram.Ghost.Schedule" = "Use Scheduled Messages";
 "GRVMgram.Ghost.Schedule.Info" = "Automatically schedule messages with a roughly 12-second delay to avoid showing online presence. This is not recommended on slow connections.";
 "GRVMgram.Ghost.Silent" = "Send Without Sound";
 "GRVMgram.Ghost.Silent.Info" = "Choose when outgoing messages are sent silently.";
-"GRVMgram.Ghost.ActiveCount" = "%d/5 enabled";
+"GRVMgram.Ghost.ActiveCount" = "%d/4 enabled";
 "GRVMgram.Spy.Header" = "Spy Mode";
 "GRVMgram.Spy.SaveDeleted" = "Save Deleted Messages";
 "GRVMgram.Spy.SaveEdits" = "Save Edit History";
@@ -135,8 +123,7 @@
 "GRVMgram.Translation.Provider" = "Translation Provider";
 "GRVMgram.Translation.Telegram" = "Telegram";
 "GRVMgram.Translation.Google" = "Google";
-"GRVMgram.Translation.Yandex" = "Yandex";
-"GRVMgram.Translation.Privacy" = "Google and Yandex receive the text you translate only when you select them.";
+"GRVMgram.Translation.Privacy" = "Google receives the text you translate only when you select it.";
 "GRVMgram.General.Header" = "General";
 "GRVMgram.General.HideStories" = "Hide Stories";
 "GRVMgram.General.SimilarChannels" = "Disable Similar Channels";
@@ -148,10 +135,6 @@
 "GRVMgram.General.LinkWarning" = "Disable External Link Warning";
 "GRVMgram.General.PeerID.API" = "Telegram API";
 "GRVMgram.General.PeerID.BotAPI" = "Bot API";
-"GRVMgram.Webview.Header" = "Webview";
-"GRVMgram.Webview.Android" = "Spoof Platform as Android";
-"GRVMgram.Webview.Height" = "Increase Webview Height";
-"GRVMgram.Webview.Width" = "Increase Webview Width";
 "GRVMgram.Confirmations.Header" = "Confirmations";
 "GRVMgram.Confirmations.Sticker" = "For Stickers";
 "GRVMgram.Confirmations.GIF" = "For GIFs";
@@ -177,15 +160,12 @@
 "GRVMgram.Appearance.HideBadge" = "Hide Notification Badge";
 "GRVMgram.Appearance.HideCounters" = "Hide Notification Counters";
 "GRVMgram.Appearance.Header" = "Appearance";
-"GRVMgram.Appearance.MD3" = "MD3 Style Switches";
 "GRVMgram.Appearance.Tail" = "Remove Message Tail";
 "GRVMgram.Appearance.Backgrounds" = "Disable Custom Backgrounds";
 "GRVMgram.Appearance.CodeFont" = "Code Font";
+"GRVMgram.Appearance.CodeFont.Preview" = "let app = \"GRVMgram\"\nprint(app)";
 "GRVMgram.Appearance.AvatarCorners" = "Avatar Corners";
-"GRVMgram.Appearance.BubbleRadius" = "Message Bubble Radius";
-"GRVMgram.Appearance.SingleCorner" = "Single Corner Radius (forums)";
 "GRVMgram.Appearance.PremiumStatuses" = "Hide Premium Statuses";
-"GRVMgram.Appearance.AdaptiveSavedMusicColor" = "Adaptive Saved Music Color";
 "GRVMgram.Appearance.Folders" = "Folders";
 "GRVMgram.Appearance.FolderCounters" = "Hide Folder Counters";
 "GRVMgram.Appearance.AllChats" = "Hide “All Chats”";
@@ -200,10 +180,8 @@
 "GRVMgram.Chats.Stickers.Recent" = "Recent Stickers Count";
 "GRVMgram.Chats.Channels.Header" = "Groups & Channels";
 "GRVMgram.Chats.Channels.QuickAdmin" = "Quick Admin Shortcuts";
-"GRVMgram.Chats.Channels.MessageShot" = "Message Shot Feature";
 "GRVMgram.Chats.Channels.BottomButton" = "Channel Bottom Button";
 "GRVMgram.Chats.Channels.BottomButton.Hide" = "Hidden";
-"GRVMgram.Chats.Channels.BottomButton.Mute" = "Mute/Unmute";
 "GRVMgram.Chats.Channels.BottomButton.Discuss" = "Discuss";
 "GRVMgram.Chats.Messages.Header" = "Messages";
 "GRVMgram.Chat.DeletedMark" = "Deleted Mark";
@@ -230,11 +208,8 @@
 "GRVMgram.Chats.Context.MoreActions" = "GRVMgram Actions";
 "GRVMgram.Chats.Field.Header" = "Message Field Elements";
 "GRVMgram.Chats.Field.Attach" = "Attachment";
-"GRVMgram.Chats.Field.AttachPopup" = "Attachment Popup";
-"GRVMgram.Chats.Field.Commands" = "Commands";
 "GRVMgram.Chats.Field.TTL" = "TTL";
 "GRVMgram.Chats.Field.Emoji" = "Emoji & Stickers";
-"GRVMgram.Chats.Field.EmojiPopup" = "Emoji & Stickers Popup";
 "GRVMgram.Chats.Field.Voice" = "Voice Recording";
 "GRVMgram.Chats.Field.Gift" = "Gift";
 "GRVMgram.Chats.Field.AI" = "AI Editor";
@@ -257,13 +232,18 @@
 "GRVMgram.Deleted.Clear.ArchiveUnavailable" = "The deleted-message archive is unavailable. Please try again.";
 "GRVMgram.Deleted.Clear.MediaRemovalFailed" = "Failed to remove archived media files (%d). The cleanup can be retried.";
 "GRVMgram.Deleted.Clear.DatabaseFinalizationFailed" = "The deleted-message archive could not be finalized. Please try again.";
+"GRVMgram.Deleted.Remove.Title" = "Permanently Delete Message?";
+"GRVMgram.Deleted.Remove.Text" = "Remove this saved deleted message, its history, and exclusively owned archived media? This cannot be undone.";
+"GRVMgram.Deleted.Remove.Action" = "Delete";
+"GRVMgram.Deleted.Remove.ErrorTitle" = "Delete Failed";
 "GRVMgram.History.Title" = "GRVMgram History";
-"GRVMgram.History.Info" = "GRVMgram History is available from the context menu of a specific edited message.";
 "GRVMgram.History.Empty" = "No edit history has been saved yet.";
 "GRVMgram.History.MessageEmpty" = "[empty]";
 "GRVMgram.History.Recent" = "Recent Edited Messages";
 "GRVMgram.History.Current" = "Current";
 "GRVMgram.History.Revision" = "Version %d";
+"GRVMgram.History.RevisionSavedAt" = "Revision saved: %@";
+"GRVMgram.History.MessageDate" = "Original message date: %@";
 "GRVMgram.History.Action" = "History";
 "GRVMgram.History.EntryHeader" = "%1$@ - %2$@\n";
 "GRVMgram.History.ArchivedResources" = "Archived resources: %d";
@@ -337,46 +317,11 @@
 "GRVMgram.MessageDetails.File.Dimensions" = "dimensions=%@";
 "GRVMgram.MessageDetails.File.Duration" = "duration=%@";
 
-// Message Shot
-"GRVMgram.MessageShot.Title" = "Message Shot";
-"GRVMgram.MessageShot.PreviewAccessibility" = "Message Shot preview";
-"GRVMgram.MessageShot.Theme" = "Theme";
-"GRVMgram.MessageShot.Theme.Current" = "Current";
-"GRVMgram.MessageShot.Theme.Light" = "Light";
-"GRVMgram.MessageShot.Theme.Dark" = "Dark";
-"GRVMgram.MessageShot.Background" = "Background";
-"GRVMgram.MessageShot.Date" = "Date separators";
-"GRVMgram.MessageShot.Reactions" = "Reactions";
-"GRVMgram.MessageShot.Header" = "Author headers";
-"GRVMgram.MessageShot.Decorations" = "Header decorations";
-"GRVMgram.MessageShot.Replies" = "Colorful replies";
-"GRVMgram.MessageShot.Spoilers" = "Reveal spoilers";
-"GRVMgram.MessageShot.Copy" = "Copy";
-"GRVMgram.MessageShot.Save" = "Save";
-"GRVMgram.MessageShot.SelectedUnavailable" = "The selected messages are unavailable.";
-"GRVMgram.MessageShot.RenderFailed" = "The Message Shot could not be rendered.";
-"GRVMgram.MessageShot.PhotoAccessNotGranted" = "Photo access was not granted.";
-"GRVMgram.MessageShot.SaveFailed" = "The image could not be saved.";
-"GRVMgram.MessageShot.Photos.Title" = "Photos Access";
-"GRVMgram.MessageShot.Photos.Text" = "Allow Photos access in Settings to save the Message Shot.";
-"GRVMgram.MessageShot.Chat" = "Chat";
-"GRVMgram.MessageShot.QuotedReply" = "Quoted reply";
-"GRVMgram.MessageShot.CustomReaction" = "Custom %@";
-"GRVMgram.MessageShot.Stars" = "Stars";
-"GRVMgram.MessageShot.Boost" = "Boost %@";
-"GRVMgram.MessageShot.PhotoUnavailable" = "Photo unavailable";
-"GRVMgram.MessageShot.FileUnavailable" = "File unavailable";
-"GRVMgram.MessageShot.MediaUnavailable" = "Media unavailable";
-"GRVMgram.MessageShot.Reply" = "Reply";
-"GRVMgram.MessageShot.MessageUnavailable" = "Message unavailable";
-"GRVMgram.MessageShot.ReplyMediaUnavailable" = "Reply media unavailable";
-
 // Standalone completed surfaces
 "GRVMgram.SendAsSticker.Error" = "The selected image could not be prepared as a sticker.";
 "GRVMgram.Peer.CopyTelegramID" = "Copy Telegram ID";
 "GRVMgram.Peer.CopyBotAPIID" = "Copy Bot API ID";
 "GRVMgram.Peer.Created" = "Created";
-"GRVMgram.Peer.Joined" = "Joined";
 
 // Other, Streamer, local logs, and reset
 "GRVMgram.Other.Title" = "Other";
@@ -386,9 +331,9 @@
 "GRVMgram.Streamer.Cover" = "GRVMgram Privacy\nApp content is hidden while the screen is being shared or recorded.";
 "GRVMgram.Streamer.CoverAccessibility" = "GRVMgram Privacy. App content is hidden while the screen is being shared or recorded.";
 "GRVMgram.Crash.Title" = "Local Log Export";
-"GRVMgram.Crash.Info" = "When a foreground session ends unexpectedly, GRVMgram can offer to export local Telegram app logs. Nothing is uploaded automatically.";
+"GRVMgram.Crash.Info" = "When a foreground session ends unexpectedly, GRVMgram can offer to export its local app logs. Nothing is uploaded automatically.";
 "GRVMgram.Crash.Prompt.Title" = "Previous Session Ended Unexpectedly";
-"GRVMgram.Crash.Prompt.Text" = "The previous foreground session ended unexpectedly. Export local Telegram app logs? Nothing is uploaded automatically.";
+"GRVMgram.Crash.Prompt.Text" = "The previous foreground session ended unexpectedly. Export local GRVMgram app logs? Nothing is uploaded automatically.";
 "GRVMgram.Crash.Export" = "Export Local Logs";
 "GRVMgram.Crash.NotNow" = "Not Now";
 "GRVMgram.Crash.NoReports" = "No local logs are available.";

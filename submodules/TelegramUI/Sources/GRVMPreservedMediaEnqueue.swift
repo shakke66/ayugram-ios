@@ -154,15 +154,7 @@ func GRVMPreservedMediaEnqueue(
     let marker = message.attributes.first(where: {
         $0 is GRVMPreservedConsumableMediaAttribute
     }) as? GRVMPreservedConsumableMediaAttribute
-    let media: [Media]
-    if message.media.contains(where: { $0 is TelegramMediaExpiredContent }) {
-        guard let marker else {
-            return .fail(.unavailable)
-        }
-        media = marker.media
-    } else {
-        media = message.media
-    }
+    let media = marker?.media ?? message.media
     guard media.count <= 1 else {
         return .fail(.unsupported)
     }

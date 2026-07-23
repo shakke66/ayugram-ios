@@ -175,7 +175,7 @@ func applyUpdateMessage(postbox: Postbox, stateManager: AccountStateManager, mes
                             break
                         }
                     }
-                    updatedAttributes.append(TextEntitiesMessageAttribute(entities: messageTextEntitiesFromApiEntities(entities)))
+                    updatedAttributes.append(TextEntitiesMessageAttribute(entities: messageTextEntitiesFromApiEntities(entities, text: currentMessage.text)))
                 }
                 
                 updatedAttributes = updatedAttributes.filter({ !($0 is AutoremoveTimeoutMessageAttribute) })

@@ -6,6 +6,34 @@ import TelegramPresentationData
 import MergeLists
 import AccountContext
 
+private func grvmReadStateWithUnreadCount(_ state: CombinedPeerReadState, count: Int32) -> CombinedPeerReadState {
+    return CombinedPeerReadState(states: state.states.map { namespace, readState in
+        switch readState {
+        case let .idBased(maxIncomingReadId, maxOutgoingReadId, maxKnownId, _, markedUnread):
+            return (
+                namespace,
+                .idBased(
+                    maxIncomingReadId: maxIncomingReadId,
+                    maxOutgoingReadId: maxOutgoingReadId,
+                    maxKnownId: maxKnownId,
+                    count: max(0, count),
+                    markedUnread: markedUnread
+                )
+            )
+        case let .indexBased(maxIncomingReadIndex, maxOutgoingReadIndex, _, markedUnread):
+            return (
+                namespace,
+                .indexBased(
+                    maxIncomingReadIndex: maxIncomingReadIndex,
+                    maxOutgoingReadIndex: maxOutgoingReadIndex,
+                    count: max(0, count),
+                    markedUnread: markedUnread
+                )
+            )
+        }
+    })
+}
+
 enum ChatListNodeEntryId: Hashable {
     case Header
     case Hole(Int64)
@@ -681,8 +709,32 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
         if let peerId = peerId, state.pendingRemovalItemIds.contains(ChatListNodeState.ItemId(peerId: peerId, threadId: threadId)) {
             continue loop
         }
-        var updatedMessages = entry.messages
+        var updatedMessages = entry.messages.filter {
+            AyuGramHooks.isMessageHiddenByFilter?(accountPeerId, $0._asMessage()) != true
+        }
         var updatedCombinedReadState = entry.readCounters
+        if let peerId,
+           let readCounters = entry.readCounters,
+           let readState = readCounters._asReadCounters() {
+            if let threadId,
+               let adjustedCount = AyuGramHooks.adjustedUnreadThreadCount?(
+                   accountPeerId,
+                   peerId,
+                   threadId,
+                   readState.count
+               ) {
+                updatedCombinedReadState = EnginePeerReadCounters(
+                    state: grvmReadStateWithUnreadCount(readState, count: adjustedCount),
+                    isMuted: readCounters.isMuted
+                )
+            } else if threadId == nil,
+                      let adjustedReadState = AyuGramHooks.adjustedUnreadPeerReadState?(accountPeerId, peerId, readState) {
+                updatedCombinedReadState = EnginePeerReadCounters(
+                    state: adjustedReadState,
+                    isMuted: readCounters.isMuted
+                )
+            }
+        }
         if let peerId = peerId, state.pendingClearHistoryPeerIds.contains(ChatListNodeState.ItemId(peerId: peerId, threadId: threadId)) {
             updatedMessages = []
             updatedCombinedReadState = nil
@@ -921,12 +973,18 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
                 if let archiveStoryState = state.archiveStoryState {
                     mappedStoryState = archiveStoryState
                 }
+                let visibleTopMessage = groupReference.topMessage.flatMap { message -> EngineMessage? in
+                    if AyuGramHooks.isMessageHiddenByFilter?(accountPeerId, message._asMessage()) == true {
+                        return nil
+                    }
+                    return message
+                }
                 result.append(.GroupReferenceEntry(ChatListNodeEntry.GroupReferenceEntryData(
                     index: .chatList(EngineChatList.Item.Index.ChatList(pinningIndex: pinningIndex, messageIndex: messageIndex)),
                     presentationData: state.presentationData,
                     groupId: groupReference.id,
                     peers: groupReference.items,
-                    message: groupReference.topMessage,
+                    message: visibleTopMessage,
                     editing: state.editing,
                     unreadCount: groupReference.unreadCount,
                     revealed: state.hiddenItemShouldBeTemporaryRevealed,

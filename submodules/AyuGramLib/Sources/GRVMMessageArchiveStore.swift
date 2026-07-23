@@ -631,7 +631,7 @@ public final class GRVMMessageArchiveStore {
         }
     }
 
-    public func deletedMessages(_ query: GRVMArchiveQuery) throws -> [GRVMArchivedMessage] {
+    public func deletedMessages(_ query: GRVMArchiveQuery, excludingSenderId: Int64? = nil) throws -> [GRVMArchivedMessage] {
         return try self.perform { database in
             var clauses = ["account_id = ?"]
             var values: [SQLValue] = [.int64(query.accountId)]
@@ -642,6 +642,10 @@ public final class GRVMMessageArchiveStore {
             if let threadId = query.threadId {
                 clauses.append("thread_id = ?")
                 values.append(.int64(threadId))
+            }
+            if let excludingSenderId {
+                clauses.append("sender_id != ?")
+                values.append(.int64(excludingSenderId))
             }
             values.append(.int32(max(0, query.limit)))
             return try self.queryMessages(
@@ -698,15 +702,21 @@ public final class GRVMMessageArchiveStore {
         }
     }
 
-    public func deletedKeys(accountId: Int64) throws -> Set<GRVMMessageKey> {
+    public func deletedKeys(accountId: Int64, excludingSenderId: Int64? = nil) throws -> Set<GRVMMessageKey> {
         return try self.perform { database in
-            try self.queryKeys(
+            var clauses = ["account_id = ?"]
+            var values: [SQLValue] = [.int64(accountId)]
+            if let excludingSenderId {
+                clauses.append("sender_id != ?")
+                values.append(.int64(excludingSenderId))
+            }
+            return try self.queryKeys(
                 database,
                 sql: """
                 SELECT account_id, peer_id, message_namespace, message_id, thread_id
-                FROM archived_messages WHERE account_id = ?
+                FROM archived_messages WHERE \(clauses.joined(separator: " AND "))
                 """,
-                values: [.int64(accountId)]
+                values: values
             )
         }
     }
@@ -804,6 +814,9 @@ public final class GRVMMessageArchiveStore {
             for resourceId in try self.mappedResourceIds(database, key: key, revisionId: 0) {
                 resourceIds.insert(resourceId)
             }
+            for resourceId in try self.mappedResourceIds(database, key: key) {
+                resourceIds.insert(resourceId)
+            }
         }
 
         var mediaRecords: [GRVMArchivedMedia] = []
@@ -830,8 +843,8 @@ public final class GRVMMessageArchiveStore {
         }
         var targetedReferencesByResourceId: [String: Int] = [:]
         for key in job.messageKeys {
-            for resourceId in try self.mappedResourceIds(database, key: key, revisionId: 0) {
-                targetedReferencesByResourceId[resourceId, default: 0] += 1
+            for (resourceId, referenceCount) in try self.mappedResourceReferenceCounts(database, key: key) {
+                targetedReferencesByResourceId[resourceId, default: 0] += referenceCount
             }
         }
 
@@ -978,6 +991,159 @@ public final class GRVMMessageArchiveStore {
         }
     }
 
+    private func insertCleanupJob(
+        _ database: OpaquePointer,
+        accountId: Int64,
+        peerId: Int64?,
+        threadId: Int64?,
+        scopePeerId: Int64,
+        scopeThreadId: Int64,
+        messageKeys: [GRVMMessageKey]
+    ) throws -> GRVMCleanupJob {
+        let mediaRecords = try self.cleanupMediaRecords(
+            database,
+            accountId: accountId,
+            messageKeys: messageKeys
+        )
+        let job = GRVMCleanupJob(
+            id: UUID(),
+            accountId: accountId,
+            peerId: peerId,
+            threadId: threadId,
+            phase: .planned,
+            createdAt: Int32(Date().timeIntervalSince1970),
+            messageKeys: messageKeys,
+            mediaRecords: mediaRecords
+        )
+        try self.executePrepared(
+            database,
+            sql: """
+            INSERT INTO cleanup_jobs (
+                job_id, account_id, scope_peer_id, scope_thread_id,
+                phase, created_at, message_keys, media_records
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            values: [
+                .text(job.id.uuidString),
+                .int64(job.accountId),
+                .int64(scopePeerId),
+                .int64(scopeThreadId),
+                .int32(job.phase.rawValue),
+                .int32(job.createdAt),
+                .data(try self.jsonEncoder.encode(job.messageKeys)),
+                .data(try self.jsonEncoder.encode(job.mediaRecords))
+            ]
+        )
+        return job
+    }
+
+    public func beginDeletedCleanup(key: GRVMMessageKey) throws -> GRVMCleanupJob? {
+        return try self.perform { database in
+            try self.transaction(database) {
+                let rowCount = try self.executePreparedScalarInt64(
+                    database,
+                    sql: """
+                    SELECT COUNT(*) FROM archived_messages
+                    WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
+                      AND message_id = ? AND thread_id = ?
+                    """,
+                    values: self.keyValues(key)
+                )
+                guard rowCount == 1 else {
+                    return nil
+                }
+
+                let existingJobs = try self.queryCleanupJobs(
+                    database,
+                    sql: """
+                    SELECT job_id, account_id, scope_peer_id, scope_thread_id,
+                           phase, created_at, message_keys, media_records
+                    FROM cleanup_jobs
+                    WHERE account_id = ?
+                    """,
+                    values: [.int64(key.accountId)]
+                )
+                if let existing = existingJobs.first(where: { $0.messageKeys == [key] }) {
+                    return existing
+                }
+
+                let namespaceBits = UInt64(UInt32(bitPattern: key.namespace))
+                let messageBits = UInt64(UInt32(bitPattern: key.messageId))
+                let scopePeerId = Int64.min + 1
+                let occupiedScopeThreadIds = Set(existingJobs.compactMap { job -> Int64? in
+                    guard job.peerId == scopePeerId else {
+                        return nil
+                    }
+                    return job.threadId ?? 0
+                })
+                var scopeThreadId = Int64(bitPattern: (namespaceBits << 32) | messageBits)
+                while occupiedScopeThreadIds.contains(scopeThreadId) {
+                    scopeThreadId &+= 1
+                }
+
+                return try self.insertCleanupJob(
+                    database,
+                    accountId: key.accountId,
+                    peerId: key.peerId,
+                    threadId: key.threadId,
+                    scopePeerId: scopePeerId,
+                    scopeThreadId: scopeThreadId,
+                    messageKeys: [key]
+                )
+            }
+        }
+    }
+
+    public func beginExcludedSenderCleanup(
+        accountId: Int64,
+        senderId: Int64
+    ) throws -> GRVMCleanupJob? {
+        guard senderId != 0 else {
+            return nil
+        }
+        return try self.perform { database in
+            try self.transaction(database) {
+                let scopePeerId = Int64.min
+                let scopeThreadId = senderId
+                if let existing = try self.cleanupJob(
+                    database,
+                    sql: """
+                    SELECT job_id, account_id, scope_peer_id, scope_thread_id,
+                           phase, created_at, message_keys, media_records
+                    FROM cleanup_jobs
+                    WHERE account_id = ? AND scope_peer_id = ? AND scope_thread_id = ?
+                    LIMIT 1
+                    """,
+                    values: [.int64(accountId), .int64(scopePeerId), .int64(scopeThreadId)]
+                ) {
+                    return existing
+                }
+
+                let messageKeys = try self.queryKeys(
+                    database,
+                    sql: """
+                    SELECT account_id, peer_id, message_namespace, message_id, thread_id
+                    FROM archived_messages
+                    WHERE account_id = ? AND sender_id = ?
+                    """,
+                    values: [.int64(accountId), .int64(senderId)]
+                ).sorted(by: self.messageKeyPrecedes)
+                guard !messageKeys.isEmpty else {
+                    return nil
+                }
+                return try self.insertCleanupJob(
+                    database,
+                    accountId: accountId,
+                    peerId: nil,
+                    threadId: nil,
+                    scopePeerId: scopePeerId,
+                    scopeThreadId: scopeThreadId,
+                    messageKeys: messageKeys
+                )
+            }
+        }
+    }
+
     public func revalidateDeletedCleanup(id: UUID) throws -> GRVMCleanupJob {
         return try self.perform { database in
             try self.transaction(database) {
@@ -1056,7 +1222,16 @@ public final class GRVMMessageArchiveStore {
                         sql: """
                         DELETE FROM archived_message_media
                         WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
-                          AND message_id = ? AND thread_id = ? AND revision_id = 0
+                          AND message_id = ? AND thread_id = ?
+                        """,
+                        values: self.keyValues(key)
+                    )
+                    try self.executePrepared(
+                        database,
+                        sql: """
+                        DELETE FROM edit_revisions
+                        WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
+                          AND message_id = ? AND thread_id = ?
                         """,
                         values: self.keyValues(key)
                     )
@@ -1580,6 +1755,49 @@ public final class GRVMMessageArchiveStore {
             var result: Set<String> = []
             try self.readRows(database, statement: statement) {
                 result.insert(self.columnText(statement, 0))
+            }
+            return result
+        }
+    }
+
+    private func mappedResourceIds(
+        _ database: OpaquePointer,
+        key: GRVMMessageKey
+    ) throws -> Set<String> {
+        return try self.withStatement(
+            database,
+            sql: """
+            SELECT DISTINCT resource_id FROM archived_message_media
+            WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
+              AND message_id = ? AND thread_id = ?
+            """,
+            values: self.keyValues(key)
+        ) { statement in
+            var result: Set<String> = []
+            try self.readRows(database, statement: statement) {
+                result.insert(self.columnText(statement, 0))
+            }
+            return result
+        }
+    }
+
+    private func mappedResourceReferenceCounts(
+        _ database: OpaquePointer,
+        key: GRVMMessageKey
+    ) throws -> [String: Int] {
+        return try self.withStatement(
+            database,
+            sql: """
+            SELECT resource_id, COUNT(*) FROM archived_message_media
+            WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
+              AND message_id = ? AND thread_id = ?
+            GROUP BY resource_id
+            """,
+            values: self.keyValues(key)
+        ) { statement in
+            var result: [String: Int] = [:]
+            try self.readRows(database, statement: statement) {
+                result[self.columnText(statement, 0)] = Int(sqlite3_column_int64(statement, 1))
             }
             return result
         }

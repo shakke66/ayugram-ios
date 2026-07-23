@@ -20,8 +20,6 @@ GRVMgram.Main.General
 GRVMgram.Main.Appearance
 GRVMgram.Main.Chats
 GRVMgram.Main.Other
-GRVMgram.Main.Deleted
-GRVMgram.Main.History
 GRVMgram.Common.Default
 GRVMgram.Common.Off
 GRVMgram.Common.Hidden
@@ -42,16 +40,6 @@ GRVMgram.Ghost.StoryViews
 GRVMgram.Ghost.Online
 GRVMgram.Ghost.Typing
 GRVMgram.Ghost.Upload
-GRVMgram.Ghost.AutoOffline
-GRVMgram.Ghost.LockedComponents
-GRVMgram.Ghost.LockedCount
-GRVMgram.Ghost.Component.ReadReceipts
-GRVMgram.Ghost.Component.StoryViews
-GRVMgram.Ghost.Component.OnlineStatus
-GRVMgram.Ghost.Component.TypingUploads
-GRVMgram.Ghost.Component.AutoOffline
-GRVMgram.Ghost.ReadOnAction
-GRVMgram.Ghost.ReadOnAction.Info
 GRVMgram.Ghost.StoryPrompt
 GRVMgram.Ghost.StoryPrompt.Info
 GRVMgram.Ghost.Schedule
@@ -138,7 +126,6 @@ GRVMgram.Translation.Header
 GRVMgram.Translation.Provider
 GRVMgram.Translation.Telegram
 GRVMgram.Translation.Google
-GRVMgram.Translation.Yandex
 GRVMgram.Translation.Privacy
 GRVMgram.General.Header
 GRVMgram.General.HideStories
@@ -151,10 +138,6 @@ GRVMgram.General.LinkPreviews
 GRVMgram.General.LinkWarning
 GRVMgram.General.PeerID.API
 GRVMgram.General.PeerID.BotAPI
-GRVMgram.Webview.Header
-GRVMgram.Webview.Android
-GRVMgram.Webview.Height
-GRVMgram.Webview.Width
 GRVMgram.Confirmations.Header
 GRVMgram.Confirmations.Sticker
 GRVMgram.Confirmations.GIF
@@ -178,15 +161,12 @@ GRVMgram.AppIcon.PremiumTurbo
 GRVMgram.Appearance.HideBadge
 GRVMgram.Appearance.HideCounters
 GRVMgram.Appearance.Header
-GRVMgram.Appearance.MD3
 GRVMgram.Appearance.Tail
 GRVMgram.Appearance.Backgrounds
 GRVMgram.Appearance.CodeFont
+GRVMgram.Appearance.CodeFont.Preview
 GRVMgram.Appearance.AvatarCorners
-GRVMgram.Appearance.BubbleRadius
-GRVMgram.Appearance.SingleCorner
 GRVMgram.Appearance.PremiumStatuses
-GRVMgram.Appearance.AdaptiveSavedMusicColor
 GRVMgram.Appearance.Folders
 GRVMgram.Appearance.FolderCounters
 GRVMgram.Appearance.AllChats
@@ -199,10 +179,8 @@ GRVMgram.Chats.Stickers.PrivateReactions
 GRVMgram.Chats.Stickers.Recent
 GRVMgram.Chats.Channels.Header
 GRVMgram.Chats.Channels.QuickAdmin
-GRVMgram.Chats.Channels.MessageShot
 GRVMgram.Chats.Channels.BottomButton
 GRVMgram.Chats.Channels.BottomButton.Hide
-GRVMgram.Chats.Channels.BottomButton.Mute
 GRVMgram.Chats.Channels.BottomButton.Discuss
 GRVMgram.Chats.Messages.Header
 GRVMgram.Chat.DeletedMark
@@ -229,11 +207,8 @@ GRVMgram.Chats.Context.AddFilter
 GRVMgram.Chats.Context.MoreActions
 GRVMgram.Chats.Field.Header
 GRVMgram.Chats.Field.Attach
-GRVMgram.Chats.Field.AttachPopup
-GRVMgram.Chats.Field.Commands
 GRVMgram.Chats.Field.TTL
 GRVMgram.Chats.Field.Emoji
-GRVMgram.Chats.Field.EmojiPopup
 GRVMgram.Chats.Field.Voice
 GRVMgram.Chats.Field.Gift
 GRVMgram.Chats.Field.AI
@@ -254,13 +229,18 @@ GRVMgram.Deleted.Clear.ErrorTitle
 GRVMgram.Deleted.Clear.ArchiveUnavailable
 GRVMgram.Deleted.Clear.MediaRemovalFailed
 GRVMgram.Deleted.Clear.DatabaseFinalizationFailed
+GRVMgram.Deleted.Remove.Title
+GRVMgram.Deleted.Remove.Text
+GRVMgram.Deleted.Remove.Action
+GRVMgram.Deleted.Remove.ErrorTitle
 GRVMgram.History.Title
-GRVMgram.History.Info
 GRVMgram.History.Empty
 GRVMgram.History.MessageEmpty
 GRVMgram.History.Recent
 GRVMgram.History.Current
 GRVMgram.History.Revision
+GRVMgram.History.RevisionSavedAt
+GRVMgram.History.MessageDate
 GRVMgram.History.Action
 GRVMgram.History.EntryHeader
 GRVMgram.History.ArchivedResources
@@ -329,43 +309,10 @@ GRVMgram.MessageDetails.File.Name
 GRVMgram.MessageDetails.File.Size
 GRVMgram.MessageDetails.File.Dimensions
 GRVMgram.MessageDetails.File.Duration
-GRVMgram.MessageShot.Title
-GRVMgram.MessageShot.PreviewAccessibility
-GRVMgram.MessageShot.Theme
-GRVMgram.MessageShot.Theme.Current
-GRVMgram.MessageShot.Theme.Light
-GRVMgram.MessageShot.Theme.Dark
-GRVMgram.MessageShot.Background
-GRVMgram.MessageShot.Date
-GRVMgram.MessageShot.Reactions
-GRVMgram.MessageShot.Header
-GRVMgram.MessageShot.Decorations
-GRVMgram.MessageShot.Replies
-GRVMgram.MessageShot.Spoilers
-GRVMgram.MessageShot.Copy
-GRVMgram.MessageShot.Save
-GRVMgram.MessageShot.SelectedUnavailable
-GRVMgram.MessageShot.RenderFailed
-GRVMgram.MessageShot.PhotoAccessNotGranted
-GRVMgram.MessageShot.SaveFailed
-GRVMgram.MessageShot.Photos.Title
-GRVMgram.MessageShot.Photos.Text
-GRVMgram.MessageShot.Chat
-GRVMgram.MessageShot.QuotedReply
-GRVMgram.MessageShot.CustomReaction
-GRVMgram.MessageShot.Stars
-GRVMgram.MessageShot.Boost
-GRVMgram.MessageShot.PhotoUnavailable
-GRVMgram.MessageShot.FileUnavailable
-GRVMgram.MessageShot.MediaUnavailable
-GRVMgram.MessageShot.Reply
-GRVMgram.MessageShot.MessageUnavailable
-GRVMgram.MessageShot.ReplyMediaUnavailable
 GRVMgram.SendAsSticker.Error
 GRVMgram.Peer.CopyTelegramID
 GRVMgram.Peer.CopyBotAPIID
 GRVMgram.Peer.Created
-GRVMgram.Peer.Joined
 GRVMgram.Other.Title
 GRVMgram.Other.Header
 GRVMgram.Streamer.Title
@@ -408,6 +355,10 @@ GRVMgram.ForwardLocalCopy.UploadFailed
 )
 
 FORMAT_TOKEN = re.compile(r"(?<!%)%(?:\d+\$)?[@diuf]")
+CYRILLIC = re.compile(r"[А-Яа-яЁё]")
+MISSING_PLACEHOLDER_SPACE = re.compile(
+    r"(?:[A-Za-zА-Яа-яЁё]%(?:\d+\$)?[@diuf]|%(?:\d+\$)?[@diuf][A-Za-zА-Яа-яЁё])"
+)
 ENUM_CASE = re.compile(r'^\s*case\s+\w+\s*=\s*"([^"]+)"', re.MULTILINE)
 STRINGS_LINE = re.compile(
     r'^"(?P<key>[^"]+)"\s*=\s*"(?P<value>(?:\\.|[^"\\])*)";$'
@@ -516,29 +467,53 @@ class GRVMgramLocalizationResourcesContractTests(unittest.TestCase):
         providers = (
             "GRVMgram.Translation.Telegram",
             "GRVMgram.Translation.Google",
-            "GRVMgram.Translation.Yandex",
         )
-        self.assertEqual([self.english[key] for key in providers], ["Telegram", "Google", "Yandex"])
-        self.assertEqual([self.russian[key] for key in providers], ["Telegram", "Google", "Яндекс"])
+        self.assertEqual([self.english[key] for key in providers], ["Telegram", "Google"])
+        self.assertEqual([self.russian[key] for key in providers], ["Telegram", "Google"])
+        self.assertEqual(self.english["GRVMgram.Ghost.ActiveCount"], "%d/4 enabled")
+        self.assertEqual(self.russian["GRVMgram.Ghost.ActiveCount"], "Включено: %d/4")
+        self.assertEqual(
+            self.english["GRVMgram.Chats.Stickers.PrivateReactions"],
+            "Show Private Reactions",
+        )
+        self.assertEqual(
+            self.russian["GRVMgram.Chats.Stickers.PrivateReactions"],
+            "Показывать реакции в личных чатах",
+        )
+        self.assertEqual(self.english["GRVMgram.Chats.Context.AddFilter"], "Add Filter")
+        self.assertEqual(
+            self.english["GRVMgram.Appearance.CodeFont.Preview"],
+            'let app = "GRVMgram"' + "\n" + "print(app)",
+        )
+        self.assertEqual(
+            self.russian["GRVMgram.Appearance.CodeFont.Preview"],
+            'let app = "GRVMgram"' + "\n" + "print(app)",
+        )
+        self.assertEqual(self.russian["GRVMgram.Chats.Context.AddFilter"], "Добавить фильтр")
         self.assertNotIn("GRVMgram.Translation.Native", EXPECTED_KEYS)
         self.assertEqual(self.english["GRVMgram.Streamer.Title"], "Streamer Mode")
         self.assertEqual(self.english["GRVMgram.Crash.Export"], "Export Local Logs")
-        self.assertEqual(
-            self.english["GRVMgram.Appearance.AdaptiveSavedMusicColor"],
-            "Adaptive Saved Music Color",
-        )
         self.assertEqual(self.english["GRVMgram.Menu.UserMessages"], "User Messages: %@")
 
     def test_local_log_copy_is_honest_and_local_only(self) -> None:
         info = self.english["GRVMgram.Crash.Info"]
         prompt = self.english["GRVMgram.Crash.Prompt.Text"]
-        self.assertIn("local Telegram app logs", info)
+        self.assertIn("GRVMgram", info)
+        self.assertIn("local app logs", info)
         self.assertIn("foreground session ends unexpectedly", info)
         self.assertIn("foreground session ended unexpectedly", prompt)
         self.assertIn("Nothing is uploaded automatically.", info)
-        crash_copy = "\n".join(
+        english_crash_copy = "\n".join(
             value for key, value in self.english.items() if key.startswith("GRVMgram.Crash.")
-        ).lower()
+        )
+        russian_crash_copy = "\n".join(
+            value for key, value in self.russian.items() if key.startswith("GRVMgram.Crash.")
+        )
+        self.assertIn("GRVMgram", english_crash_copy)
+        self.assertIn("GRVMgram", russian_crash_copy)
+        self.assertNotIn("Telegram", english_crash_copy)
+        self.assertNotIn("Telegram", russian_crash_copy)
+        crash_copy = english_crash_copy.lower()
         for forbidden in (
             ".ips",
             "symbolicated",
@@ -548,6 +523,25 @@ class GRVMgramLocalizationResourcesContractTests(unittest.TestCase):
             "prepared for sharing",
         ):
             self.assertNotIn(forbidden, crash_copy)
+
+    def test_public_copy_has_no_internal_brand_identifier_or_spacing_leaks(self) -> None:
+        for language, values in (("en", self.english), ("ru", self.russian)):
+            with self.subTest(language=language):
+                public_copy = "\n".join(values.values())
+                self.assertNotIn("AyuGram", public_copy)
+                self.assertNotIn("BlackFilledIcon", public_copy)
+                self.assertIsNone(MISSING_PLACEHOLDER_SPACE.search(public_copy))
+
+        self.assertFalse(any(CYRILLIC.search(value) for value in self.english.values()))
+        exact_russian_actions = {
+            "GRVMgram.Menu.LocalHide": "Скрыть локально",
+            "GRVMgram.Menu.UserMessages": "Сообщения пользователя: %@",
+            "GRVMgram.Menu.Details": "Сведения о сообщении",
+            "GRVMgram.Menu.Repeat": "Повторить сообщение",
+            "GRVMgram.Menu.History": "История",
+        }
+        for key, value in exact_russian_actions.items():
+            self.assertEqual(self.russian[key], value)
 
     def test_future_peer_and_preserved_media_actions_are_reserved(self) -> None:
         exact_english = {

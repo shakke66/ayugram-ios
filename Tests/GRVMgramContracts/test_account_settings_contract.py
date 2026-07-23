@@ -64,17 +64,17 @@ class AccountSettingsContractTests(unittest.TestCase):
             self.assertNotIn("ayuGramSettings(", source, name)
             self.assertIn("context.account.peerId", source, name)
 
-    def test_mutually_exclusive_ghost_settings_use_mutators(self) -> None:
+    def test_scheduled_messages_use_the_surviving_mutator(self) -> None:
         settings = SETTINGS.read_text(encoding="utf-8")
-        self.assertIn("mutating func setReadOnAction", settings)
         self.assertIn("mutating func setScheduledMessages", settings)
+        self.assertNotIn("setReadOnAction", settings)
+        self.assertNotIn("readOnAction", settings)
         core = (
             ROOT
             / "submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift"
         ).read_text(encoding="utf-8")
-        self.assertIn("settings.setReadOnAction(value)", core)
         self.assertIn("settings.setScheduledMessages(value)", core)
-        self.assertNotIn("settings.readOnAction = value", core)
+        self.assertNotIn("settings.setReadOnAction(value)", core)
         self.assertNotIn("settings.useScheduledMessages = value", core)
 
 

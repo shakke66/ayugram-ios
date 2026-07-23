@@ -300,27 +300,26 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
                                         segments = [.text(0, NSAttributedString(string: EnginePeer(peer).displayTitle(strings: self.strings, displayOrder: self.nameDisplayOrder), font: titleFont, textColor: titleTheme.rootController.navigationBar.primaryTextColor))]
                                     }
                                 }
-                                if peer.id != self.context.account.peerId {
-                                    let premiumConfiguration = PremiumConfiguration.with(appConfiguration: self.context.currentAppConfiguration.with { $0 })
-                                    let hidePremiumStatuses = AyuGramHooks.chatAppearance(
-                                        accountPeerId: self.context.account.peerId
-                                    ).appearance.hidePremiumStatuses
-                                    if peer.isFake {
-                                        titleCredibilityIcon = .fake
-                                    } else if peer.isScam {
-                                        titleCredibilityIcon = .scam
-                                    } else if let emojiStatus = peer.emojiStatus, !hidePremiumStatuses {
-                                        titleStatusIcon = .emojiStatus(emojiStatus)
-                                    } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !hidePremiumStatuses {
-                                        titleCredibilityIcon = .premium
-                                    }
-                                    
-                                    if peer.isVerified {
-                                        titleCredibilityIcon = .verified
-                                    }
-                                    if let verificationIconFileId = peer.verificationIconFileId {
-                                        titleVerifiedIcon = .emojiStatus(PeerEmojiStatus(content: .emoji(fileId: verificationIconFileId), expirationDate: nil))
-                                    }
+                                let premiumConfiguration = PremiumConfiguration.with(appConfiguration: self.context.currentAppConfiguration.with { $0 })
+                                let hidePremiumStatuses = AyuGramHooks.chatAppearance(
+                                    accountPeerId: self.context.account.peerId
+                                ).appearance.hidePremiumStatuses
+                                let shouldHidePremiumStatus = hidePremiumStatuses && peer.id != self.context.account.peerId
+                                if peer.isFake {
+                                    titleCredibilityIcon = .fake
+                                } else if peer.isScam {
+                                    titleCredibilityIcon = .scam
+                                } else if let emojiStatus = peer.emojiStatus, !shouldHidePremiumStatus {
+                                    titleStatusIcon = .emojiStatus(emojiStatus)
+                                } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !shouldHidePremiumStatus {
+                                    titleCredibilityIcon = .premium
+                                }
+
+                                if peer.isVerified {
+                                    titleCredibilityIcon = .verified
+                                }
+                                if let verificationIconFileId = peer.verificationIconFileId {
+                                    titleVerifiedIcon = .emojiStatus(PeerEmojiStatus(content: .emoji(fileId: verificationIconFileId), expirationDate: nil))
                                 }
                             }
                             if peerView.peerId.namespace == Namespaces.Peer.SecretChat {

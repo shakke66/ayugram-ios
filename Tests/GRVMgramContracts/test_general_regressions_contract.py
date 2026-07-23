@@ -43,13 +43,123 @@ class GeneralRegressionContractTests(unittest.TestCase):
         expected = {
             "submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift":
                 "shouldDisableAds?(self.account.peerId)",
-            "submodules/TelegramUI/Components/ChatListHeaderComponent/Sources/ChatListHeaderComponent.swift":
-                "shouldHideStories?(component.context.account.peerId)",
+            "submodules/ChatListUI/Sources/ChatListController.swift":
+                "shouldHideStories?(context.account.peerId)",
             "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift":
                 "shouldDisableSimilarChannels?(context.account.peerId)",
         }
         for path, token in expected.items():
             self.assertIn(token, source(path), path)
+
+    def test_hide_stories_reactively_removes_the_complete_story_layout(self) -> None:
+        controller = source(
+            "submodules/ChatListUI/Sources/ChatListController.swift"
+        )
+        node = source(
+            "submodules/ChatListUI/Sources/ChatListControllerNode.swift"
+        )
+        header = source(
+            "submodules/TelegramUI/Components/ChatListHeaderComponent/Sources/ChatListHeaderComponent.swift"
+        )
+
+        self.assertIn(
+            "var effectiveStorySubscriptions: EngineStorySubscriptions?",
+            controller,
+        )
+        effective_subscriptions = swift_block(
+            controller,
+            "var effectiveStorySubscriptions: EngineStorySubscriptions?",
+        )
+        self.assertIn("if self.hideStories", effective_subscriptions)
+        self.assertIn("return nil", effective_subscriptions)
+        self.assertIn("return self.orderedStorySubscriptions", effective_subscriptions)
+
+        self.assertIn("self.hideStoriesDisposable =", controller)
+        settings_start = controller.index("self.hideStoriesDisposable =")
+        settings_end = controller.index("self.updateNavigationMetadata()", settings_start)
+        settings_subscription = controller[settings_start:settings_end]
+        for token in (
+            "grvmSettings(",
+            "accountId: self.context.account.peerId",
+            "map { $0.hideStories }",
+            "distinctUntilChanged",
+            "deliverOnMainQueue",
+            "self.hideStories = hideStories",
+            "self.requestLayout(transition:",
+        ):
+            self.assertIn(token, settings_subscription)
+        settings_handler = swift_block(
+            settings_subscription,
+            ".startStrict(next: { [weak self] hideStories in",
+        )
+        hide_branch = swift_block(settings_handler, "if hideStories")
+        self.assertIn("scrollToTopIfStoriesAreExpanded()", hide_branch)
+        self.assertNotIn("requestLayout", hide_branch)
+        hide_branch_end = settings_handler.index(hide_branch) + len(hide_branch)
+        self.assertIn(
+            "self.requestLayout(transition:",
+            settings_handler[hide_branch_end:],
+        )
+        self.assertIn("self.hideStoriesDisposable?.dispose()", controller)
+
+        expansion_blocks = {
+            "tracking": swift_block(
+                node,
+                "itemNode.listNode.contentOffsetChanged =",
+            ),
+            "dragging": swift_block(
+                node,
+                "itemNode.listNode.didBeginInteractiveDragging =",
+            ),
+            "hidden_items": swift_block(
+                node,
+                "self.mainContainerNode.canExpandHiddenItems =",
+            ),
+            "navigation": swift_block(node, "private func updateNavigationBar"),
+            "scroll_to_stories": swift_block(
+                node,
+                "func scrollToStories(animated: Bool)",
+            ),
+            "overscroll": swift_block(
+                node,
+                "private func contentOffsetChanged(offset:",
+            ),
+        }
+        for name, block in expansion_blocks.items():
+            with self.subTest(expansion_gate=name):
+                self.assertIn("controller.effectiveStorySubscriptions", block)
+                self.assertNotIn("orderedStorySubscriptions", block)
+
+        navigation_update = swift_block(node, "private func updateNavigationBar")
+        self.assertIn("self.controller?.hideStories == true", navigation_update)
+        self.assertIn("effectiveStorySubscriptions = nil", navigation_update)
+        self.assertIn(
+            "storySubscriptions: effectiveStorySubscriptions",
+            navigation_update,
+        )
+
+        self.assertIn("func resetStoryExpansion()", node)
+        reset_expansion = swift_block(node, "func resetStoryExpansion()")
+        self.assertIn("startedScrollingAtUpperBound = false", reset_expansion)
+        self.assertIn("self.tempTopInset = 0.0", reset_expansion)
+        collapse = swift_block(node, "func scrollToTopIfStoriesAreExpanded()")
+        self.assertIn("self.mainContainerNode.resetStoryExpansion()", collapse)
+        self.assertIn("allowAvatarsExpansion: false", collapse)
+        self.assertIn("forceUpdate: true", collapse)
+        conditional_scroll = swift_block(collapse, "if let contentOffset")
+        self.assertNotIn("resetStoryExpansion", conditional_scroll)
+
+        header_update = swift_block(
+            header,
+            "func update(component: ChatListHeaderComponent",
+        )
+        self.assertNotIn("shouldHideStories", header_update)
+        self.assertIn(
+            "else if let storyPeerList = self.storyPeerList",
+            header_update,
+        )
+        self.assertIn("self.storyPeerList = nil", header_update)
+        self.assertIn("storyPeerList.view?.removeFromSuperview()", header_update)
 
     def test_notification_delay_uses_message_account_or_primary_background_snapshot(self) -> None:
         self.assert_hook("shouldDisableNotificationDelay", "disableNotificationDelay")
@@ -147,17 +257,6 @@ class GeneralRegressionContractTests(unittest.TestCase):
                     ok_action.index("defer {"), ok_action.index(recursive_send)
                 )
                 self.assertNotIn("async", ok_action)
-
-    def test_android_spoof_remains_an_independent_account_toggle(self) -> None:
-        self.assert_hook("shouldSpoofWebviewAsAndroid", "spoofWebviewAsAndroid")
-        webview = source("submodules/WebUI/Sources/WebAppWebView.swift")
-        android = swift_block(
-            webview, "if AyuGramHooks.shouldSpoofWebviewAsAndroid?(account.peerId)"
-        )
-        self.assertIn("customUserAgent", android)
-        self.assertNotIn("shouldIncreaseWebviewHeight", android)
-        self.assertNotIn("shouldIncreaseWebviewWidth", android)
-
 
 if __name__ == "__main__":
     unittest.main()

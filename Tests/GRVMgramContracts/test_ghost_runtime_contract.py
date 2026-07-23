@@ -52,7 +52,7 @@ class GhostRuntimeContractTests(unittest.TestCase):
             self.assertIn(hook, text)
             self.assertIn("operationLogRemoveEntry", text)
 
-    def test_feature_manager_wires_all_five_effective_predicates(self) -> None:
+    def test_feature_manager_uses_component_values_without_a_master_runtime_gate(self) -> None:
         manager = source(
             "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
         )
@@ -66,14 +66,17 @@ class GhostRuntimeContractTests(unittest.TestCase):
             )
         ]
         self.assertNotIn("primaryService()", ghost)
+        self.assertNotIn("settings.ghostModeEnabled", ghost)
+        self.assertNotIn("settings.goOfflineAfterOnline", ghost)
         for token in (
-            "settings.ghostModeEnabled && settings.suppressReadReceipts",
-            "settings.ghostModeEnabled && settings.suppressStoryReads",
-            "settings.ghostModeEnabled && settings.suppressOnlineStatus",
-            "settings.suppressTypingStatus || settings.suppressUploadProgress",
-            "settings.ghostModeEnabled && settings.goOfflineAfterOnline",
+            "return settings.suppressReadReceipts",
+            "return settings.suppressStoryReads",
+            "return settings.suppressOnlineStatus",
+            "return settings.suppressTypingAndUploads",
         ):
             self.assertIn(token, ghost)
+        self.assertEqual(2, ghost.count("return settings.suppressReadReceipts"))
+        self.assertEqual(1, ghost.count("return settings.suppressOnlineStatus"))
         self.assertIn(
             "AyuGramHooks.shouldSuppressTyping = shouldSuppressTypingAndUploads", ghost
         )
@@ -81,7 +84,7 @@ class GhostRuntimeContractTests(unittest.TestCase):
             "AyuGramHooks.shouldSuppressUploadProgress = shouldSuppressTypingAndUploads",
             ghost,
         )
-        self.assertIn("AyuGramHooks.shouldForceOfflineAfterOnline", ghost)
+        self.assertNotIn("AyuGramHooks.shouldForceOfflineAfterOnline", ghost)
 
     def test_background_offline_is_never_suppressed(self) -> None:
         presence = swift_block(
@@ -101,7 +104,7 @@ class GhostRuntimeContractTests(unittest.TestCase):
             presence.index(suppression),
         )
 
-    def test_force_offline_runs_once_after_success_for_current_request(self) -> None:
+    def test_presence_suppression_flip_forces_offline_once_after_current_request_succeeds(self) -> None:
         presence_source = source(
             "submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift"
         )
@@ -119,9 +122,9 @@ class GhostRuntimeContractTests(unittest.TestCase):
             presence,
         )
         self.assertIn("requestSucceeded", presence)
-        self.assertIn(
-            "AyuGramHooks.shouldForceOfflineAfterOnline?(self.accountPeerId)", presence
-        )
+        suppression_hook = "AyuGramHooks.shouldSuppressPresence?(self.accountPeerId)"
+        self.assertEqual(2, presence.count(suppression_hook))
+        self.assertNotIn("shouldForceOfflineAfterOnline", presence)
         self.assertIn("self.onlineTimer?.invalidate()", presence)
         self.assertIn("self.onlineTimer = nil", presence)
         self.assertEqual(1, presence.count("self.updatePresence(false)"))
@@ -131,10 +134,10 @@ class GhostRuntimeContractTests(unittest.TestCase):
         )
         self.assertLess(
             presence.index("requestSucceeded"),
-            presence.index("AyuGramHooks.shouldForceOfflineAfterOnline?"),
+            presence.rindex(suppression_hook),
         )
         self.assertLess(
-            presence.index("AyuGramHooks.shouldForceOfflineAfterOnline?"),
+            presence.rindex(suppression_hook),
             presence.index("self.updatePresence(false)"),
         )
 
@@ -175,7 +178,7 @@ class GhostRuntimeContractTests(unittest.TestCase):
             engine,
         )
 
-    def test_ghost_ui_has_exactly_five_component_rows(self) -> None:
+    def test_ghost_ui_has_exactly_four_component_rows(self) -> None:
         ui = source(
             "submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift"
         )
@@ -185,44 +188,35 @@ class GhostRuntimeContractTests(unittest.TestCase):
             ".ghostComponentStoryReads(",
             ".ghostComponentOnlineStatus(",
             ".ghostComponentTypingAndUploads(",
-            ".ghostComponentGoOfflineAfterOnline(",
         ):
             self.assertIn(token, entries)
+        self.assertEqual(4, entries.count("entries.append(.ghostComponent"))
+        self.assertNotIn(".ghostComponentGoOfflineAfterOnline(", entries)
         self.assertNotIn(".ghostComponentTypingStatus(", entries)
         self.assertNotIn(".ghostComponentUploadProgress(", entries)
 
         controller = swift_block(ui, "public func ayuGramCoreController(")
         self.assertIn("settings.setGhostModeEnabled(value)", controller)
-        self.assertRegex(
-            controller,
-            r"settings\.suppressTypingStatus = value\s+settings\.suppressUploadProgress = value",
-        )
-        self.assertIn("settings.goOfflineAfterOnline = value", controller)
+        self.assertIn("settings.suppressTypingAndUploads = value", controller)
+        self.assertNotIn("settings.suppressTypingStatus = value", controller)
+        self.assertNotIn("settings.suppressUploadProgress = value", controller)
+        self.assertNotIn("settings.goOfflineAfterOnline = value", controller)
 
-    def test_locked_components_use_a_native_disclosure_screen(self) -> None:
+    def test_removed_locked_components_have_no_screen_counter_or_model(self) -> None:
         ui = source(
             "submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift"
         )
-        self.assertIn("ItemListDisclosureItem", ui)
-        self.assertIn("strings[.ghostLockedComponents]", ui)
-        self.assertIn("strings.format(.ghostLockedCount", ui)
-        self.assertIn(".ghostComponentReadReceipts", ui)
-        self.assertIn("ayuGramGhostLockedComponentsController", ui)
-
-        locks = swift_block(
-            ui, "private func ayuGramGhostLockedComponentsController("
-        )
-        for component in (
-            "readReceipts",
-            "storyReads",
-            "onlineStatus",
-            "typingAndUploads",
-            "goOfflineAfterOnline",
+        for token in (
+            "strings[.ghostLockedComponents]",
+            "strings.format(.ghostLockedCount",
+            "ayuGramGhostLockedComponentsController",
+            "ghostLockedComponents",
+            "GRVMGhostComponent",
         ):
-            self.assertIn(f".{component}", locks)
-        self.assertIn("settings.ghostLockedComponents.insert(component)", locks)
-        self.assertIn("settings.ghostLockedComponents.remove(component)", locks)
-        self.assertNotIn("shift", ui.lower())
+            self.assertNotIn(token, ui)
+        self.assertFalse(
+            (ROOT / "submodules/AyuGramLib/Sources/GRVMGhostModels.swift").exists()
+        )
 
     def test_schedule_policy_distinguishes_uploads_and_clamps_overflow(self) -> None:
         schedule_path = (
@@ -301,116 +295,56 @@ class GhostRuntimeContractTests(unittest.TestCase):
         self.assertIn("self.sendMessages(", callback)
         self.assertIn("commit: true", callback)
 
-    def test_read_after_action_uses_one_helper_after_success(self) -> None:
-        chat = source("submodules/TelegramUI/Sources/ChatController.swift")
-        helper = swift_block(
-            chat, "private func grvmMarkCurrentChatReadAfterAction()"
+    def test_removed_read_after_action_has_no_runtime_wiring(self) -> None:
+        paths = (
+            "submodules/TelegramCore/Sources/AyuGramHooks.swift",
+            "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift",
+            "submodules/TelegramUI/Sources/ChatController.swift",
+            "submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift",
+            "submodules/TelegramUI/Components/ChatControllerInteraction/Sources/ChatControllerInteraction.swift",
         )
-        self.assertIn(
-            "AyuGramHooks.shouldMarkReadAfterAction?(self.context.account.peerId)",
-            helper,
-        )
-        self.assertIn("guard self.chatLocation.peerId != nil", helper)
-        self.assertIn("latestMessageInCurrentHistoryView()", helper)
-        self.assertIn("self.context.applyMaxReadIndex(", helper)
-        self.assertEqual(
-            1, chat.count("AyuGramHooks.shouldMarkReadAfterAction?(")
-        )
-        self.assertEqual(6, chat.count("grvmMarkCurrentChatReadAfterAction()"))
+        runtime = "\n".join(source(path) for path in paths)
+        self.assertNotIn("shouldMarkReadAfterAction", runtime)
+        self.assertNotIn("grvmMarkCurrentChatReadAfterAction", runtime)
+        self.assertNotIn("readOnAction", runtime)
 
-        send = swift_block(chat, "func sendMessages(_ messages:")
-        self.assertLess(
-            send.index("enqueueMessages(account:"),
-            send.index("grvmMarkCurrentChatReadAfterAction()"),
-        )
-
-        reaction = swift_block(chat, "updateMessageReaction: {")
-        reaction_update = reaction[reaction.rindex("updateMessageReactionsInteractively(") :]
-        self.assertIn(".startStandalone(completed:", reaction_update)
-        self.assertIn("grvmMarkCurrentChatReadAfterAction()", reaction_update)
-        stars_success = swift_block(
-            reaction, "strongSelf.context.engine.messages.sendStarsReaction("
-        )
-        self.assertIn("grvmMarkCurrentChatReadAfterAction()", stars_success)
-
-        poll = swift_block(chat, "requestSelectMessagePollOptions: {")
-        self.assertIn("guard let strongSelf = self, let resultPoll = resultPoll", poll)
-        poll_success = poll[
-            poll.index("guard let strongSelf = self, let resultPoll = resultPoll") :
-        ]
-        self.assertIn("strongSelf.grvmMarkCurrentChatReadAfterAction()", poll_success)
-        self.assertLess(
-            poll_success.index("strongSelf.grvmMarkCurrentChatReadAfterAction()"),
-            poll_success.index(
-                "strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(id)"
-            ),
-        )
-
-    def test_context_menu_reaction_uses_shared_read_helper_after_success(self) -> None:
-        interaction = source(
-            "submodules/TelegramUI/Components/ChatControllerInteraction/"
-            "Sources/ChatControllerInteraction.swift"
-        )
-        self.assertIn(
-            "public var grvmMarkCurrentChatReadAfterAction: (() -> Void)?",
-            interaction,
-        )
-
-        chat = source("submodules/TelegramUI/Sources/ChatController.swift")
-        wiring = swift_block(
-            chat, "controllerInteraction.grvmMarkCurrentChatReadAfterAction ="
-        )
-        self.assertIn("self?.grvmMarkCurrentChatReadAfterAction()", wiring)
-
-        context_menu = source(
-            "submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift"
-        )
-        update = context_menu[
-            context_menu.rindex("updateMessageReactionsInteractively(") :
-        ]
-        self.assertIn("|> deliverOnMainQueue", update)
-        self.assertIn(".startStandalone(completed:", update)
-        self.assertIn(
-            "controllerInteraction?.grvmMarkCurrentChatReadAfterAction?()", update
-        )
-
-    def test_read_and_schedule_predicates_remain_mutually_exclusive(self) -> None:
+    def test_schedule_is_independent_of_master_and_removed_read_on_action(self) -> None:
         manager = source(
             "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
         )
         schedule = swift_block(
             manager, "AyuGramHooks.shouldUseScheduledMessages ="
         )
-        self.assertIn("settings.ghostModeEnabled", schedule)
         self.assertIn("settings.useScheduledMessages", schedule)
-        self.assertIn("!settings.readOnAction", schedule)
-        read = swift_block(manager, "AyuGramHooks.shouldMarkReadAfterAction =")
-        self.assertIn("settings.ghostModeEnabled", read)
-        self.assertIn("settings.readOnAction", read)
-        self.assertIn("!settings.useScheduledMessages", read)
-
-        ui = swift_block(
-            source("submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift"),
-            "public func ayuGramCoreController(",
-        )
-        self.assertIn("settings.setReadOnAction(value)", ui)
-        self.assertIn("settings.setScheduledMessages(value)", ui)
-        settings = source("submodules/AyuGramLib/Sources/AyuGramSettings.swift")
-        read_setter = swift_block(settings, "public var readOnAction: Bool")
-        schedule_setter = swift_block(settings, "public var useScheduledMessages: Bool")
-        self.assertIn("useScheduledMessages = false", read_setter)
-        self.assertIn("readOnAction = false", schedule_setter)
+        self.assertNotIn("settings.ghostModeEnabled", schedule)
+        self.assertNotIn("readOnAction", schedule)
 
     def test_silent_send_uses_the_canonical_three_mode_selector(self) -> None:
         manager = swift_block(
             source("submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"),
             "AyuGramHooks.sendWithoutSoundMode =",
         )
-        self.assertIn("settings.sendWithoutSoundOption", manager)
+        self.assertIn("settings.sendWithoutSoundMode", manager)
+        self.assertNotIn("settings.sendWithoutSoundOption", manager)
         self.assertNotIn("settings.sendWithoutSound ", manager)
         self.assertIn("case 1:", manager)
-        self.assertIn("settings.ghostModeEnabled ? 1 : 0", manager)
+        self.assertIn("self.isGhostActive(settings) ? 1 : 0", manager)
+        self.assertNotIn("settings.ghostModeEnabled", manager)
         self.assertIn("case 2:", manager)
+
+        active = swift_block(
+            source("submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"),
+            "private func isGhostActive(_ settings:",
+        )
+        for token in (
+            "settings.suppressReadReceipts",
+            "settings.suppressStoryReads",
+            "settings.suppressOnlineStatus",
+            "settings.suppressTypingAndUploads",
+        ):
+            self.assertIn(token, active)
+        self.assertNotIn("settings.ghostModeEnabled", active)
+        self.assertNotIn("settings.useScheduledMessages", active)
 
         chat = swift_block(
             source("submodules/TelegramUI/Sources/ChatController.swift"),
@@ -423,22 +357,46 @@ class GhostRuntimeContractTests(unittest.TestCase):
             "sendWithoutSoundMode == 1 || sendWithoutSoundMode == 2", chat
         )
 
-        ui_source = source(
-            "submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift"
+    def test_composer_send_reaches_the_shared_silent_policy_boundary(self) -> None:
+        controller_node = source(
+            "submodules/TelegramUI/Sources/ChatControllerNode.swift"
         )
-        entries = swift_block(ui_source, "private func ayuGramCoreEntries(")
-        for key in ("commonNever", "commonInGhost", "commonAlways"):
-            self.assertIn(f"strings[.{key}]", entries)
-        self.assertIn("settings.sendWithoutSoundOption", entries)
-        self.assertIn(".sendWithoutSoundMode(", entries)
-        self.assertNotIn(".sendWithoutSound(", entries)
+        composer_start = controller_node.index("func sendCurrentMessage(")
+        composer_call = controller_node.index(
+            "self.sendMessages(messages, silentPosting, scheduleTime, repeatPeriod",
+            composer_start,
+        )
+        self.assertGreater(composer_call, composer_start)
 
-        selector = swift_block(ui_source, "case let .sendWithoutSoundMode(")
-        self.assertIn("ItemListDisclosureItem", selector)
-        self.assertIn("arguments.setSendWithoutSoundMode((value + 1) % 3)", selector)
-        controller = swift_block(ui_source, "public func ayuGramCoreController(")
-        self.assertIn("settings.sendWithoutSoundOption = value", controller)
-        self.assertNotIn("settings.sendWithoutSound =", controller)
+        load_display_node = source(
+            "submodules/TelegramUI/Sources/Chat/ChatControllerLoadDisplayNode.swift"
+        )
+        send_boundary = swift_block(
+            load_display_node, "self.chatDisplayNode.sendMessages ="
+        )
+        self.assertIn(
+            "strongSelf.transformEnqueueMessages(messages, silentPosting: silentPosting ?? false",
+            send_boundary,
+        )
+
+        chat = source("submodules/TelegramUI/Sources/ChatController.swift")
+        deepest_transform = swift_block(
+            chat,
+            "func transformEnqueueMessages(_ messages: [EnqueueMessage], silentPosting: Bool",
+        )
+        self.assertIn(
+            "let sendWithoutSoundMode = AyuGramHooks.sendWithoutSoundMode?(self.context.account.peerId) ?? 0",
+            deepest_transform,
+        )
+        self.assertIn(
+            "let effectiveSilentPosting = silentPosting || (sendWithoutSoundMode == 1 || sendWithoutSoundMode == 2)",
+            deepest_transform,
+        )
+        self.assertIn(
+            "if effectiveSilentPosting || scheduleTime != nil", deepest_transform
+        )
+        self.assertIn("if effectiveSilentPosting {", deepest_transform)
+
 
     def test_story_gate_precedes_mark_and_waits_for_coordinator_snapshot(self) -> None:
         story_path = (
@@ -481,8 +439,8 @@ class GhostRuntimeContractTests(unittest.TestCase):
         enable = swift_block(story, "private func grvmEnableGhostForStory(id:")
         self.assertIn("updateGRVMSettings(", enable)
         self.assertIn("accountId: component.context.account.peerId", enable)
-        self.assertIn("settings.ghostModeEnabled = true", enable)
         self.assertIn("settings.suppressStoryReads = true", enable)
+        self.assertNotIn("settings.ghostModeEnabled", enable)
         self.assertIn("|> deliverOnMainQueue", enable)
         self.assertIn("grvmWaitForStoryGhostSnapshot(id: id)", enable)
         self.assertNotIn("component.content.markAsSeen(id: id)", enable)

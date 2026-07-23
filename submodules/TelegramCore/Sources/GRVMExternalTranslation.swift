@@ -172,8 +172,6 @@ func grvmExternalTranslate(
         return .fail(.generic)
     case .google:
         return grvmGoogleTranslate(texts: texts, toLang: toLang)
-    case .yandex:
-        return grvmYandexTranslate(texts: texts, toLang: toLang)
     }
 }
 
@@ -230,52 +228,6 @@ private func grvmGoogleTranslate(
     return grvmGoogleRequestScheduler.wrap(signal)
 }
 
-private func grvmYandexTranslate(
-    texts: [String],
-    toLang: String
-) -> Signal<[String], TranslationError> {
-    var components = URLComponents()
-    components.scheme = "https"
-    components.host = "translate.yandex.net"
-    components.path = "/api/v1/tr.json/translate"
-    components.queryItems = [
-        URLQueryItem(name: "srv", value: "android"),
-        URLQueryItem(name: "id", value: "\(UUID().uuidString)-0-0")
-    ]
-    guard let url = components.url else {
-        return .fail(.generic)
-    }
-
-    var form = URLComponents()
-    form.queryItems = [URLQueryItem(name: "lang", value: toLang)]
-        + texts.map { URLQueryItem(name: "text", value: $0) }
-    guard let body = form.percentEncodedQuery?.data(using: .utf8) else {
-        return .fail(.generic)
-    }
-
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.httpBody = body
-    request.timeoutInterval = 15.0
-    request.setValue(
-        "application/x-www-form-urlencoded; charset=utf-8",
-        forHTTPHeaderField: "Content-Type"
-    )
-    return grvmExternalTranslationRequest(request)
-    |> mapToSignal { data in
-        do {
-            let responseTexts = try grvmParseYandexTranslation(data)
-            guard responseTexts.count == texts.count,
-                  responseTexts.allSatisfy({ !$0.isEmpty }) else {
-                return .fail(.generic)
-            }
-            return .single(responseTexts)
-        } catch {
-            return .fail(.generic)
-        }
-    }
-}
-
 private func grvmExternalTranslationRequest(
     _ request: URLRequest
 ) -> Signal<Data, TranslationError> {
@@ -317,12 +269,4 @@ private func grvmParseGoogleTranslation(_ data: Data) throws -> String {
         throw GRVMExternalTranslationParsingError.invalidResponse
     }
     return result
-}
-
-private func grvmParseYandexTranslation(_ data: Data) throws -> [String] {
-    guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let texts = root["text"] as? [String] else {
-        throw GRVMExternalTranslationParsingError.invalidResponse
-    }
-    return texts
 }

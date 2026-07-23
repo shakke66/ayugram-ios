@@ -1868,13 +1868,25 @@ public final class ChatListNode: ListViewImpl {
             shouldLoadCanMessagePeer = false
         }
         
-        let chatListViewUpdate = self.chatListLocation.get()
+        var chatListViewUpdate = self.chatListLocation.get()
         |> distinctUntilChanged
         |> mapToSignal { listLocation -> Signal<(ChatListNodeViewUpdate, ChatListFilter?), NoError> in
             return chatListViewForLocation(chatListLocation: location, location: listLocation, account: context.account, shouldLoadCanMessagePeer: shouldLoadCanMessagePeer)
             |> map { update in
                 return (update, listLocation.filter)
             }
+        }
+
+        let messageFilterStateUpdates = AyuGramHooks.messageFilterStateUpdates?(context.account.peerId)
+        ?? Signal<Int64, NoError>.single(0)
+        let filteredUnreadStateUpdates = AyuGramHooks.filteredUnreadStateUpdates?(context.account.peerId)
+        ?? Signal<Int64, NoError>.single(0)
+        chatListViewUpdate = combineLatest(
+            chatListViewUpdate,
+            combineLatest(messageFilterStateUpdates, filteredUnreadStateUpdates)
+        )
+        |> map { update, _ in
+            return update
         }
         
         let previousState = Atomic<ChatListNodeState>(value: self.currentState)

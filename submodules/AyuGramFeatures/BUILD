@@ -17,7 +17,6 @@ swift_library(
         "//submodules/AccountContext:AccountContext",
         "//submodules/AyuGramLib:AyuGramLib",
         "//submodules/Emoji:Emoji",
-        "//submodules/Display:Display",
     ],
     visibility = [
         "//visibility:public",

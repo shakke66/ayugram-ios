@@ -100,14 +100,19 @@ private enum AyuGramShadowBanEntry: ItemListNodeEntry {
 
 private func ayuGramShadowBanEntries(
     settings: AyuGramSettings,
+    accountPeerId: PeerId,
     presentationData: PresentationData
 ) -> [AyuGramShadowBanEntry] {
     let theme = presentationData.theme
+    let peerIds = GRVMShadowBanPolicy.normalizedPeerIds(
+        settings.shadowBanIds,
+        accountPeerId: accountPeerId.toInt64()
+    )
     var entries: [AyuGramShadowBanEntry] = [.header(theme)]
-    for (index, peerId) in settings.shadowBanIds.enumerated() {
+    for (index, peerId) in peerIds.enumerated() {
         entries.append(.peer(theme, Int32(index), peerId))
     }
-    if settings.shadowBanIds.isEmpty {
+    if peerIds.isEmpty {
         entries.append(.empty(theme))
     }
     entries.append(.add(theme))
@@ -124,7 +129,7 @@ public func ayuGramShadowBanController(context: AccountContext) -> ViewControlle
             let controller = context.sharedContext.makePeerSelectionController(
                 PeerSelectionControllerParams(
                     context: context,
-                    filter: [],
+                    filter: [.excludeSavedMessages],
                     hasContactSelector: false,
                     title: strings[.shadowAddPrompt]
                 )
@@ -133,9 +138,12 @@ public func ayuGramShadowBanController(context: AccountContext) -> ViewControlle
                 let peerId = peer.id.toInt64()
                 let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { settings in
                     var settings = settings
-                    if !settings.shadowBanIds.contains(peerId) {
-                        settings.shadowBanIds.append(peerId)
-                    }
+                    settings.shadowBanIds = GRVMShadowBanPolicy.updatedPeerIds(
+                        settings.shadowBanIds,
+                        peerId: peerId,
+                        isBanned: true,
+                        accountPeerId: context.account.peerId.toInt64()
+                    )
                     return settings
                 }.startStandalone()
                 controller?.dismiss()
@@ -145,7 +153,12 @@ public func ayuGramShadowBanController(context: AccountContext) -> ViewControlle
         removePeer: { peerId in
             let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { settings in
                 var settings = settings
-                settings.shadowBanIds.removeAll { $0 == peerId }
+                settings.shadowBanIds = GRVMShadowBanPolicy.updatedPeerIds(
+                    settings.shadowBanIds,
+                    peerId: peerId,
+                    isBanned: false,
+                    accountPeerId: context.account.peerId.toInt64()
+                )
                 return settings
             }.startStandalone()
         }
@@ -170,6 +183,7 @@ public func ayuGramShadowBanController(context: AccountContext) -> ViewControlle
                     presentationData: ItemListPresentationData(presentationData),
                     entries: ayuGramShadowBanEntries(
                         settings: settings,
+                        accountPeerId: context.account.peerId,
                         presentationData: presentationData
                     ),
                     style: .blocks

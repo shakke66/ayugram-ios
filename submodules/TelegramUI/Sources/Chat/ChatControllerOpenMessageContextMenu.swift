@@ -623,9 +623,7 @@ extension ChatControllerImpl {
                         }
                         
                         let _ = (updateMessageReactionsInteractively(account: self.context.account, messageIds: [message.id], reactions: mappedUpdatedReactions, isLarge: isLarge, storeAsRecentlyUsed: true)
-                        |> deliverOnMainQueue).startStandalone(completed: { [weak self] in
-                            self?.controllerInteraction?.grvmMarkCurrentChatReadAfterAction?()
-                        })
+                        |> deliverOnMainQueue).startStandalone()
                     }
                 }
 

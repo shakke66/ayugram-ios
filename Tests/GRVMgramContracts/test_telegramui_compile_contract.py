@@ -117,14 +117,12 @@ class TelegramUICompileContractTests(unittest.TestCase):
             "private func grvmCanForwardLocalCopy(",
             "func canEditMessage(context:",
         )
-        self.assertRegex(
-            method,
-            re.compile(
-                r"return\s+\(\s*AyuGramHooks\.restoreConsumableMedia\?"
-                r"\(accountPeerId,\s*message\)\s*\?\?\s*\.single\(false\)\s*\)"
-                r"\s*\|>\s*map"
-            ),
-        )
+        # ST22 makes availability a pure query: restoration is performed only
+        # after the user selects a peer, so this route must not trigger it.
+        self.assertIn("let media = marker?.media ?? message.media", method)
+        self.assertIn("return .single(marker != nil)", method)
+        self.assertNotIn("AyuGramHooks.restoreConsumableMedia?", method)
+        self.assertNotIn("|> map", method)
 
     def test_combined_data_discards_unused_privacy_tip(self) -> None:
         menu = section(

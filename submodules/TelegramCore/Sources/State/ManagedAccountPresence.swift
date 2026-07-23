@@ -85,7 +85,7 @@ private final class AccountPresenceManagerImpl {
             guard requestId == self.presenceUpdateId else {
                 return
             }
-            if isOnline && requestSucceeded && AyuGramHooks.shouldForceOfflineAfterOnline?(self.accountPeerId) == true {
+            if isOnline && requestSucceeded && AyuGramHooks.shouldSuppressPresence?(self.accountPeerId) == true {
                 self.onlineTimer?.invalidate()
                 self.onlineTimer = nil
                 self.updatePresence(false)

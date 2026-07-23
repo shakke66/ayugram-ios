@@ -308,7 +308,6 @@ class PeerIdentitySourceContractTests(unittest.TestCase):
             "let grvmStrings = GRVMgramStrings(presentationData.strings)",
             "text: grvmStrings[.peerCopyTelegramId]",
             "text: grvmStrings[.peerCopyBotApiId]",
-            "longTapAction:",
             "contextAction:",
         ):
             self.assertIn(token, self.profile if token == "import AyuGramLib" else function)
@@ -316,6 +315,15 @@ class PeerIdentitySourceContractTests(unittest.TestCase):
         self.assertEqual(function.count("peerIdDisplayMode?(context.account.peerId)"), 1)
         self.assertNotIn("shouldShowDialogID?(peerId)", function)
         self.assertNotIn("peerIdDisplayMode?(peerId)", function)
+
+        id_row = source_region(
+            function,
+            "return PeerInfoScreenLabeledValueItem(id: itemId",
+            "\n    }\n    \n    if let user = data.peer as? TelegramUser",
+        )
+        self.assertNotIn("longTapAction:", id_row)
+        self.assertEqual(id_row.count("contextAction:"), 1)
+        self.assertEqual(id_row.count("openContextMenu(sourceNode"), 1)
 
         user_branch = source_region(
             function,
@@ -374,15 +382,14 @@ class PeerIdentitySourceContractTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, user_branch)
         for token in (
-            "let invitedOn = cachedData.invitedOn, invitedOn > 0",
-            "peerDate = (grvmStrings[.peerJoined], invitedOn)",
             "channel.creationDate > 0",
             "peerDate = (grvmStrings[.peerCreated], channel.creationDate)",
             "stringForFullDate(timestamp: peerDate.timestamp",
             "dateTimeFormat: presentationData.dateTimeFormat",
         ):
             self.assertIn(token, channel_branch)
-        self.assertLess(channel_branch.index("invitedOn > 0"), channel_branch.index("channel.creationDate > 0"))
+        self.assertNotIn("cachedData.invitedOn", channel_branch)
+        self.assertNotIn("grvmStrings[.peerJoined]", channel_branch)
         for token in (
             "group.creationDate > 0",
             "label: grvmStrings[.peerCreated]",

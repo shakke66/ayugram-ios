@@ -197,6 +197,13 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     private var shouldFixStorySubscriptionOrder: Bool = false
     private var fixedStorySubscriptionOrder: [EnginePeer.Id] = []
     private(set) var orderedStorySubscriptions: EngineStorySubscriptions?
+    private(set) var hideStories: Bool
+    var effectiveStorySubscriptions: EngineStorySubscriptions? {
+        if self.hideStories {
+            return nil
+        }
+        return self.orderedStorySubscriptions
+    }
     private var displayedStoriesTooltip: Bool = false
     
     public var hasStorySubscriptions: Bool {
@@ -214,6 +221,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     
     private var storyProgressDisposable: Disposable?
     private var storySubscriptionsDisposable: Disposable?
+    private var hideStoriesDisposable: Disposable?
     private var preloadStorySubscriptionsDisposable: Disposable?
     private var preloadStoryResourceDisposables: [MediaId: Disposable] = [:]
     
@@ -238,6 +246,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         
         self.location = location
         self.previewing = previewing
+        self.hideStories = AyuGramHooks.shouldHideStories?(context.account.peerId) ?? false
         
         self.presentationData = (context.sharedContext.currentPresentationData.with { $0 })
         self.presentationDataValue.set(.single(self.presentationData))
@@ -755,6 +764,29 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 self.storyPostingAvailabilityValue.set(postingAvailability)
             }
         })
+
+        self.hideStoriesDisposable = (grvmSettings(
+            accountId: self.context.account.peerId,
+            accountManager: self.context.sharedContext.accountManager
+        )
+        |> map { $0.hideStories }
+        |> distinctUntilChanged
+        |> deliverOnMainQueue).startStrict(next: { [weak self] hideStories in
+            guard let self, self.hideStories != hideStories else {
+                return
+            }
+            self.hideStories = hideStories
+            if hideStories {
+                self.chatListDisplayNode.scrollToTopIfStoriesAreExpanded()
+            }
+            let transition: ContainedViewLayoutTransition
+            if self.didAppear {
+                transition = .animated(duration: 0.4, curve: .spring)
+            } else {
+                transition = .immediate
+            }
+            self.requestLayout(transition: transition)
+        })
         
         self.updateNavigationMetadata()
 
@@ -793,6 +825,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         self.actionDisposables.dispose()
         self.powerSavingMonitoringDisposable?.dispose()
         self.storySubscriptionsDisposable?.dispose()
+        self.hideStoriesDisposable?.dispose()
         self.storyArchiveSubscriptionsDisposable?.dispose()
         self.preloadStorySubscriptionsDisposable?.dispose()
         self.storyProgressDisposable?.dispose()
@@ -6730,22 +6763,11 @@ private final class ChatListLocationContext {
         let peerStatus: Signal<NetworkStatusTitle.Status?, NoError>
         switch self.location {
         case .chatList(.root):
-            peerStatus = combineLatest(
-                context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId)),
-                grvmSettings(
-                    accountId: context.account.peerId,
-                    accountManager: context.sharedContext.accountManager
-                )
-                |> map { settings in
-                    return settings.hidePremiumStatuses
-                }
-                |> distinctUntilChanged
+            peerStatus = context.engine.data.subscribe(
+                TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId)
             )
-            |> map { peer, hidePremiumStatuses -> NetworkStatusTitle.Status? in
+            |> map { peer -> NetworkStatusTitle.Status? in
                 guard case let .user(user) = peer else {
-                    return nil
-                }
-                if hidePremiumStatuses {
                     return nil
                 }
                 if let emojiStatus = user.emojiStatus {

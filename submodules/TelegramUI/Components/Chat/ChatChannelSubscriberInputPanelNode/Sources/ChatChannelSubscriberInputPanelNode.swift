@@ -72,18 +72,16 @@ private func titleAndColorForAction(_ action: SubscriberAction, theme: Presentat
 private func actionForPeer(context: AccountContext, peer: Peer, interfaceState: ChatPresentationInterfaceState, isJoining: Bool, isMuted: Bool) -> SubscriberAction? {
     let muteAction: SubscriberAction = isMuted ? .unmuteNotifications : .muteNotifications
 
-    func configuredMuteAction(channel: TelegramChannel?) -> SubscriberAction {
+    func configuredChannelAction(channel: TelegramChannel?) -> SubscriberAction {
         let bottomButtonMode = AyuGramHooks.chatAppearance(accountPeerId: interfaceState.accountPeerId).chats.channelBottomButton
         switch bottomButtonMode {
         case .hidden:
             return .hidden
-        case .mute:
-            return muteAction
-        case .discussWithFallback:
+        case .discuss:
             if let channel, case .broadcast = channel.info, let peerDiscussionId = interfaceState.peerDiscussionId {
                 return .openDiscussion(peerDiscussionId)
             }
-            return muteAction
+            return .hidden
         }
     }
 
@@ -126,7 +124,7 @@ private func actionForPeer(context: AccountContext, peer: Peer, interfaceState: 
     } else {
         if let channel = peer as? TelegramChannel {
             if case .broadcast = channel.info, isJoining {
-                return configuredMuteAction(channel: channel)
+                return configuredChannelAction(channel: channel)
             }
             switch channel.participationStatus {
                 case .kicked:
@@ -149,17 +147,17 @@ private func actionForPeer(context: AccountContext, peer: Peer, interfaceState: 
                     switch channel.info {
                     case .broadcast:
                         if !channel.hasPermission(.sendSomething) {
-                            return configuredMuteAction(channel: channel)
+                            return configuredChannelAction(channel: channel)
                         }
                     case .group:
                         if channel.flags.contains(.isGigagroup) && !channel.hasPermission(.sendSomething) {
-                            return configuredMuteAction(channel: channel)
+                            return configuredChannelAction(channel: channel)
                         }
                     }
                     return nil
             }
         } else if peer.id.isRepliesOrVerificationCodes {
-            return configuredMuteAction(channel: nil)
+            return configuredChannelAction(channel: nil)
         } else {
             return muteAction
         }

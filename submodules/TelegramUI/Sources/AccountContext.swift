@@ -581,29 +581,41 @@ public final class AccountContextImpl: AccountContext {
     public func chatLocationUnreadCount(for location: ChatLocation, contextHolder: Atomic<ChatLocationContextHolder?>) -> Signal<Int, NoError> {
         switch location {
         case let .peer(peerId):
-            let unreadCountsKey: PostboxViewKey = .unreadCounts(items: [.peer(id: peerId, handleThreads: false), .total(nil)])
-            return self.account.postbox.combinedView(keys: [unreadCountsKey])
-            |> map { views in
-                var unreadCount: Int32 = 0
-                
-                if let view = views.views[unreadCountsKey] as? UnreadMessageCountsView {
-                    if let count = view.count(for: .peer(id: peerId, handleThreads: false)) {
-                        unreadCount = count
-                    }
+            let readStateKey: PostboxViewKey = .combinedReadState(peerId: peerId, handleThreads: false)
+            return combineLatest(
+                self.account.postbox.combinedView(keys: [readStateKey]),
+                AyuGramHooks.filteredUnreadStateUpdates?(self.account.peerId) ?? .single(0)
+            )
+            |> map { views, _ in
+                guard let view = views.views[readStateKey] as? CombinedReadStateView,
+                      let state = view.state else {
+                    return 0
                 }
-                
-                return Int(unreadCount)
+                let adjustedState = AyuGramHooks.adjustedUnreadPeerReadState?(
+                    self.account.peerId,
+                    peerId,
+                    state
+                ) ?? state
+                return Int(adjustedState.count)
             }
         case let .replyThread(data):
             if data.isForumPost {
                 let viewKey: PostboxViewKey = .messageHistoryThreadInfo(peerId: data.peerId, threadId: data.threadId)
-                return self.account.postbox.combinedView(keys: [viewKey])
-                |> map { views -> Int in
-                    if let threadInfo = views.views[viewKey] as? MessageHistoryThreadInfoView, let data = threadInfo.info?.data.get(MessageHistoryThreadData.self) {
-                        return Int(data.incomingUnreadCount)
-                    } else {
+                return combineLatest(
+                    self.account.postbox.combinedView(keys: [viewKey]),
+                    AyuGramHooks.filteredUnreadStateUpdates?(self.account.peerId) ?? .single(0)
+                )
+                |> map { views, _ -> Int in
+                    guard let threadInfo = views.views[viewKey] as? MessageHistoryThreadInfoView,
+                          let threadData = threadInfo.info?.data.get(MessageHistoryThreadData.self) else {
                         return 0
                     }
+                    return Int(AyuGramHooks.adjustedUnreadThreadCount?(
+                        self.account.peerId,
+                        data.peerId,
+                        data.threadId,
+                        threadData.incomingUnreadCount
+                    ) ?? threadData.incomingUnreadCount)
                 }
             } else if data.peerId.namespace != Namespaces.Peer.CloudChannel {
                 return .single(0)

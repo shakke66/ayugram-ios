@@ -315,11 +315,11 @@ class CrashLifecycleContractTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, text)
         self.assertIn(
-            '"GRVMgram.Crash.Prompt.Text" = "The previous foreground session ended unexpectedly. Export local Telegram app logs? Nothing is uploaded automatically.";',
+            '"GRVMgram.Crash.Prompt.Text" = "The previous foreground session ended unexpectedly. Export local GRVMgram app logs? Nothing is uploaded automatically.";',
             source(ENGLISH_PATH),
         )
         self.assertIn(
-            '"GRVMgram.Crash.Prompt.Text" = "Предыдущий активный сеанс завершился неожиданно. Экспортировать локальные логи приложения Telegram? Ничего не загружается автоматически.";',
+            '"GRVMgram.Crash.Prompt.Text" = "Предыдущий активный сеанс завершился неожиданно. Экспортировать локальные логи GRVMgram? Ничего не загружается автоматически.";',
             source(RUSSIAN_PATH),
         )
 
@@ -901,7 +901,7 @@ class ResetContractTests(unittest.TestCase):
             text.find("entries.append(.exportLocalLogs"),
         )
         self.assertIn(
-            '"GRVMgram.Crash.Info" = "When a foreground session ends unexpectedly, GRVMgram can offer to export local Telegram app logs. Nothing is uploaded automatically.";',
+            '"GRVMgram.Crash.Info" = "When a foreground session ends unexpectedly, GRVMgram can offer to export its local app logs. Nothing is uploaded automatically.";',
             source(ENGLISH_PATH),
         )
 

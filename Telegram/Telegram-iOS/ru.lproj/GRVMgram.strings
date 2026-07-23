@@ -7,8 +7,6 @@
 "GRVMgram.Main.Appearance" = "Оформление";
 "GRVMgram.Main.Chats" = "Чаты";
 "GRVMgram.Main.Other" = "Другое";
-"GRVMgram.Main.Deleted" = "Удалённые сообщения";
-"GRVMgram.Main.History" = "История правок";
 
 // Общие варианты GRVMgram
 "GRVMgram.Common.Default" = "По умолчанию";
@@ -33,23 +31,13 @@
 "GRVMgram.Ghost.Online" = "Не отправлять статус «в сети»";
 "GRVMgram.Ghost.Typing" = "Не отправлять статус набора текста и загрузки";
 "GRVMgram.Ghost.Upload" = "Не отправлять прогресс загрузки";
-"GRVMgram.Ghost.AutoOffline" = "Уходить из сети после появления в сети";
-"GRVMgram.Ghost.LockedComponents" = "Закреплённые компоненты";
-"GRVMgram.Ghost.LockedCount" = "%d/5";
-"GRVMgram.Ghost.Component.ReadReceipts" = "Отчёты о прочтении";
-"GRVMgram.Ghost.Component.StoryViews" = "Просмотры историй";
-"GRVMgram.Ghost.Component.OnlineStatus" = "Статус «в сети»";
-"GRVMgram.Ghost.Component.TypingUploads" = "Набор текста и загрузка";
-"GRVMgram.Ghost.Component.AutoOffline" = "Уход из сети после появления в сети";
-"GRVMgram.Ghost.ReadOnAction" = "Отмечать прочитанным при действии";
-"GRVMgram.Ghost.ReadOnAction.Info" = "Отмечать сообщения прочитанными после отправки, реакции или голосования.";
 "GRVMgram.Ghost.StoryPrompt" = "Предлагать гост-режим для историй";
 "GRVMgram.Ghost.StoryPrompt.Info" = "Спрашивать перед открытием истории, если приватный просмотр выключен.";
 "GRVMgram.Ghost.Schedule" = "Использовать отложенные сообщения";
 "GRVMgram.Ghost.Schedule.Info" = "Автоматически откладывать сообщения примерно на 12 секунд, чтобы не показывать статус «в сети». Не рекомендуется при медленном соединении.";
 "GRVMgram.Ghost.Silent" = "Отправлять без звука";
 "GRVMgram.Ghost.Silent.Info" = "Выберите, когда исходящие сообщения отправляются без звука.";
-"GRVMgram.Ghost.ActiveCount" = "Включено: %d/5";
+"GRVMgram.Ghost.ActiveCount" = "Включено: %d/4";
 "GRVMgram.Spy.Header" = "Режим сохранения";
 "GRVMgram.Spy.SaveDeleted" = "Сохранять удалённые сообщения";
 "GRVMgram.Spy.SaveEdits" = "Сохранять историю правок";
@@ -135,8 +123,7 @@
 "GRVMgram.Translation.Provider" = "Сервис перевода";
 "GRVMgram.Translation.Telegram" = "Telegram";
 "GRVMgram.Translation.Google" = "Google";
-"GRVMgram.Translation.Yandex" = "Яндекс";
-"GRVMgram.Translation.Privacy" = "Google и Яндекс получают переводимый текст, только когда вы выбираете соответствующий сервис.";
+"GRVMgram.Translation.Privacy" = "Google получает переводимый текст, только когда вы выбираете этот сервис.";
 "GRVMgram.General.Header" = "Общие";
 "GRVMgram.General.HideStories" = "Скрыть истории";
 "GRVMgram.General.SimilarChannels" = "Отключить похожие каналы";
@@ -148,10 +135,6 @@
 "GRVMgram.General.LinkWarning" = "Отключить предупреждение о внешних ссылках";
 "GRVMgram.General.PeerID.API" = "Telegram API";
 "GRVMgram.General.PeerID.BotAPI" = "Bot API";
-"GRVMgram.Webview.Header" = "Веб-приложения";
-"GRVMgram.Webview.Android" = "Представляться устройством Android";
-"GRVMgram.Webview.Height" = "Увеличить высоту веб-приложения";
-"GRVMgram.Webview.Width" = "Увеличить ширину веб-приложения";
 "GRVMgram.Confirmations.Header" = "Подтверждения";
 "GRVMgram.Confirmations.Sticker" = "Для стикеров";
 "GRVMgram.Confirmations.GIF" = "Для GIF";
@@ -177,15 +160,12 @@
 "GRVMgram.Appearance.HideBadge" = "Скрыть значок уведомлений";
 "GRVMgram.Appearance.HideCounters" = "Скрыть счётчики уведомлений";
 "GRVMgram.Appearance.Header" = "Оформление";
-"GRVMgram.Appearance.MD3" = "Переключатели в стиле MD3";
 "GRVMgram.Appearance.Tail" = "Убрать хвост сообщения";
 "GRVMgram.Appearance.Backgrounds" = "Отключить пользовательские фоны";
 "GRVMgram.Appearance.CodeFont" = "Шрифт кода";
+"GRVMgram.Appearance.CodeFont.Preview" = "let app = \"GRVMgram\"\nprint(app)";
 "GRVMgram.Appearance.AvatarCorners" = "Скругление аватаров";
-"GRVMgram.Appearance.BubbleRadius" = "Радиус сообщений";
-"GRVMgram.Appearance.SingleCorner" = "Единый радиус углов в форумах";
 "GRVMgram.Appearance.PremiumStatuses" = "Скрыть Premium-статусы";
-"GRVMgram.Appearance.AdaptiveSavedMusicColor" = "Адаптивный цвет сохранённой музыки";
 "GRVMgram.Appearance.Folders" = "Папки";
 "GRVMgram.Appearance.FolderCounters" = "Скрыть счётчики папок";
 "GRVMgram.Appearance.AllChats" = "Скрыть «Все чаты»";
@@ -200,10 +180,8 @@
 "GRVMgram.Chats.Stickers.Recent" = "Количество недавних стикеров";
 "GRVMgram.Chats.Channels.Header" = "Группы и каналы";
 "GRVMgram.Chats.Channels.QuickAdmin" = "Быстрые действия администратора";
-"GRVMgram.Chats.Channels.MessageShot" = "Функция снимка сообщений";
 "GRVMgram.Chats.Channels.BottomButton" = "Нижняя кнопка канала";
 "GRVMgram.Chats.Channels.BottomButton.Hide" = "Скрыта";
-"GRVMgram.Chats.Channels.BottomButton.Mute" = "Включить или выключить звук";
 "GRVMgram.Chats.Channels.BottomButton.Discuss" = "Обсудить";
 "GRVMgram.Chats.Messages.Header" = "Сообщения";
 "GRVMgram.Chat.DeletedMark" = "Метка удаления";
@@ -230,11 +208,8 @@
 "GRVMgram.Chats.Context.MoreActions" = "Действия GRVMgram";
 "GRVMgram.Chats.Field.Header" = "Элементы поля сообщения";
 "GRVMgram.Chats.Field.Attach" = "Вложения";
-"GRVMgram.Chats.Field.AttachPopup" = "Меню вложений";
-"GRVMgram.Chats.Field.Commands" = "Команды";
 "GRVMgram.Chats.Field.TTL" = "TTL";
 "GRVMgram.Chats.Field.Emoji" = "Эмодзи и стикеры";
-"GRVMgram.Chats.Field.EmojiPopup" = "Меню эмодзи и стикеров";
 "GRVMgram.Chats.Field.Voice" = "Запись голоса";
 "GRVMgram.Chats.Field.Gift" = "Подарок";
 "GRVMgram.Chats.Field.AI" = "AI-редактор";
@@ -257,13 +232,18 @@
 "GRVMgram.Deleted.Clear.ArchiveUnavailable" = "Архив удалённых сообщений недоступен. Повторите попытку.";
 "GRVMgram.Deleted.Clear.MediaRemovalFailed" = "Не удалось удалить архивные медиафайлы (%d). Очистку можно повторить.";
 "GRVMgram.Deleted.Clear.DatabaseFinalizationFailed" = "Не удалось завершить обновление архива удалённых сообщений. Повторите попытку.";
+"GRVMgram.Deleted.Remove.Title" = "Удалить сообщение безвозвратно?";
+"GRVMgram.Deleted.Remove.Text" = "Удалить это сохранённое сообщение, его историю и принадлежащие только ему архивные медиа? Действие нельзя отменить.";
+"GRVMgram.Deleted.Remove.Action" = "Удалить";
+"GRVMgram.Deleted.Remove.ErrorTitle" = "Не удалось удалить";
 "GRVMgram.History.Title" = "История GRVMgram";
-"GRVMgram.History.Info" = "История GRVMgram доступна в контекстном меню конкретного изменённого сообщения.";
 "GRVMgram.History.Empty" = "История правок пока пуста.";
 "GRVMgram.History.MessageEmpty" = "[пусто]";
 "GRVMgram.History.Recent" = "Недавние изменения сообщений";
 "GRVMgram.History.Current" = "Текущая версия";
 "GRVMgram.History.Revision" = "Версия %d";
+"GRVMgram.History.RevisionSavedAt" = "Версия сохранена: %@";
+"GRVMgram.History.MessageDate" = "Дата исходного сообщения: %@";
 "GRVMgram.History.Action" = "История";
 "GRVMgram.History.EntryHeader" = "%1$@ — %2$@\n";
 "GRVMgram.History.ArchivedResources" = "Архивных ресурсов: %d";
@@ -337,46 +317,11 @@
 "GRVMgram.MessageDetails.File.Dimensions" = "размеры=%@";
 "GRVMgram.MessageDetails.File.Duration" = "длительность=%@";
 
-// Снимок сообщений
-"GRVMgram.MessageShot.Title" = "Снимок сообщений";
-"GRVMgram.MessageShot.PreviewAccessibility" = "Предпросмотр снимка сообщений";
-"GRVMgram.MessageShot.Theme" = "Тема";
-"GRVMgram.MessageShot.Theme.Current" = "Текущая";
-"GRVMgram.MessageShot.Theme.Light" = "Светлая";
-"GRVMgram.MessageShot.Theme.Dark" = "Тёмная";
-"GRVMgram.MessageShot.Background" = "Фон";
-"GRVMgram.MessageShot.Date" = "Разделители дат";
-"GRVMgram.MessageShot.Reactions" = "Реакции";
-"GRVMgram.MessageShot.Header" = "Заголовки авторов";
-"GRVMgram.MessageShot.Decorations" = "Оформление заголовков";
-"GRVMgram.MessageShot.Replies" = "Цветные ответы";
-"GRVMgram.MessageShot.Spoilers" = "Показывать спойлеры";
-"GRVMgram.MessageShot.Copy" = "Копировать";
-"GRVMgram.MessageShot.Save" = "Сохранить";
-"GRVMgram.MessageShot.SelectedUnavailable" = "Выбранные сообщения недоступны.";
-"GRVMgram.MessageShot.RenderFailed" = "Не удалось создать снимок сообщений.";
-"GRVMgram.MessageShot.PhotoAccessNotGranted" = "Доступ к фото не предоставлен.";
-"GRVMgram.MessageShot.SaveFailed" = "Не удалось сохранить изображение.";
-"GRVMgram.MessageShot.Photos.Title" = "Доступ к фото";
-"GRVMgram.MessageShot.Photos.Text" = "Разрешите доступ к фото в Настройках, чтобы сохранить снимок сообщений.";
-"GRVMgram.MessageShot.Chat" = "Чат";
-"GRVMgram.MessageShot.QuotedReply" = "Цитируемый ответ";
-"GRVMgram.MessageShot.CustomReaction" = "Пользовательская реакция %@";
-"GRVMgram.MessageShot.Stars" = "Звёзды";
-"GRVMgram.MessageShot.Boost" = "Голос %@";
-"GRVMgram.MessageShot.PhotoUnavailable" = "Фото недоступно";
-"GRVMgram.MessageShot.FileUnavailable" = "Файл недоступен";
-"GRVMgram.MessageShot.MediaUnavailable" = "Медиа недоступно";
-"GRVMgram.MessageShot.Reply" = "Ответ";
-"GRVMgram.MessageShot.MessageUnavailable" = "Сообщение недоступно";
-"GRVMgram.MessageShot.ReplyMediaUnavailable" = "Медиа в ответе недоступно";
-
 // Завершённые самостоятельные функции
 "GRVMgram.SendAsSticker.Error" = "Не удалось подготовить выбранное изображение как стикер.";
 "GRVMgram.Peer.CopyTelegramID" = "Копировать Telegram ID";
 "GRVMgram.Peer.CopyBotAPIID" = "Копировать Bot API ID";
 "GRVMgram.Peer.Created" = "Создан";
-"GRVMgram.Peer.Joined" = "Вступление";
 
 // Другое, режим стримера, локальные логи и сброс
 "GRVMgram.Other.Title" = "Другое";
@@ -386,9 +331,9 @@
 "GRVMgram.Streamer.Cover" = "Конфиденциальность GRVMgram\nСодержимое приложения скрыто во время демонстрации или записи экрана.";
 "GRVMgram.Streamer.CoverAccessibility" = "Конфиденциальность GRVMgram. Содержимое приложения скрыто во время демонстрации или записи экрана.";
 "GRVMgram.Crash.Title" = "Экспорт локальных логов";
-"GRVMgram.Crash.Info" = "Если активный сеанс завершается неожиданно, GRVMgram может предложить экспортировать локальные логи приложения Telegram. Ничего не загружается автоматически.";
+"GRVMgram.Crash.Info" = "Если активный сеанс завершается неожиданно, GRVMgram может предложить экспортировать свои локальные логи. Ничего не загружается автоматически.";
 "GRVMgram.Crash.Prompt.Title" = "Предыдущий сеанс завершился неожиданно";
-"GRVMgram.Crash.Prompt.Text" = "Предыдущий активный сеанс завершился неожиданно. Экспортировать локальные логи приложения Telegram? Ничего не загружается автоматически.";
+"GRVMgram.Crash.Prompt.Text" = "Предыдущий активный сеанс завершился неожиданно. Экспортировать локальные логи GRVMgram? Ничего не загружается автоматически.";
 "GRVMgram.Crash.Export" = "Экспортировать локальные логи";
 "GRVMgram.Crash.NotNow" = "Не сейчас";
 "GRVMgram.Crash.NoReports" = "Доступных локальных логов нет.";

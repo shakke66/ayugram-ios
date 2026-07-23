@@ -594,14 +594,16 @@ class ChatControlsContractTests(unittest.TestCase):
         for token in [
             "if compose.showTTLButton {",
             "if compose.showGiftButton {",
-            "if compose.showCommandsButton {",
             "if compose.showEmojiButton {",
+            "if isTextEmpty && chatPresentationInterfaceState.hasBots && chatPresentationInterfaceState.hasBotCommands && !hasForward {",
+            "accessoryItems.append(.commands)",
             "if let _ = chatPresentationInterfaceState.interfaceState.editMessage {",
             "accessoryItems.append(.input(isEnabled: true, inputMode: .emoji))",
             "accessoryItems.append(.botInput(isEnabled: true, inputMode: .bot))",
         ]:
             with self.subTest(token=token):
                 self.assertIn(normalized(token), normalized(panel_state))
+        self.assertNotIn("compose.showCommandsButton", panel_state)
 
         hooks = source(self.hooks_path)
         manager = source(self.feature_manager_path)
@@ -620,7 +622,7 @@ class ChatControlsContractTests(unittest.TestCase):
                 self.assertNotIn(legacy, hooks)
                 self.assertNotIn(f"AyuGramHooks.{legacy} =", manager)
 
-    def test_compose_panel_uses_exact_policy_and_native_popup_routes(self) -> None:
+    def test_compose_panel_uses_exact_policy_and_preserves_native_taps(self) -> None:
         panel = source(self.input_panel_path)
         calculate_metrics = swift_block(panel, "private func calculateTextFieldMetrics(")
         update_layout = swift_block(panel, "override public func updateLayout(")
@@ -628,11 +630,6 @@ class ChatControlsContractTests(unittest.TestCase):
             panel,
             "private func updateActionButtons(",
         )
-        attach_popup_should_begin = swift_block(
-            panel,
-            "self.attachmentButtonContextGesture.shouldBegin =",
-        )
-
         exact_snapshot = (
             "let compose = AyuGramHooks.chatAppearance("
             "accountPeerId: interfaceState.accountPeerId).compose"
@@ -655,76 +652,80 @@ class ChatControlsContractTests(unittest.TestCase):
             normalized(update_action_buttons),
         )
         self.assertIn("!compose.showVoiceButton", update_action_buttons)
-        self.assertIn("self.attachmentButton.isEnabled", attach_popup_should_begin)
-        self.assertIn(
-            normalized("compose.showAttachButton && compose.showAttachPopup"),
-            normalized(attach_popup_should_begin),
-        )
 
         for token in [
             "let showAttachmentButton = displayMediaButton && compose.showAttachButton",
             "self.attachmentButton.isEnabled = showAttachmentButton && isMediaEnabled && !isRecording",
             "self.attachmentButton.isUserInteractionEnabled = showAttachmentButton",
             "self.attachmentButtonDisabledNode.isHidden = !showAttachmentButton || !isSlowmodeActive || isMediaEnabled",
-            "let showMenuButton = hasMenuButton && interfaceState.interfaceState.mediaDraftState == nil && compose.showCommandsButton",
+            "let showMenuButton = hasMenuButton && interfaceState.interfaceState.mediaDraftState == nil",
             "self.menuButton.isUserInteractionEnabled = showMenuButton",
             "compose.showVoiceButton",
-            "private let attachmentButtonContextGesture: ContextGesture",
-            "self.attachmentButton.addGestureRecognizer(self.attachmentButtonContextGesture)",
-            "self.attachmentButtonContextGesture.shouldBegin = { [weak self] _ in",
-            "compose.showAttachButton && compose.showAttachPopup",
-            "self.attachmentButtonContextGesture.activated = { [weak self] _, _ in",
+            "self.attachmentButton.addTarget(self, action: #selector(self.attachmentButtonPressed)",
             "self.displayAttachmentMenu()",
-            "private var emojiButtonContextGesture: ContextGesture?",
-            "button.addGestureRecognizer(emojiButtonContextGesture)",
-            "compose.showEmojiButton && compose.showEmojiPopup",
-            "return (.media(mode: .other, expanded: nil, focused: false), state.keyboardButtonsMessage?.id)",
+            "@objc func accessoryItemButtonPressed",
+            "self.interfaceInteraction?.openStickers()",
         ]:
             with self.subTest(token=token):
                 self.assertIn(normalized(token), normalized(panel))
 
-        self.assertEqual(panel.count("ContextGesture(target: nil, action: nil)"), 2)
-        self.assertNotIn("UILongPressGestureRecognizer", panel)
-        self.assertNotIn(
+        for removed in (
+            "attachmentButtonContextGesture",
+            "emojiButtonContextGesture",
             "showAttachPopup",
-            source(self.panel_interaction_path),
-        )
+            "showEmojiPopup",
+            "compose.showCommandsButton",
+        ):
+            self.assertNotIn(removed, panel)
+        self.assertNotIn("showAttachPopup", source(self.panel_interaction_path))
 
-    def test_popup_settings_are_account_scoped_and_follow_related_controls(
-        self,
-    ) -> None:
+    def test_removed_popup_settings_are_absent_while_related_controls_survive(self) -> None:
         settings = source(self.chats_settings_path)
+        schema = source("submodules/AyuGramLib/Sources/AyuGramSettings.swift")
+        input_contexts = source(self.input_contexts_path)
+        panel = source(self.input_panel_path)
+        combined = "\n".join((settings, schema, input_contexts, panel))
+
+        for removed in (
+            "showAttachPopup",
+            "showEmojiPopup",
+            "showCommandsButton",
+        ):
+            self.assertNotIn(removed, combined)
+
         entries = swift_block(settings, "private func ayuGramChatsEntries(")
-
-        for token in [
-            "case showAttachPopup(PresentationTheme, Bool)",
-            "case showEmojiPopup(PresentationTheme, Bool)",
-            "case .showAttachPopup:",
-            "case .showEmojiPopup:",
-            "case let (.showAttachPopup(_, lv), .showAttachPopup(_, rv)): return lv == rv",
-            "case let (.showEmojiPopup(_, lv), .showEmojiPopup(_, rv)): return lv == rv",
-            "arguments.updateBool(\\.showAttachPopup, v)",
-            "arguments.updateBool(\\.showEmojiPopup, v)",
-            ".showAttachPopup(presentationData.theme, settings.showAttachPopup)",
-            ".showEmojiPopup(presentationData.theme, settings.showEmojiPopup)",
-        ]:
-            with self.subTest(token=token):
-                self.assertIn(normalized(token), normalized(settings))
-
         assert_ordered_tokens(
             self,
             entries,
             [
                 ".showAttach(presentationData.theme, settings.showAttachButton)",
-                ".showAttachPopup(presentationData.theme, settings.showAttachPopup)",
-                ".showCommands(presentationData.theme, settings.showCommandsButton)",
+                ".showTTL(presentationData.theme, settings.showTTLButton)",
                 ".showEmoji(presentationData.theme, settings.showEmojiButton)",
-                ".showEmojiPopup(presentationData.theme, settings.showEmojiPopup)",
                 ".showVoice(presentationData.theme, settings.showVoiceButton)",
             ],
         )
+        self.assertIn("accessoryItems.append(.commands)", input_contexts)
 
     def test_channel_bottom_mode_is_typed_and_routes_real_discussion(self) -> None:
+        appearance = source("submodules/TelegramCore/Sources/GRVMChatAppearance.swift")
+        mode = swift_block(appearance, "public enum GRVMChannelBottomButtonMode")
+        self.assertIn("case hidden = 0", mode)
+        self.assertIn("case discuss = 1", mode)
+        self.assertIn("init(normalizingRawValue value: Int32)", mode)
+        self.assertIn("self = value == 0 ? .hidden : .discuss", mode)
+        self.assertNotIn("case mute", mode)
+        self.assertNotIn("discussWithFallback", mode)
+        self.assertIn("channelBottomButton: .discuss", appearance)
+
+        policy = source(
+            "submodules/AyuGramFeatures/Sources/GRVMChatAppearancePolicy.swift"
+        )
+        self.assertIn(
+            "GRVMChannelBottomButtonMode(normalizingRawValue: self.channelBottomButton)",
+            policy,
+        )
+        self.assertNotIn("GRVMChannelBottomButtonMode(rawValue:", policy)
+
         subscriber = source(self.subscriber_path)
         action_enum = swift_block(subscriber, "private enum SubscriberAction")
         action_for_peer = swift_block(subscriber, "private func actionForPeer(")
@@ -737,12 +738,11 @@ class ChatControlsContractTests(unittest.TestCase):
             "let bottomButtonMode = AyuGramHooks.chatAppearance("
             "accountPeerId: interfaceState.accountPeerId).chats.channelBottomButton",
             "case .hidden:",
-            "case .mute:",
-            "case .discussWithFallback:",
+            "case .discuss:",
             "case .broadcast = channel.info",
             "let peerDiscussionId = interfaceState.peerDiscussionId",
             "return .openDiscussion(peerDiscussionId)",
-            "return muteAction",
+            "return .hidden",
             "!channel.hasPermission(.sendSomething)",
             "channel.flags.contains(.isGigagroup)",
             "peer.id.isRepliesOrVerificationCodes",
@@ -754,12 +754,17 @@ class ChatControlsContractTests(unittest.TestCase):
             self,
             action_for_peer,
             [
-                "case .discussWithFallback:",
+                "case .discuss:",
                 "let peerDiscussionId = interfaceState.peerDiscussionId",
                 "return .openDiscussion(peerDiscussionId)",
-                "return muteAction",
+                "return .hidden",
             ],
         )
+
+        configured_action = swift_block(action_for_peer, "func configuredChannelAction(")
+        self.assertNotIn("muteAction", configured_action)
+        self.assertNotIn("case .mute", action_for_peer)
+        self.assertNotIn("discussWithFallback", action_for_peer)
 
         self.assertNotIn("AyuGramHooks.channelBottomButtonMode", subscriber)
         self.assertNotIn(

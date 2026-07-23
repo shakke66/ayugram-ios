@@ -445,12 +445,6 @@ extension ChatControllerImpl {
             })))
         }
 
-        items.append(contentsOf: grvmArchiveContextMenuItems(
-            context: self.context,
-            sourceController: self,
-            peerId: peerId,
-            threadId: self.chatLocation.threadId
-        ))
         if !items.isEmpty && !additionalItems.isEmpty {
             items.append(.separator)
         }

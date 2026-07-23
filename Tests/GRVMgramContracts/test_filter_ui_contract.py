@@ -11,6 +11,7 @@ SHADOW = ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramShadowBanController
 SETTINGS_BUILD = ROOT / "submodules/AyuGramSettingsUI/BUILD"
 CHAT = ROOT / "submodules/TelegramUI/Sources/ChatController.swift"
 HISTORY_NODE = ROOT / "submodules/TelegramUI/Sources/ChatHistoryListNode.swift"
+LIST_VIEW = ROOT / "submodules/Display/Source/ListView.swift"
 MESSAGE_MENU = (
     ROOT
     / "submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift"
@@ -39,6 +40,7 @@ class FilterUIContractTests(unittest.TestCase):
         cls.settings_build = read(SETTINGS_BUILD)
         cls.chat = read(CHAT)
         cls.history_node = read(HISTORY_NODE)
+        cls.list_view = read(LIST_VIEW)
         cls.message_menu = read(MESSAGE_MENU)
         cls.localization_item = read(LOCALIZATION_ITEM)
 
@@ -60,7 +62,8 @@ class FilterUIContractTests(unittest.TestCase):
             r"context: AccountContext,\s*"
             r"filter: AyuMessageFilter\? = nil,\s*"
             r"initialExpression: String = \"\",\s*"
-            r"initialPeerId: PeerId\? = nil\s*"
+            r"initialPeerId: PeerId\? = nil,\s*"
+            r"onSaved: \(\(\) -> Void\)\? = nil\s*"
             r"\) -> ViewController",
         )
         for token in (
@@ -201,6 +204,9 @@ class FilterUIContractTests(unittest.TestCase):
             "grvmSettings(accountId: context.account.peerId",
             "updateGRVMSettings(accountId: context.account.peerId",
             "settings.shadowBanIds",
+            "GRVMShadowBanPolicy.normalizedPeerIds(",
+            "GRVMShadowBanPolicy.updatedPeerIds(",
+            ".excludeSavedMessages",
             "makePeerSelectionController(",
             "controller.peerSelected =",
             "peer.id.toInt64()",
@@ -217,8 +223,11 @@ class FilterUIContractTests(unittest.TestCase):
             "initialPeerId: message.id.peerId",
             "message.author?.id",
             "message.forwardInfo?.author?.id",
+            "message.sourceAuthorInfo?.originalAuthor",
+            "peerId != self.context.account.peerId",
             "settings.shadowBanIds",
             "updateGRVMSettings(accountId: self.context.account.peerId",
+            "GRVMShadowBanPolicy.updatedPeerIds(",
         ):
             self.assertIn(token, self.chat)
         self.assertIn("grvmMessageFilterContextMenuItems(", self.message_menu)
@@ -273,6 +282,49 @@ class FilterUIContractTests(unittest.TestCase):
         self.assertGreaterEqual(
             self.chat.count("grvmFilteredVisibilityContextMenuItems(peerId:"), 3
         )
+
+    def test_message_filter_save_refreshes_the_active_history_after_persistence(self) -> None:
+        self.assertRegex(
+            self.editor,
+            r"public func ayuGramFilterEditorController\(\s*"
+            r"context: AccountContext,\s*"
+            r"filter: AyuMessageFilter\? = nil,\s*"
+            r"initialExpression: String = \"\",\s*"
+            r"initialPeerId: PeerId\? = nil,\s*"
+            r"onSaved: \(\(\) -> Void\)\? = nil\s*"
+            r"\) -> ViewController",
+        )
+        save_window = function_window(self.editor, "saveImpl = { draft in", 8000)
+        completion = function_window(
+            save_window, "|> deliverOnMainQueue).startStandalone(completed:"
+        )
+        self.assertIn("onSaved?()", completion)
+        self.assertIn("dismissImpl?()", completion)
+        self.assertLess(completion.index("onSaved?()"), completion.index("dismissImpl?()"))
+
+        add_filter = function_window(
+            self.chat, "if includeAddFilter {", 2500
+        )
+        self.assertIn("onSaved: { [weak self] in", add_filter)
+        self.assertIn(
+            "self?.chatDisplayNode.historyNode.refreshForRuntimeMessageFilterChange()",
+            add_filter,
+        )
+
+    def test_show_filtered_recomputes_distinct_header_affinities_for_split_groups(self) -> None:
+        assign = function_window(
+            self.list_view, "private func assignHeaderSpaceAffinities()", 5000
+        )
+        for token in (
+            "var claimedExistingAffinityIds = Set<Int>()",
+            "func reuseExistingAffinity(",
+            "claimedExistingAffinityIds.insert(existingAffinity).inserted",
+            "reuseExistingAffinity(existingAffinity, for: currentAffinity)",
+            "reuseExistingAffinity(existingAffinity, for: currentAffinity)",
+        ):
+            self.assertIn(token, assign)
+        self.assertGreaterEqual(assign.count("reuseExistingAffinity("), 3)
+        self.assertIn("self.assignHeaderSpaceAffinities()", self.list_view)
 
     def test_build_uses_only_existing_internal_ui_modules(self) -> None:
         self.assertIn('"//submodules/AlertUI:AlertUI"', self.settings_build)

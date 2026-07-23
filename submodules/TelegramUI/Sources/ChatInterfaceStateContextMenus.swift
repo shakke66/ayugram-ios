@@ -196,17 +196,34 @@ private func grvmBurnMessage(
         actions: [
             TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
             TextAlertAction(type: .destructiveAction, title: strings[.burnAction], action: {
+                let consume = {
+                    let _ = context.engine.messages.markMessageContentAsConsumedInteractively(
+                        messageId: message.id,
+                        force: true
+                    ).startStandalone()
+                }
+                guard AyuGramHooks.shouldSaveDeletedMessages?(context.account.peerId) == true else {
+                    consume()
+                    return
+                }
                 let preparation = AyuGramHooks.prepareConsumableMedia?(
                     context.account.peerId,
                     message
                 ) ?? .single(false)
                 let _ = (preparation
-                |> mapToSignal { _ in
-                    context.engine.messages.markMessageContentAsConsumedInteractively(
-                        messageId: message.id,
-                        force: true
-                    )
-                }).startStandalone()
+                |> take(1)
+                |> deliverOnMainQueue).startStandalone(next: { prepared in
+                    guard prepared else {
+                        controllerInteraction.displayUndo(.info(
+                            title: nil,
+                            text: strings[.burnError],
+                            timeout: nil,
+                            customUndoText: nil
+                        ))
+                        return
+                    }
+                    consume()
+                })
             })
         ]
     )
@@ -294,7 +311,6 @@ private func grvmReplayMessage(
 
 private func grvmCanForwardLocalCopy(
     context: AccountContext,
-    accountPeerId: PeerId,
     messages: [Message],
     copyProtectionEnabled: Bool
 ) -> Signal<Bool, NoError> {
@@ -312,15 +328,7 @@ private func grvmCanForwardLocalCopy(
     let marker = message.attributes.first(where: {
         $0 is GRVMPreservedConsumableMediaAttribute
     }) as? GRVMPreservedConsumableMediaAttribute
-    let media: [Media]
-    if message.media.contains(where: { $0 is TelegramMediaExpiredContent }) {
-        guard let marker else {
-            return .single(false)
-        }
-        media = marker.media
-    } else {
-        media = message.media
-    }
+    let media = marker?.media ?? message.media
     if media.isEmpty {
         return .single(!message.text.isEmpty)
     }
@@ -341,10 +349,7 @@ private func grvmCanForwardLocalCopy(
        size.int64Value > 0 {
         return .single(true)
     }
-    return (AyuGramHooks.restoreConsumableMedia?(accountPeerId, message) ?? .single(false))
-    |> map { restored in
-        return restored
-    }
+    return .single(marker != nil)
 }
 
 func canEditMessage(context: AccountContext, limitsConfiguration: EngineConfiguration.Limits, message: Message) -> Bool {
@@ -1238,7 +1243,6 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
     )
     let localCopyAvailableSignal = grvmCanForwardLocalCopy(
         context: context,
-        accountPeerId: context.account.peerId,
         messages: messages,
         copyProtectionEnabled: chatPresentationInterfaceState.copyProtectionEnabled
     )

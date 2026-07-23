@@ -929,6 +929,7 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
             case .custom:
                 hidePremiumStatuses = false
             }
+            let shouldHidePremiumStatus = hidePremiumStatuses && item.peer.id != item.context.accountPeerId
             
             let statusFontSize: CGFloat = floor(item.presentationData.fontSize.itemListBaseFontSize * 14.0 / 17.0)
             let labelFontSize: CGFloat = floor(item.presentationData.fontSize.itemListBaseFontSize * 13.0 / 17.0)
@@ -944,27 +945,24 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
             var credibilityParticleColor: UIColor?
             var verifiedIcon: EmojiStatusComponent.Content?
             
-            if case .threatSelfAsSaved = item.aliasHandling, item.peer.id == item.context.accountPeerId {
-            } else {
-                if item.peer.isScam {
-                    credibilityIcon = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased())
-                } else if item.peer.isFake {
-                    credibilityIcon = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased())
-                } else if let emojiStatus = item.peer.emojiStatus, !hidePremiumStatuses {
-                    credibilityIcon = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 20.0, height: 20.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(2))
-                    if let color = emojiStatus.color {
-                        credibilityParticleColor = UIColor(rgb: UInt32(bitPattern: color))
-                    }
-                } else if item.peer.isPremium && !item.context.isPremiumDisabled && !hidePremiumStatuses {
-                    credibilityIcon = .premium(color: item.presentationData.theme.list.itemAccentColor)
+            if item.peer.isScam {
+                credibilityIcon = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased())
+            } else if item.peer.isFake {
+                credibilityIcon = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased())
+            } else if let emojiStatus = item.peer.emojiStatus, !shouldHidePremiumStatus {
+                credibilityIcon = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 20.0, height: 20.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(2))
+                if let color = emojiStatus.color {
+                    credibilityParticleColor = UIColor(rgb: UInt32(bitPattern: color))
                 }
-                
-                if item.peer.isVerified {
-                    credibilityIcon = .verified(fillColor: item.presentationData.theme.list.itemCheckColors.fillColor, foregroundColor: item.presentationData.theme.list.itemCheckColors.foregroundColor, sizeType: .compact)
-                }
-                if let verificationIconFileId = item.peer.verificationIconFileId {
-                    verifiedIcon = .animation(content: .customEmoji(fileId: verificationIconFileId), size: CGSize(width: 32.0, height: 32.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(0))
-                }
+            } else if item.peer.isPremium && !item.context.isPremiumDisabled && !shouldHidePremiumStatus {
+                credibilityIcon = .premium(color: item.presentationData.theme.list.itemAccentColor)
+            }
+
+            if item.peer.isVerified {
+                credibilityIcon = .verified(fillColor: item.presentationData.theme.list.itemCheckColors.fillColor, foregroundColor: item.presentationData.theme.list.itemCheckColors.foregroundColor, sizeType: .compact)
+            }
+            if let verificationIconFileId = item.peer.verificationIconFileId {
+                verifiedIcon = .animation(content: .customEmoji(fileId: verificationIconFileId), size: CGSize(width: 32.0, height: 32.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(0))
             }
             
             var titleIconsWidth: CGFloat = 0.0

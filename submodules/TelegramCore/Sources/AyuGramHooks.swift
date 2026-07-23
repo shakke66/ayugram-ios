@@ -25,7 +25,6 @@ public final class AyuGramHooks {
     public static var shouldSuppressTyping: ((PeerId) -> Bool)?
     public static var shouldSuppressStoryRead: ((PeerId) -> Bool)?
     public static var shouldSuppressContentRead: ((PeerId) -> Bool)?
-    public static var shouldForceOfflineAfterOnline: ((PeerId) -> Bool)?
 
     // MARK: - Premium & Ads
     public static var isLocalPremiumEnabled: ((PeerId) -> Bool)?
@@ -34,12 +33,10 @@ public final class AyuGramHooks {
     // MARK: - General
     public static var shouldHideStories: ((PeerId) -> Bool)?
     public static var shouldDisableSimilarChannels: ((PeerId) -> Bool)?
+    public static var similarChannelsDisabled: ((PeerId) -> Signal<Bool, NoError>)?
     public static var shouldDisableNotificationDelay: ((PeerId) -> Bool)?
     public static var shouldShowSeconds: ((PeerId) -> Bool)?
     public static var shouldShowDialogID: ((PeerId) -> Bool)?
-    public static var shouldSpoofWebviewAsAndroid: ((PeerId) -> Bool)?
-    public static var shouldIncreaseWebviewHeight: ((PeerId) -> Bool)?
-    public static var shouldIncreaseWebviewWidth: ((PeerId) -> Bool)?
     public static var shouldDisableExternalLinkWarning: ((PeerId) -> Bool)?
     public static var shouldConfirmStickers: ((PeerId) -> Bool)?
     public static var shouldConfirmGIF: ((PeerId) -> Bool)?
@@ -48,7 +45,6 @@ public final class AyuGramHooks {
 
     // MARK: - Appearance
     public static var chatAppearanceSettings: ((PeerId) -> GRVMChatAppearanceSettings)?
-    public static var shouldUseAdaptiveSavedMusicCover: ((PeerId) -> Bool)?
     public static private(set) var primaryChatAppearance = GRVMChatAppearanceSettings.default
 
     public static func chatAppearance(accountPeerId: PeerId) -> GRVMChatAppearanceSettings {
@@ -70,17 +66,13 @@ public final class AyuGramHooks {
 
     // MARK: - Sending
     public static var shouldUseScheduledMessages: ((PeerId) -> Bool)?
-    public static var shouldSendWithoutSound: (() -> Bool)?
 
     // MARK: - Reanimation (W0)
     public static var shouldSuppressUploadProgress: ((PeerId) -> Bool)?
-    public static var shouldMarkReadAfterAction: ((PeerId) -> Bool)?
     public static var shouldSaveForBots: (() -> Bool)?
-    public static var shouldUseMD3Switches: (() -> Bool)?
     public static var shouldDisableCustomBackgrounds: (() -> Bool)?
     public static var codeFontName: (() -> String)?
     public static var shouldUseQuickAdminShortcuts: (() -> Bool)?
-    public static var shouldShowMessageShot: (() -> Bool)?
     public static var shouldShowChannelReactions: (() -> Bool)?
     public static var shouldShowGroupReactions: (() -> Bool)?
     public static var recentStickersLimit: (() -> Int32)?
@@ -100,8 +92,6 @@ public final class AyuGramHooks {
     public static var shouldImproveLinkPreviews: ((PeerId) -> Bool)?
     public static var shouldHidePremiumStatuses: (() -> Bool)?
     public static var avatarCornerRadius: (() -> Int32)?
-    public static var messageBubbleRadius: (() -> Int32)?
-    public static var shouldUseSingleCornerRadius: (() -> Bool)?
     public static var peerIdDisplayMode: ((PeerId) -> Int32)?     // 0 Hidden / 1 TelegramApi / 2 BotApi
     public static var sendWithoutSoundMode: ((PeerId) -> Int32)?  // 0 Never / 1 InGhost / 2 Always
 
@@ -111,6 +101,12 @@ public final class AyuGramHooks {
     public static var matchingMessageFilterIds: ((PeerId, Message) -> [String])?
     public static var isShowingFilteredMessages: ((PeerId, PeerId) -> Bool)?
     public static var setShowingFilteredMessages: ((PeerId, PeerId, Bool) -> Void)?
+    public static var messageFilterStateUpdates: ((PeerId) -> Signal<Int64, NoError>)?
+    // Display-only unread corrections. These hooks never write read state back to Postbox.
+    public static var adjustedUnreadPeerReadState: ((PeerId, PeerId, CombinedPeerReadState) -> CombinedPeerReadState)?
+    public static var adjustedUnreadThreadCount: ((PeerId, PeerId, Int64, Int32) -> Int32)?
+    public static var adjustedTotalUnreadState: ((PeerId, PeerGroupId, ChatListTotalUnreadState) -> ChatListTotalUnreadState)?
+    public static var filteredUnreadStateUpdates: ((PeerId) -> Signal<Int64, NoError>)?
 }
 
 func grvmMergedEditStateAttributes(

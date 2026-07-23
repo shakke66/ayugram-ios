@@ -51,4 +51,14 @@ public final class GRVMMessageArchiveIndex {
             )
         }
     }
+
+    public func removeRevised(_ keys: Set<GRVMMessageKey>) {
+        _ = self.state.modify { current in
+            return GRVMMessageArchiveSnapshot(
+                deleted: current.deleted,
+                revised: current.revised.subtracting(keys)
+            )
+        }
+    }
+
 }

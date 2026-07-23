@@ -152,6 +152,8 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
                 presentationData: presentationData,
                 title: strings[.filterEditorEnabled],
                 value: value,
+                maximumNumberOfLines: 2,
+                adaptiveLayout: true,
                 sectionId: self.section,
                 style: .blocks,
                 updated: arguments.updateEnabled
@@ -161,6 +163,8 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
                 presentationData: presentationData,
                 title: strings[.filterEditorReversed],
                 value: value,
+                maximumNumberOfLines: 2,
+                adaptiveLayout: true,
                 sectionId: self.section,
                 style: .blocks,
                 updated: arguments.updateReversed
@@ -170,6 +174,8 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
                 presentationData: presentationData,
                 title: strings[.filterEditorCaseInsensitive],
                 value: value,
+                maximumNumberOfLines: 2,
+                adaptiveLayout: true,
                 sectionId: self.section,
                 style: .blocks,
                 updated: arguments.updateCaseInsensitive
@@ -185,6 +191,9 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
                 presentationData: presentationData,
                 title: strings[.filterEditorScopeChat],
                 label: peerId.map { String($0) } ?? strings[.filterEditorScopeAllChats],
+                labelStyle: .multilineDetailText,
+                maximumTitleNumberOfLines: 2,
+                adaptiveLayout: true,
                 sectionId: self.section,
                 style: .blocks,
                 action: arguments.selectChat
@@ -204,6 +213,9 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
                 presentationData: presentationData,
                 title: strings[.filterEditorExcludedChats],
                 label: count == 0 ? strings[.filterEditorNone] : "\(count)",
+                labelStyle: .multilineDetailText,
+                maximumTitleNumberOfLines: 2,
+                adaptiveLayout: true,
                 sectionId: self.section,
                 style: .blocks,
                 action: arguments.selectExcludedChats
@@ -251,7 +263,8 @@ public func ayuGramFilterEditorController(
     context: AccountContext,
     filter: AyuMessageFilter? = nil,
     initialExpression: String = "",
-    initialPeerId: PeerId? = nil
+    initialPeerId: PeerId? = nil,
+    onSaved: (() -> Void)? = nil
 ) -> ViewController {
     let initialDraft = filter ?? AyuMessageFilter(
         expression: initialExpression,
@@ -399,6 +412,7 @@ public func ayuGramFilterEditorController(
             return settings
         }
         |> deliverOnMainQueue).startStandalone(completed: {
+            onSaved?()
             dismissImpl?()
         })
     }

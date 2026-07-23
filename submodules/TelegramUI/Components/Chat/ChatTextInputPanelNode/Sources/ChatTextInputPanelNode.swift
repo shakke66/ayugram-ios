@@ -267,8 +267,6 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     private let sendAsCloseIconView: UIImageView
     
     public let attachmentButton: HighlightTrackingButton
-    private let attachmentButtonContextGesture: ContextGesture
-    private var emojiButtonContextGesture: ContextGesture?
     public let attachmentButtonBackground: GlassBackgroundView
     public let attachmentButtonIcon: GlassBackgroundView.ContentImageView
     private var commentsButtonIcon: RasterizedCompositionMonochromeLayer?
@@ -500,7 +498,6 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                         button.addTarget(self, action: #selector(self.accessoryItemButtonPressed(_:)), for: .touchUpInside)
                         itemAndButton = (item, button)
                     }
-                    self.updateEmojiButtonContextGesture(item: item, button: itemAndButton!.1)
                     updatedButtons.append(itemAndButton!)
                 }
                 for (_, button) in self.accessoryItemButtons {
@@ -696,7 +693,6 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.sendAsCloseIconView = UIImageView()
         
         self.attachmentButton = HighlightTrackingButton()
-        self.attachmentButtonContextGesture = ContextGesture(target: nil, action: nil)
         self.attachmentButton.accessibilityLabel = presentationInterfaceState.strings.VoiceOver_AttachMedia
         self.attachmentButton.accessibilityTraits = [.button]
         self.attachmentButton.isAccessibilityElement = true
@@ -819,17 +815,6 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
         
         self.attachmentButton.addTarget(self, action: #selector(self.attachmentButtonPressed), for: .touchUpInside)
-        self.attachmentButton.addGestureRecognizer(self.attachmentButtonContextGesture)
-        self.attachmentButtonContextGesture.shouldBegin = { [weak self] _ in
-            guard let self, let interfaceState = self.presentationInterfaceState else {
-                return false
-            }
-            let compose = AyuGramHooks.chatAppearance(accountPeerId: interfaceState.accountPeerId).compose
-            return self.attachmentButton.isEnabled && compose.showAttachButton && compose.showAttachPopup
-        }
-        self.attachmentButtonContextGesture.activated = { [weak self] _, _ in
-            self?.displayAttachmentMenu()
-        }
         self.attachmentButton.highligthedChanged = { [weak self] highlighted in
             if let self {
                 if highlighted {
@@ -2214,7 +2199,6 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                     button.addTarget(self, action: #selector(self.accessoryItemButtonPressed(_:)), for: .touchUpInside)
                     itemAndButton = (item, button)
                 }
-                self.updateEmojiButtonContextGesture(item: item, button: itemAndButton!.1)
                 updatedButtons.append(itemAndButton!)
             }
             for (_, button) in self.accessoryItemButtons {
@@ -2431,7 +2415,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         transition.updateAlpha(node: self.menuButtonTextNode, alpha: menuButtonExpanded ? 1.0 : 0.0)
         transition.updateFrame(node: self.menuButtonIconNode, frame: CGRect(x: 7.0, y: 7.0, width: 26.0, height: 26.0))
         
-        let showMenuButton = hasMenuButton && interfaceState.interfaceState.mediaDraftState == nil && compose.showCommandsButton
+        let showMenuButton = hasMenuButton && interfaceState.interfaceState.mediaDraftState == nil
         transition.updateTransformScale(node: self.menuButton, scale: showMenuButton ? 1.0 : 0.001)
         transition.updateAlpha(node: self.menuButton, alpha: showMenuButton ? 1.0 : 0.0)
         
@@ -5498,52 +5482,6 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.toggleExpandMediaInput?()
     }
 
-    private func updateEmojiButtonContextGesture(item: ChatTextInputAccessoryItem, button: AccessoryItemIconButton) {
-        guard case .input = item else {
-            return
-        }
-
-        let emojiButtonContextGesture: ContextGesture
-        if let current = self.emojiButtonContextGesture {
-            emojiButtonContextGesture = current
-        } else {
-            emojiButtonContextGesture = ContextGesture(target: nil, action: nil)
-            self.emojiButtonContextGesture = emojiButtonContextGesture
-            emojiButtonContextGesture.shouldBegin = { [weak self] _ in
-                guard let self,
-                      let interfaceState = self.presentationInterfaceState,
-                      let button = self.emojiButtonContextGesture?.view as? AccessoryItemIconButton,
-                      let item = self.accessoryItemButtons.first(where: { $0.1 === button })?.0 else {
-                    return false
-                }
-                switch item {
-                case let .input(isEnabled, inputMode):
-                    guard isEnabled else {
-                        return false
-                    }
-                    switch inputMode {
-                    case .emoji, .stickers:
-                        break
-                    default:
-                        return false
-                    }
-                default:
-                    return false
-                }
-                let compose = AyuGramHooks.chatAppearance(accountPeerId: interfaceState.accountPeerId).compose
-                return compose.showEmojiButton && compose.showEmojiPopup
-            }
-            emojiButtonContextGesture.activated = { [weak self] _, _ in
-                self?.interfaceInteraction?.updateInputModeAndDismissedButtonKeyboardMessageId { state in
-                    return (.media(mode: .other, expanded: nil, focused: false), state.keyboardButtonsMessage?.id)
-                }
-            }
-        }
-        if emojiButtonContextGesture.view !== button {
-            button.addGestureRecognizer(emojiButtonContextGesture)
-        }
-    }
-    
     @objc func accessoryItemButtonPressed(_ button: UIView) {
         for (item, currentButton) in self.accessoryItemButtons {
             if currentButton === button {

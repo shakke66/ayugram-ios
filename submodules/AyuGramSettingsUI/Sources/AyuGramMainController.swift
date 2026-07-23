@@ -32,8 +32,6 @@ private enum AyuGramMainEntry: ItemListNodeEntry {
     case categoryAppearance(PresentationTheme)
     case categoryChats(PresentationTheme)
     case categoryOther(PresentationTheme)
-    case spyHistory(PresentationTheme)
-    case editHistory(PresentationTheme)
 
     var section: ItemListSectionId {
         return AyuGramMainSection.categories.rawValue
@@ -47,8 +45,6 @@ private enum AyuGramMainEntry: ItemListNodeEntry {
         case .categoryAppearance: return 4
         case .categoryChats: return 5
         case .categoryOther: return 6
-        case .spyHistory: return 7
-        case .editHistory: return 8
         }
     }
 
@@ -88,18 +84,6 @@ private enum AyuGramMainEntry: ItemListNodeEntry {
             return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.mainOther], label: "", sectionId: self.section, style: .blocks, action: {
                 arguments.pushController(ayuGramOtherController(context: arguments.context))
             })
-        case .spyHistory:
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.mainDeleted], label: "", sectionId: self.section, style: .blocks, action: {
-                arguments.pushController(grvmDeletedMessagesController(
-                    context: arguments.context,
-                    peerId: nil,
-                    threadId: nil
-                ))
-            })
-        case .editHistory:
-            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.mainHistory], label: "", sectionId: self.section, style: .blocks, action: {
-                arguments.pushController(ayuGramEditedMessagesController(context: arguments.context))
-            })
         }
     }
 }
@@ -112,8 +96,6 @@ private func ayuGramMainEntries(presentationData: PresentationData) -> [AyuGramM
         .categoryAppearance(presentationData.theme),
         .categoryChats(presentationData.theme),
         .categoryOther(presentationData.theme),
-        .spyHistory(presentationData.theme),
-        .editHistory(presentationData.theme),
     ]
 }
 

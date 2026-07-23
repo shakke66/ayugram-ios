@@ -255,6 +255,17 @@ public final class GRVMAccountFeatureRegistry {
         }
     }
 
+    public func similarChannelsDisabled(accountPeerId: PeerId) -> Signal<Bool, NoError> {
+        return grvmSettings(accountId: accountPeerId, accountManager: self.accountManager)
+        |> map(\.disableSimilarChannels)
+        |> distinctUntilChanged
+    }
+
+    func messageFilterSettings(accountPeerId: PeerId) -> Signal<AyuGramSettings, NoError> {
+        return grvmSettings(accountId: accountPeerId, accountManager: self.accountManager)
+        |> distinctUntilChanged
+    }
+
     public func primaryService() -> GRVMMessageArchiveCoordinator? {
         return self.state.with { state in
             guard let accountPeerId = state.primaryAccountPeerId else {

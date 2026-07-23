@@ -442,27 +442,26 @@ public final class ChatTitleComponent: Component {
                                 )]
                             }
                         }
-                        if peer.id != component.context.account.peerId {
-                            let premiumConfiguration = PremiumConfiguration.with(appConfiguration: component.context.currentAppConfiguration.with({ $0 }))
-                            let hidePremiumStatuses = AyuGramHooks.chatAppearance(
-                                accountPeerId: component.context.account.peerId
-                            ).appearance.hidePremiumStatuses
-                            if peer.isFake {
-                                titleCredibilityIcon = .fake
-                            } else if peer.isScam {
-                                titleCredibilityIcon = .scam
-                            } else if let emojiStatus = peer.emojiStatus, !hidePremiumStatuses {
-                                titleStatusIcon = .emojiStatus(emojiStatus)
-                            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !hidePremiumStatuses {
-                                titleCredibilityIcon = .premium
-                            }
-                            
-                            if peer.isVerified {
-                                titleCredibilityIcon = .verified
-                            }
-                            if let verificationIconFileId = peer.verificationIconFileId {
-                                titleVerifiedIcon = .emojiStatus(PeerEmojiStatus(content: .emoji(fileId: verificationIconFileId), expirationDate: nil))
-                            }
+                        let premiumConfiguration = PremiumConfiguration.with(appConfiguration: component.context.currentAppConfiguration.with({ $0 }))
+                        let hidePremiumStatuses = AyuGramHooks.chatAppearance(
+                            accountPeerId: component.context.account.peerId
+                        ).appearance.hidePremiumStatuses
+                        let shouldHidePremiumStatus = hidePremiumStatuses && peer.id != component.context.account.peerId
+                        if peer.isFake {
+                            titleCredibilityIcon = .fake
+                        } else if peer.isScam {
+                            titleCredibilityIcon = .scam
+                        } else if let emojiStatus = peer.emojiStatus, !shouldHidePremiumStatus {
+                            titleStatusIcon = .emojiStatus(emojiStatus)
+                        } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !shouldHidePremiumStatus {
+                            titleCredibilityIcon = .premium
+                        }
+
+                        if peer.isVerified {
+                            titleCredibilityIcon = .verified
+                        }
+                        if let verificationIconFileId = peer.verificationIconFileId {
+                            titleVerifiedIcon = .emojiStatus(PeerEmojiStatus(content: .emoji(fileId: verificationIconFileId), expirationDate: nil))
                         }
                     }
                     if peerView.peerId.namespace == Namespaces.Peer.SecretChat {

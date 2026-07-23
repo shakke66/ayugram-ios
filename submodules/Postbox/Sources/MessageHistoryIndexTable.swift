@@ -266,6 +266,26 @@ final class MessageHistoryIndexTable: Table {
         
         return (count, holes)
     }
+
+    func incomingMessageIndicesInRange(_ peerId: PeerId, namespace: MessageId.Namespace, minId: MessageId.Id, maxId: MessageId.Id) -> ([MessageIndex], Bool) {
+        var indices: [MessageIndex] = []
+        var holes = false
+        if minId <= maxId {
+            self.valueBox.range(self.table, start: self.key(MessageId(peerId: peerId, namespace: namespace, id: minId)).predecessor, end: self.key(MessageId(peerId: peerId, namespace: namespace, id: maxId)).successor, values: { key, value in
+                var flags: Int8 = 0
+                value.read(&flags, offset: 0, length: 1)
+                if (flags & HistoryEntryMessageFlagIncoming) != 0
+                    && (flags & HistoryEntryMessageFlagLocallyDeleted) == 0 {
+                    indices.append(readHistoryIndexEntry(peerId, namespace: namespace, key: key, value: value))
+                }
+                return true
+            }, limit: 0)
+
+            holes = !self.messageHistoryHoleIndexTable.closest(peerId: peerId, namespace: namespace, space: .everywhere, range: minId ... maxId).isEmpty
+        }
+
+        return (indices, holes)
+    }
     
     func incomingMessageCountInIds(_ peerId: PeerId, namespace: MessageId.Namespace, ids: [MessageId.Id]) -> (Int, Bool) {
         var count = 0

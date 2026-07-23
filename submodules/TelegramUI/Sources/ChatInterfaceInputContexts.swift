@@ -266,9 +266,7 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                 }
                 
                 if isTextEmpty && chatPresentationInterfaceState.hasBots && chatPresentationInterfaceState.hasBotCommands && !hasForward {
-                    if compose.showCommandsButton {
-                        accessoryItems.append(.commands)
-                    }
+                    accessoryItems.append(.commands)
                 }
                 
                 if !canSendTextMessages {

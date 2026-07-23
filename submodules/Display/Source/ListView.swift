@@ -3788,6 +3788,17 @@ open class ListViewImpl: ASDisplayNode, ListView, ASScrollViewDelegate, ASGestur
         var nextTempAffinity = 0
 
         var existingAffinityIdByAffinity: [Int: Int] = [:]
+        var claimedExistingAffinityIds = Set<Int>()
+
+        func reuseExistingAffinity(_ existingAffinity: Int, for tempAffinity: Int) {
+            guard existingAffinityIdByAffinity[tempAffinity] == nil else {
+                return
+            }
+            guard claimedExistingAffinityIds.insert(existingAffinity).inserted else {
+                return
+            }
+            existingAffinityIdByAffinity[tempAffinity] = existingAffinity
+        }
 
         for i in 0 ..< self.itemNodes.count {
             let currentItemNode = self.itemNodes[i]
@@ -3797,7 +3808,7 @@ open class ListViewImpl: ASDisplayNode, ListView, ASScrollViewDelegate, ASGestur
                     let currentId = currentHeader.id
                     if let currentAffinity = currentItemNode.tempHeaderSpaceAffinities[currentId] {
                         if let existingAffinity = currentItemNode.headerSpaceAffinities[currentId] {
-                            existingAffinityIdByAffinity[currentAffinity] = existingAffinity
+                            reuseExistingAffinity(existingAffinity, for: currentAffinity)
                         }
 
                         continue currentHeadersLoop
@@ -3809,7 +3820,7 @@ open class ListViewImpl: ASDisplayNode, ListView, ASScrollViewDelegate, ASGestur
                     currentItemNode.tempHeaderSpaceAffinities[currentId] = currentAffinity
 
                     if let existingAffinity = currentItemNode.headerSpaceAffinities[currentId] {
-                        existingAffinityIdByAffinity[currentAffinity] = existingAffinity
+                        reuseExistingAffinity(existingAffinity, for: currentAffinity)
                     }
 
                     groupSearch: for nextIndex in (i + 1) ..< self.itemNodes.count {

@@ -1003,6 +1003,34 @@ class BrandingTests(unittest.TestCase):
             )
             VALIDATOR.validate_public_branding(root)
 
+    def test_settings_ui_native_icon_identifiers_are_allowed_but_visible_copy_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            icon_identifiers = (
+                "BlackIcon",
+                "BlackClassicIcon",
+                "BlackFilledIcon",
+                "BlueIcon",
+                "BlueClassicIcon",
+                "BlueFilledIcon",
+                "WhiteFilledIcon",
+            )
+            write(
+                root / "submodules/AyuGramSettingsUI/Sources/Icons.swift",
+                "\n".join(f'let identifier = "{value}"' for value in icon_identifiers) + "\n",
+            )
+            VALIDATOR.validate_settings_ui_literals(root)
+
+            write(
+                root / "submodules/AyuGramSettingsUI/Sources/Visible.swift",
+                'let title = "Black Filled Icon"\n',
+            )
+            with self.assertRaisesRegex(
+                VALIDATOR.ValidationError,
+                "hard-coded GRVMgram Settings UI text",
+            ):
+                VALIDATOR.validate_settings_ui_literals(root)
+
     def test_runtime_swift_interpolation_and_unicode_escape_are_not_public_copy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

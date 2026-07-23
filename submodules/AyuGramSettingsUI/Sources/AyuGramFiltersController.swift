@@ -351,6 +351,8 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
                 presentationData: presentationData,
                 title: strings[.filtersEnable],
                 value: value,
+                maximumNumberOfLines: 2,
+                adaptiveLayout: true,
                 sectionId: self.section,
                 style: .blocks,
                 updated: arguments.toggleFilters
@@ -360,6 +362,8 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
                 presentationData: presentationData,
                 title: strings[.filtersInChats],
                 value: value,
+                maximumNumberOfLines: 2,
+                adaptiveLayout: true,
                 sectionId: self.section,
                 style: .blocks,
                 updated: arguments.toggleFiltersInChats
@@ -478,6 +482,8 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
                 presentationData: presentationData,
                 title: strings[.filtersBlocked],
                 value: value,
+                maximumNumberOfLines: 2,
+                adaptiveLayout: true,
                 sectionId: self.section,
                 style: .blocks,
                 updated: arguments.toggleHideFromBlocked
@@ -487,6 +493,8 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
                 presentationData: presentationData,
                 title: strings[.shadowTitle],
                 label: "",
+                maximumTitleNumberOfLines: 2,
+                adaptiveLayout: true,
                 sectionId: self.section,
                 style: .blocks,
                 action: {

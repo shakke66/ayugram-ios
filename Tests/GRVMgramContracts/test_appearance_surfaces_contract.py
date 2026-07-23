@@ -27,57 +27,6 @@ def swift_block(text: str, signature: str) -> str:
 
 
 class AppearanceSurfacesContractTests(unittest.TestCase):
-    def test_primary_snapshot_drives_real_switch_initialization(self) -> None:
-        build = source("submodules/AyuGramFeatures/BUILD")
-        self.assertIn('"//submodules/Display:Display"', build)
-
-        policy = source(
-            "submodules/AyuGramFeatures/Sources/GRVMChatAppearancePolicy.swift"
-        )
-        for fragment in [
-            "import Display",
-            "Queue.mainQueue().async",
-            "AyuGramHooks.updatePrimaryChatAppearance(",
-            "SwitchNode.defaultStyle =",
-            ".md3",
-            ".standard",
-        ]:
-            self.assertIn(fragment, policy)
-
-        registry = source(
-            "submodules/AyuGramFeatures/Sources/GRVMAccountFeatureRegistry.swift"
-        )
-        self.assertIn("private func publishPrimaryAppearance()", registry)
-        self.assertGreaterEqual(registry.count("publishPrimaryAppearance()"), 5)
-        self.assertIn(
-            "publishPrimaryAppearance()",
-            swift_block(registry, "public func setPrimaryAccount("),
-        )
-        settings_update = swift_block(
-            registry,
-            "settingsDisposable.set(grvmSettings(",
-        )
-        self.assertLess(
-            settings_update.index("coordinator.updateSettings(settings)"),
-            settings_update.index("publishPrimaryAppearance()"),
-        )
-
-        switch = source("submodules/Display/Source/SwitchNode.swift")
-        for fragment in [
-            "public enum Style",
-            "case standard",
-            "case md3",
-            "public static var defaultStyle",
-            "private let switchStyle: Style",
-            "self.switchStyle = Self.defaultStyle",
-            "if case .md3 = self.switchStyle",
-            "switch self.switchStyle",
-            "case .md3:",
-        ]:
-            self.assertIn(fragment, switch)
-        self.assertNotIn("private let style: Style", switch)
-        self.assertNotIn("self.style = Self.defaultStyle", switch)
-
     def test_avatar_geometry_is_account_exact_and_draw_stable(self) -> None:
         hooks = source("submodules/TelegramCore/Sources/AyuGramHooks.swift")
         self.assertIn("public static private(set) var primaryChatAppearance", hooks)
@@ -88,7 +37,6 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
             "AyuGramHooks.chatAppearance(accountPeerId:",
             "AyuGramHooks.primaryChatAppearance.appearance",
             "min(50, max(0, appearance.avatarCorners))",
-            "appearance.singleCornerRadius",
             "let cornerRadius: CGFloat",
             "cornerRadius: cornerRadius",
             "let cornerRadius = effectiveAvatarCornerRadius(",
@@ -97,11 +45,49 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
         ]:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, avatar)
+        radius_policy = swift_block(avatar, "private func effectiveAvatarCornerRadius(")
+        self.assertIn("case .roundedRect:\n        return 0.25", radius_policy)
+        self.assertNotIn("singleCornerRadius", radius_policy)
         params = swift_block(avatar, "private struct Params: Equatable")
         self.assertIn("let cornerRadius: CGFloat", params)
         self.assertNotIn("AyuGramHooks.avatarCornerRadius?()", avatar)
 
-    def test_live_chat_presentation_uses_exact_account_font_and_corners(self) -> None:
+        for fragment in [
+            "var normalizedCornerRadius: CGFloat",
+            "normalizedCornerRadius: storyPresentationParams.forceRoundedRect ? nil : self.contentNode.normalizedCornerRadius",
+        ]:
+            self.assertIn(fragment, avatar)
+        for signature in [
+            "\n    public func setPeer(\n        accountPeerId:",
+            "\n    public func setPeerV2(",
+            "\n    public func setPeer(\n        context:",
+            "\n    public func setCustomLetters(",
+        ]:
+            with self.subTest(signature=signature):
+                self.assertIn(
+                    "self.updateStoryIndicator(transition: .immediate)",
+                    swift_block(avatar, signature),
+                )
+
+        indicator = source(
+            "submodules/TelegramUI/Components/Stories/AvatarStoryIndicatorComponent/"
+            "Sources/AvatarStoryIndicatorComponent.swift"
+        )
+        for fragment in [
+            "public let normalizedCornerRadius: CGFloat?",
+            "normalizedCornerRadius: CGFloat? = nil",
+            "self.normalizedCornerRadius = normalizedCornerRadius",
+            "lhs.normalizedCornerRadius != rhs.normalizedCornerRadius",
+            "let resolvedCornerRadius: CGFloat",
+            "let usesRoundedPath: Bool",
+            "cornerRadius: resolvedCornerRadius",
+            "if let progress = component.progress, !usesRoundedPath",
+        ]:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, indicator)
+        self.assertNotIn("cornerRadius: floor(diameter * 0.27)", indicator)
+
+    def test_live_chat_presentation_uses_exact_account_font_and_stock_corners(self) -> None:
         data = source(
             "submodules/TelegramPresentationData/Sources/ChatPresentationData.swift"
         )
@@ -112,10 +98,8 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
             "public let accountPeerId: PeerId?",
             "accountPeerId: PeerId? = nil",
             "AyuGramHooks.chatAppearance(accountPeerId: accountPeerId).appearance",
-            "min(16, max(0, appearance.messageBubbleRadius))",
-            "let radiusScale = CGFloat(messageBubbleRadius) / 16.0",
-            "mainRadius: chatBubbleCorners.mainRadius * radiusScale",
-            "auxiliaryRadius: chatBubbleCorners.auxiliaryRadius * radiusScale",
+            "mainRadius: chatBubbleCorners.mainRadius",
+            "auxiliaryRadius: chatBubbleCorners.auxiliaryRadius",
             "appearance.codeFontName",
             "UIFont(name: fontName, size: baseFontSize) ?? Font.monospace(baseFontSize)",
             "theme: theme",
@@ -128,6 +112,7 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, data)
         self.assertNotIn("AyuGramHooks.codeFontName?()", data)
+        self.assertNotIn("messageBubbleRadius", data)
 
         history = source("submodules/TelegramUI/Sources/ChatHistoryListNode.swift")
         self.assertIn("accountPeerId: context.account.peerId", history)
@@ -139,9 +124,7 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
             "accountId: self.context.account.peerId",
             "accountManager: self.context.sharedContext.accountManager",
             "settings.grvmChatAppearanceSettings.appearance",
-            "lhs.messageBubbleRadius == rhs.messageBubbleRadius",
             "lhs.codeFontName == rhs.codeFontName",
-            "previousChatAppearance?.messageBubbleRadius != chatAppearance.messageBubbleRadius",
             "previousChatAppearance?.codeFontName != chatAppearance.codeFontName",
             "previousChatAppearance = chatAppearance",
             "accountPeerId: strongSelf.context.account.peerId",
@@ -152,6 +135,7 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
         self.assertNotIn(
             "accountPeerId: context.account.peerId", presentation_management
         )
+        self.assertNotIn("messageBubbleRadius", presentation_management)
 
         telegram_ui_build = source("submodules/TelegramUI/BUILD")
         self.assertIn('"//submodules/AyuGramFeatures:AyuGramFeatures"', telegram_ui_build)
@@ -186,7 +170,7 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
         )
         self.assertNotIn("AyuGramHooks.shouldDisableCustomBackgrounds?()", chat)
 
-    def test_all_premium_surfaces_use_typed_account_policy(self) -> None:
+    def test_other_peer_premium_surfaces_use_typed_account_policy(self) -> None:
         surfaces = [
             (
                 "submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift",
@@ -223,11 +207,6 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
                 "item.context.account.peerId",
                 "credibilityIcon = .premium",
             ),
-            (
-                "submodules/TelegramUI/Components/ChatListHeaderComponent/Sources/ChatListHeaderComponent.swift",
-                "component.context.account.peerId",
-                "primaryTitlePeerStatus = .emoji",
-            ),
         ]
         legacy = "AyuGramHooks.shouldHidePremiumStatuses?()"
         for path, account_expression, status_anchor in surfaces:
@@ -246,44 +225,155 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
                 self.assertIn(status_anchor, text)
                 self.assertNotIn(legacy, text)
 
-        header = source(
-            "submodules/TelegramUI/Components/ChatListHeaderComponent/Sources/ChatListHeaderComponent.swift"
-        )
-        self.assertGreaterEqual(header.count("AyuGramHooks.chatAppearance("), 2)
-        self.assertIn("public func emojiStatus() -> PeerEmojiStatus?", header)
-
         ordinary_title = source(
             "submodules/TelegramUI/Components/ChatListTitleView/Sources/ChatListTitleView.swift"
         )
-        self.assertRegex(
-            ordinary_title,
-            re.compile(
-                r"AyuGramHooks\.chatAppearance\(\s*accountPeerId:\s*"
-                r"self\.context\.account\.peerId\s*\)",
-                re.DOTALL,
-            ),
-        )
-        self.assertIn("title.peerStatus = nil", ordinary_title)
+        set_title = swift_block(ordinary_title, "public func setTitle(")
+        self.assertNotIn("hidePremiumStatuses", set_title)
+        self.assertNotIn("title.peerStatus = nil", set_title)
 
         producer = source("submodules/ChatListUI/Sources/ChatListController.swift")
-        peer_status = swift_block(
-            producer, "let peerStatus: Signal<NetworkStatusTitle.Status?, NoError>"
+        peer_status_start = producer.index(
+            "let peerStatus: Signal<NetworkStatusTitle.Status?, NoError>"
         )
+        peer_status = producer[
+            peer_status_start : producer.index("let networkState:", peer_status_start)
+        ]
         for fragment in [
-            "combineLatest(",
-            "grvmSettings(",
-            "accountId: context.account.peerId",
-            "accountManager: context.sharedContext.accountManager",
-            "settings.hidePremiumStatuses",
+            "context.engine.data.subscribe(",
+            "TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId)",
+            "if let emojiStatus = user.emojiStatus",
+            "else if user.isPremium",
         ]:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, peer_status)
+        self.assertNotIn("combineLatest(", peer_status)
+        self.assertNotIn("grvmSettings(", peer_status)
+        self.assertNotIn("hidePremiumStatuses", peer_status)
         self.assertNotIn("AyuGramHooks.chatAppearance(", peer_status)
-        self.assertIn("if let emojiStatus = user.emojiStatus", peer_status)
-        self.assertIn("else if user.isPremium", peer_status)
+
+        header = source(
+            "submodules/TelegramUI/Components/ChatListHeaderComponent/Sources/ChatListHeaderComponent.swift"
+        )
+        emoji_status = swift_block(
+            header, "public func emojiStatus() -> PeerEmojiStatus?"
+        )
+        self.assertNotIn("hidePremiumStatuses", emoji_status)
+        self.assertIn("case let .emoji(emojiStatus) = peerStatus", emoji_status)
 
         chat_list_build = source("submodules/ChatListUI/BUILD")
         self.assertIn('"//submodules/AyuGramLib:AyuGramLib"', chat_list_build)
+
+    def test_premium_hiding_compares_displayed_peer_with_exact_account(self) -> None:
+        expectations = [
+            (
+                "submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift",
+                "let shouldHidePremiumStatus = hidePremiumStatuses && peer.id != component.context.account.peerId",
+                1,
+            ),
+            (
+                "submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift",
+                "let shouldHidePremiumStatus = hidePremiumStatuses && peer.id != self.context.account.peerId",
+                1,
+            ),
+            (
+                "submodules/ChatListUI/Sources/Node/ChatListItem.swift",
+                "let shouldHidePremiumStatus = hidePremiumStatuses && peer.id != item.context.account.peerId",
+                2,
+            ),
+            (
+                "submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift",
+                "let shouldHidePremiumStatus = hidePremiumStatuses && effectiveAuthor.id != item.context.account.peerId",
+                1,
+            ),
+            (
+                "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift",
+                "let shouldHidePremiumStatus = hidePremiumStatuses && peer?.id != self.context.account.peerId",
+                1,
+            ),
+            (
+                "submodules/ItemListPeerItem/Sources/ItemListPeerItem.swift",
+                "let shouldHidePremiumStatus = hidePremiumStatuses && item.peer.id != item.context.accountPeerId",
+                1,
+            ),
+            (
+                "submodules/ContactsPeerItem/Sources/ContactsPeerItem.swift",
+                "let shouldHidePremiumStatus = hidePremiumStatuses && peer.id != item.context.account.peerId",
+                1,
+            ),
+        ]
+        for path, condition, minimum_count in expectations:
+            with self.subTest(path=path):
+                text = source(path)
+                self.assertGreaterEqual(text.count(condition), minimum_count)
+                self.assertIn("!shouldHidePremiumStatus", text)
+                self.assertNotRegex(
+                    text,
+                    r"(?:emojiStatus|isPremium)[^\n]{0,240}!hidePremiumStatuses",
+                )
+
+        title_component = source(
+            "submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift"
+        )
+        self.assertNotIn(
+            "if peer.id != component.context.account.peerId {", title_component
+        )
+
+        title_view = source(
+            "submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift"
+        )
+        self.assertNotIn("if peer.id != self.context.account.peerId {", title_view)
+
+        chat_list = source("submodules/ChatListUI/Sources/Node/ChatListItem.swift")
+        self.assertNotIn("var isAccountPeer = false", chat_list)
+        self.assertNotIn("!isPeerGroup && !isAccountPeer", chat_list)
+
+        peer_info = source(
+            "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift"
+        )
+        peer_info_icons_start = peer_info.index("let premiumConfiguration")
+        peer_info_icons = peer_info[
+            peer_info_icons_start : peer_info.index("var isForum", peer_info_icons_start)
+        ]
+        self.assertNotIn(
+            "if peer.id == self.context.account.peerId && !self.isSettings && !self.isMyProfile",
+            peer_info_icons,
+        )
+
+        item_list = source(
+            "submodules/ItemListPeerItem/Sources/ItemListPeerItem.swift"
+        )
+        item_list_icons = item_list[
+            item_list.index("var updatedLabelBadgeImage") : item_list.index(
+                "var titleIconsWidth", item_list.index("var updatedLabelBadgeImage")
+            )
+        ]
+        self.assertNotIn("threatSelfAsSaved", item_list_icons)
+
+        contacts = source(
+            "submodules/ContactsPeerItem/Sources/ContactsPeerItem.swift"
+        )
+        contacts_icons_start = contacts.index("var credibilityIcon:")
+        contacts_icons = contacts[
+            contacts_icons_start : contacts.index(
+                "var titleAttributedString", contacts_icons_start
+            )
+        ]
+        self.assertNotIn(
+            "if let peer = peer, (peer.id != item.context.account.peerId",
+            contacts_icons,
+        )
+
+    def test_story_header_keeps_the_account_premium_status(self) -> None:
+        header = source(
+            "submodules/TelegramUI/Components/ChatListHeaderComponent/Sources/ChatListHeaderComponent.swift"
+        )
+        status_start = header.index("var primaryTitlePeerStatus")
+        account_status = header[
+            status_start : header.index("let _ = storyPeerList.update", status_start)
+        ]
+        self.assertNotIn("hidePremiumStatuses", account_status)
+        self.assertIn("if let peerStatus = chatListTitle.peerStatus", account_status)
 
     def test_premium_gate_never_wraps_trust_badges(self) -> None:
         paths = [

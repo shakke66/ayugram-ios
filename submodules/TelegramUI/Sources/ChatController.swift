@@ -1395,9 +1395,23 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             if case let .customTag(value, _) = self.chatDisplayNode.historyNode.tag {
                 chatFilterTag = value
             }
+
+            let grvmPreservedReplay = message.attributes.contains(where: {
+                $0 is GRVMPreservedConsumableMediaAttribute
+            }) && (
+                !params.consumeOnOpen
+                || message.media.contains(where: { $0 is TelegramMediaExpiredContent })
+                || isLocallyDeletedMessage(message.attributes)
+                || message.attributes.contains(where: { value in
+                    return (value as? ConsumableContentMessageAttribute)?.consumed == true
+                })
+            )
             
             var standalone = false
             if case .customChatContents = self.chatLocation {
+                standalone = true
+            }
+            if grvmPreservedReplay {
                 standalone = true
             }
             
@@ -1422,7 +1436,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 copyProtected: self.presentationInterfaceState.copyProtectionEnabled || self.presentationInterfaceState.myCopyProtectionEnabled,
                 reverseMessageGalleryOrder: false,
                 mode: mode,
-                consumeOnOpen: params.consumeOnOpen,
+                consumeOnOpen: grvmPreservedReplay ? false : params.consumeOnOpen,
                 navigationController: self.effectiveNavigationController, dismissInput: { [weak self] in
                     self?.chatDisplayNode.dismissInput()
                 },
@@ -1965,7 +1979,6 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                 guard let strongSelf = self else {
                                     return
                                 }
-                                strongSelf.grvmMarkCurrentChatReadAfterAction()
                                 strongSelf.displayOrUpdateSendStarsUndo(messageId: message.id, count: 1, privacy: privacy)
                             })
                         })
@@ -2156,9 +2169,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                         }
                         
                         let _ = (updateMessageReactionsInteractively(account: strongSelf.context.account, messageIds: [message.id], reactions: mappedUpdatedReactions, isLarge: false, storeAsRecentlyUsed: false)
-                        |> deliverOnMainQueue).startStandalone(completed: { [weak strongSelf] in
-                            strongSelf?.grvmMarkCurrentChatReadAfterAction()
-                        })
+                        |> deliverOnMainQueue).startStandalone()
                     }
                 }
             })
@@ -3756,7 +3767,6 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     guard let strongSelf = self, let resultPoll = resultPoll else {
                         return
                     }
-                    strongSelf.grvmMarkCurrentChatReadAfterAction()
                     guard let _ = strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(id) else {
                         return
                     }
@@ -5586,9 +5596,6 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             self.interfaceInteraction?.openSetPeerAvatar()
         }, automaticMediaDownloadSettings: self.automaticMediaDownloadSettings, pollActionState: ChatInterfacePollActionState(), stickerSettings: self.stickerSettings, presentationContext: ChatPresentationContext(context: context, backgroundNode: self.chatBackgroundNode))
         controllerInteraction.enableFullTranslucency = context.sharedContext.energyUsageSettings.fullTranslucency
-        controllerInteraction.grvmMarkCurrentChatReadAfterAction = { [weak self] in
-            self?.grvmMarkCurrentChatReadAfterAction()
-        }
         controllerInteraction.grvmForwardLocalCopy = { [weak self] message in
             self?.forwardLocalCopy(message: message)
         }
@@ -8443,7 +8450,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 self.push(ayuGramFilterEditorController(
                     context: self.context,
                     initialExpression: message.text,
-                    initialPeerId: message.id.peerId
+                    initialPeerId: message.id.peerId,
+                    onSaved: { [weak self] in
+                        self?.chatDisplayNode.historyNode.refreshForRuntimeMessageFilterChange()
+                    }
                 ))
             })))
         }
@@ -8453,13 +8463,17 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         }
 
         var authors: [(peerId: PeerId, label: String)] = []
-        if let authorId = message.author?.id {
-            authors.append((authorId, strings[.shadowAuthor]))
+        func appendAuthor(_ peerId: PeerId?, label: String) {
+            guard let peerId,
+                  peerId != self.context.account.peerId,
+                  !authors.contains(where: { $0.peerId == peerId }) else {
+                return
+            }
+            authors.append((peerId, label))
         }
-        if let forwardedAuthorId = message.forwardInfo?.author?.id,
-           !authors.contains(where: { $0.peerId == forwardedAuthorId }) {
-            authors.append((forwardedAuthorId, strings[.shadowForwardedAuthor]))
-        }
+        appendAuthor(message.author?.id, label: strings[.shadowAuthor])
+        appendAuthor(message.forwardInfo?.author?.id, label: strings[.shadowForwardedAuthor])
+        appendAuthor(message.sourceAuthorInfo?.originalAuthor, label: strings[.shadowForwardedAuthor])
         for author in authors where includeOtherItems {
             let isBanned = shadowBanPeerIds.contains(author.peerId)
             let action = isBanned ? strings[.shadowUnban] : strings[.shadowTitle]
@@ -8479,15 +8493,15 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
 
     private func grvmSetShadowBanned(peerId: PeerId, value: Bool) {
         let peerValue = peerId.toInt64()
+        let accountPeerValue = self.context.account.peerId.toInt64()
         let _ = (updateGRVMSettings(accountId: self.context.account.peerId, accountManager: self.context.sharedContext.accountManager) { settings in
             var settings = settings
-            if value {
-                if !settings.shadowBanIds.contains(peerValue) {
-                    settings.shadowBanIds.append(peerValue)
-                }
-            } else {
-                settings.shadowBanIds.removeAll { $0 == peerValue }
-            }
+            settings.shadowBanIds = GRVMShadowBanPolicy.updatedPeerIds(
+                settings.shadowBanIds,
+                peerId: peerValue,
+                isBanned: value,
+                accountPeerId: accountPeerValue
+            )
             return settings
         }
         |> deliverOnMainQueue).startStandalone(completed: { [weak self] in
@@ -8701,23 +8715,6 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         }
     }
 
-    private func grvmMarkCurrentChatReadAfterAction() {
-        guard AyuGramHooks.shouldMarkReadAfterAction?(self.context.account.peerId) == true else {
-            return
-        }
-        guard self.chatLocation.peerId != nil else {
-            return
-        }
-        guard let latestMessage = self.chatDisplayNode.historyNode.latestMessageInCurrentHistoryView() else {
-            return
-        }
-        self.context.applyMaxReadIndex(
-            for: self.chatLocation,
-            contextHolder: self.chatLocationContextHolder,
-            messageIndex: latestMessage.index
-        )
-    }
-
     func transformEnqueueMessages(_ messages: [EnqueueMessage], postpone: Bool = false) -> [EnqueueMessage] {
         let sendWithoutSoundMode = AyuGramHooks.sendWithoutSoundMode?(self.context.account.peerId) ?? 0
         let sendWithoutSound = sendWithoutSoundMode == 1 || sendWithoutSoundMode == 2
@@ -8827,6 +8824,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     }
         
     func transformEnqueueMessages(_ messages: [EnqueueMessage], silentPosting: Bool, scheduleTime: Int32? = nil, repeatPeriod: Int32? = nil, postpone: Bool = false) -> [EnqueueMessage] {
+        let sendWithoutSoundMode = AyuGramHooks.sendWithoutSoundMode?(self.context.account.peerId) ?? 0
+        let effectiveSilentPosting = silentPosting || (sendWithoutSoundMode == 1 || sendWithoutSoundMode == 2)
         var defaultThreadId: Int64?
         var defaultReplyMessageSubject: EngineMessageReplySubject?
         switch self.chatLocation {
@@ -8898,7 +8897,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     attributes.append(PaidStarsMessageAttribute(stars: sendPaidMessageStars, postponeSending: effectivePostpone))
                 }
                 
-                if silentPosting || scheduleTime != nil {
+                if effectiveSilentPosting || scheduleTime != nil {
                     for i in (0 ..< attributes.count).reversed() {
                         if attributes[i] is NotificationInfoMessageAttribute {
                             attributes.remove(at: i)
@@ -8906,7 +8905,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             attributes.remove(at: i)
                         }
                     }
-                    if silentPosting {
+                    if effectiveSilentPosting {
                         attributes.append(NotificationInfoMessageAttribute(flags: .muted))
                     }
                     if let scheduleTime {
@@ -9005,10 +9004,15 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 self.commitPurposefulAction()
                 
                 let _ = (enqueueMessages(account: self.context.account, peerId: peerId, messages: self.transformEnqueueMessages(messages, postpone: postpone))
-                |> deliverOnMainQueue).startStandalone(next: { [weak self] _ in
-                    if let strongSelf = self, strongSelf.presentationInterfaceState.subject != .scheduledMessages {
+                |> deliverOnMainQueue).startStandalone(next: { [weak self] messageIds in
+                    if let strongSelf = self {
+                        if messageIds.contains(where: { $0 != nil }) {
+                            strongSelf.consumeSendActionOnViewUpdate()
+                        }
+                        guard strongSelf.presentationInterfaceState.subject != .scheduledMessages else {
+                            return
+                        }
                         strongSelf.chatDisplayNode.historyNode.scrollToEndOfHistory()
-                        strongSelf.grvmMarkCurrentChatReadAfterAction()
                     }
                 })
                 
@@ -9017,11 +9021,6 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 self.updateChatPresentationInterfaceState(interactive: true, { $0.updatedShowCommands(false) })
                 
                 if !isScheduledMessages && shouldOpenScheduledMessages {
-                    if let layoutActionOnViewTransitionAction = self.layoutActionOnViewTransitionAction {
-                        self.layoutActionOnViewTransitionAction = nil
-                        layoutActionOnViewTransitionAction()
-                    }
-                    
                     self.openScheduledMessages(force: true, completion: { _ in
                     })
                 }

@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ENGINE = "submodules/AyuGramFeatures/Sources/GRVMMessageFilterEngine.swift"
 BLOCKED = "submodules/AyuGramFeatures/Sources/GRVMBlockedPeersRegistry.swift"
 VISIBILITY = "submodules/AyuGramFeatures/Sources/GRVMFilteredMessageVisibility.swift"
+SHADOW_POLICY = "submodules/AyuGramLib/Sources/GRVMShadowBanPolicy.swift"
 
 
 def source(path: str) -> str:
@@ -66,11 +67,14 @@ class FilterContractTests(unittest.TestCase):
             self.assertIn(token, applicability)
 
         matching = swift_block(engine, "public func matchingFilterIds(for message:")
-        self.assertIn("guard self.settings.enableFilters else", matching)
+        self.assertIn("guard self.settings.enableFilters,", matching)
         self.assertIn("self.candidate(for: message)", matching)
         self.assertIn("filter.filter.id.uuidString", matching)
 
-        hidden = swift_block(engine, "public func isMessageHidden(_ message:")
+        hidden = swift_block(
+            engine,
+            "private func isMessageHidden(_ message: Message, visitedMessageIds:",
+        )
         for token in (
             "message.author?.id",
             "message.forwardInfo?.author?.id",
@@ -88,6 +92,61 @@ class FilterContractTests(unittest.TestCase):
             hidden.index("applicableNormalFilters.contains"),
             hidden.index("!applicableReversedFilters.contains"),
         )
+
+    def test_outgoing_messages_bypass_every_filter_path(self) -> None:
+        engine = source(ENGINE)
+        matching = swift_block(engine, "public func matchingFilterIds(for message:")
+        hidden = swift_block(
+            engine,
+            "private func isMessageHidden(_ message: Message, visitedMessageIds:",
+        )
+        for block in (matching, hidden):
+            self.assertIn("message.effectivelyIncoming(self.accountPeerId)", block)
+            self.assertLess(
+                block.index("message.effectivelyIncoming(self.accountPeerId)"),
+                block.index("self.candidate(for: message)"),
+            )
+
+    def test_hidden_reply_chain_and_forward_origin_are_recursive_and_bounded(self) -> None:
+        engine = source(ENGINE)
+        public_entry = swift_block(engine, "public func isMessageHidden(_ message:")
+        hidden = swift_block(
+            engine,
+            "private func isMessageHidden(_ message: Message, visitedMessageIds:",
+        )
+        self.assertIn("var visitedMessageIds = Set<MessageId>()", public_entry)
+        self.assertIn("visitedMessageIds: &visitedMessageIds", public_entry)
+        for token in (
+            "guard visitedMessageIds.insert(message.id).inserted else",
+            "message.sourceAuthorInfo?.originalAuthor",
+            "attribute as? ReplyMessageAttribute",
+            "message.associatedMessages[replyAttribute.messageId]",
+            "self.isMessageHidden(replyMessage, visitedMessageIds: &visitedMessageIds)",
+        ):
+            self.assertIn(token, hidden)
+
+    def test_shadow_policy_excludes_self_and_deduplicates_at_mutation_boundary(self) -> None:
+        policy = source(SHADOW_POLICY)
+        normalized = swift_block(policy, "public static func normalizedPeerIds(")
+        updated = swift_block(policy, "public static func updatedPeerIds(")
+        for token in (
+            "peerId != accountPeerId",
+            "seen.insert(peerId).inserted",
+        ):
+            self.assertIn(token, normalized)
+        for token in (
+            "normalizedPeerIds(peerIds, accountPeerId: accountPeerId)",
+            "guard peerId != accountPeerId else",
+            "if isBanned",
+            "result.append(peerId)",
+            "result.removeAll(where: { $0 == peerId })",
+        ):
+            self.assertIn(token, updated)
+
+        engine = source(ENGINE)
+        self.assertIn("GRVMShadowBanPolicy.normalizedPeerIds(", engine)
+        shadow = swift_block(engine, "public func isShadowBanned(")
+        self.assertIn("peerId != self.accountPeerId", shadow)
 
     def test_candidate_is_newline_delimited_and_covers_entities_and_buttons(self) -> None:
         engine = source(ENGINE)

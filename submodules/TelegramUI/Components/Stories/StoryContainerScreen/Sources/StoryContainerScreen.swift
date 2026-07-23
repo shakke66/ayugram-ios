@@ -1145,7 +1145,6 @@ private final class StoryContainerScreenComponent: Component {
                 accountManager: component.context.sharedContext.accountManager,
                 { settings in
                     var settings = settings
-                    settings.ghostModeEnabled = true
                     settings.suppressStoryReads = true
                     return settings
                 }

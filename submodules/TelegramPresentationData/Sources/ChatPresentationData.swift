@@ -64,11 +64,9 @@ public final class ChatPresentationData {
         } else {
             appearance = GRVMChatAppearanceSettings.default.appearance
         }
-        let messageBubbleRadius = min(16, max(0, appearance.messageBubbleRadius))
-        let radiusScale = CGFloat(messageBubbleRadius) / 16.0
         self.chatBubbleCorners = PresentationChatBubbleCorners(
-            mainRadius: chatBubbleCorners.mainRadius * radiusScale,
-            auxiliaryRadius: chatBubbleCorners.auxiliaryRadius * radiusScale,
+            mainRadius: chatBubbleCorners.mainRadius,
+            auxiliaryRadius: chatBubbleCorners.auxiliaryRadius,
             mergeBubbleCorners: chatBubbleCorners.mergeBubbleCorners,
             hasTails: chatBubbleCorners.hasTails && !appearance.removeMessageBubbleTail
         )

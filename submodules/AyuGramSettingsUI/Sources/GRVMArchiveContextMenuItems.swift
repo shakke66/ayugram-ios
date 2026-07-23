@@ -10,7 +10,7 @@ import TelegramPresentationData
 public func grvmArchiveContextMenuItems(
     context: AccountContext,
     sourceController: ViewController,
-    peerId: PeerId?,
+    peerId: PeerId,
     threadId: Int64?
 ) -> [ContextMenuItem] {
     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
