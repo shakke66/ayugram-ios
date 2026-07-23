@@ -58,7 +58,8 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
 
     func insertGRVMArchiveRow(anchorIds: [AnyHashable], peerId: PeerId) {
         var sectionItems = items[.peerInfo] ?? []
-        guard !sectionItems.contains(where: { $0.id == GRVMPeerInfoItemId.archives }) else {
+        let archiveItemId = AnyHashable(GRVMPeerInfoItemId.archives)
+        guard !sectionItems.contains(where: { $0.id == archiveItemId }) else {
             return
         }
         let anchorIndex = anchorIds.compactMap { anchorId in
@@ -66,7 +67,7 @@ func infoItems(data: PeerInfoScreenData?, context: AccountContext, presentationD
         }.first
         let insertionIndex = anchorIndex.map { $0 + 1 } ?? sectionItems.count
         sectionItems.insert(PeerInfoScreenLabeledValueItem(
-            id: GRVMPeerInfoItemId.archives,
+            id: archiveItemId,
             label: "",
             text: grvmStrings[.chatMenuTitle],
             textColor: .primary,
