@@ -221,6 +221,147 @@ private struct GRVMActiveAccountsSnapshot {
     let initialSettings: [(PeerId, AyuGramSettings)]
 }
 
+private final class GRVMLocalPremiumCleanupCoordinator {
+    private let accountManager: AccountManager<TelegramAccountManagerTypes>
+    private let settingsDisposable = MetaDisposable()
+    private let cleanupDisposable = MetaDisposable()
+    private let cleanupPipe = ValuePipe<Signal<Never, NoError>>()
+
+    private var didStartSettingsObservation = false
+    private var accounts: [PeerId: AccountContext] = [:]
+    private var activeAccountIds = Set<PeerId>()
+    private var isEnabled: Bool?
+    private var queuedAccountIds = Set<PeerId>()
+    private var reconciledAccountIds = Set<PeerId>()
+
+    init(accountManager: AccountManager<TelegramAccountManagerTypes>) {
+        self.accountManager = accountManager
+        self.cleanupDisposable.set((self.cleanupPipe.signal()
+        |> mapToQueue { cleanup -> Signal<Never, NoError> in
+            return cleanup
+        }).start())
+    }
+
+    deinit {
+        self.settingsDisposable.dispose()
+        self.cleanupDisposable.dispose()
+    }
+
+    func updateAccounts(
+        primary: AccountContext?,
+        accounts: [(AccountRecordId, AccountContext, Int32)]
+    ) {
+        let previousAccountIds = self.activeAccountIds
+        var newAccountIds = Set<PeerId>()
+        for (_, context, _) in accounts {
+            self.accounts[context.account.peerId] = context
+            newAccountIds.insert(context.account.peerId)
+        }
+        self.activeAccountIds = newAccountIds
+
+        if self.isEnabled == true {
+            self.pruneInactiveAccounts()
+        } else if self.isEnabled == false {
+            for peerId in newAccountIds.subtracting(previousAccountIds) {
+                self.reconciledAccountIds.remove(peerId)
+            }
+            self.pruneInactiveReconciledAccounts()
+            self.enqueueCurrentAccounts()
+        }
+
+        self.startSettingsObservationIfNeeded(
+            settingsAccountPeerId: primary?.account.peerId ?? accounts.first?.1.account.peerId
+        )
+    }
+
+    private func startSettingsObservationIfNeeded(settingsAccountPeerId: PeerId?) {
+        guard !self.didStartSettingsObservation, let settingsAccountPeerId else {
+            return
+        }
+        self.didStartSettingsObservation = true
+        self.settingsDisposable.set((grvmSettings(
+            accountId: settingsAccountPeerId,
+            accountManager: self.accountManager
+        )
+        |> map(\.localTelegramPremium)
+        |> distinctUntilChanged
+        |> deliverOnMainQueue).start(next: { [weak self] enabled in
+            self?.updateEnabled(enabled)
+        }))
+    }
+
+    private func updateEnabled(_ enabled: Bool) {
+        let previousEnabled = self.isEnabled
+        self.isEnabled = enabled
+        if enabled {
+            self.pruneInactiveAccounts()
+            return
+        }
+        if previousEnabled != false {
+            self.reconciledAccountIds.removeAll()
+        }
+        self.enqueueCurrentAccounts()
+    }
+
+    private func enqueueCurrentAccounts() {
+        guard self.isEnabled == false else {
+            return
+        }
+        for (peerId, context) in self.accounts {
+            guard !self.queuedAccountIds.contains(peerId),
+                  !self.reconciledAccountIds.contains(peerId) else {
+                continue
+            }
+            self.queuedAccountIds.insert(peerId)
+            let cleanup = grvmClearLocalPremiumSelfState(
+                postbox: context.account.postbox,
+                accountPeerId: context.account.peerId
+            )
+            |> afterDisposed { [weak self] in
+                Queue.mainQueue().async { [weak self] in
+                    self?.cleanupCompleted(peerId: peerId)
+                }
+            }
+            self.cleanupPipe.putNext(cleanup)
+        }
+    }
+
+    private func cleanupCompleted(peerId: PeerId) {
+        self.queuedAccountIds.remove(peerId)
+        if self.isEnabled == false {
+            if self.activeAccountIds.contains(peerId) {
+                self.reconciledAccountIds.insert(peerId)
+            } else {
+                self.accounts.removeValue(forKey: peerId)
+                self.reconciledAccountIds.remove(peerId)
+            }
+        }
+        self.enqueueCurrentAccounts()
+    }
+
+    private func pruneInactiveAccounts() {
+        let inactiveAccountIds = self.accounts.keys.filter { peerId in
+            return !self.activeAccountIds.contains(peerId)
+        }
+        for peerId in inactiveAccountIds {
+            self.accounts.removeValue(forKey: peerId)
+            self.reconciledAccountIds.remove(peerId)
+        }
+    }
+
+    private func pruneInactiveReconciledAccounts() {
+        let inactiveReconciledAccountIds = self.accounts.keys.filter { peerId in
+            return !self.activeAccountIds.contains(peerId)
+            && !self.queuedAccountIds.contains(peerId)
+            && self.reconciledAccountIds.contains(peerId)
+        }
+        for peerId in inactiveReconciledAccountIds {
+            self.accounts.removeValue(forKey: peerId)
+            self.reconciledAccountIds.remove(peerId)
+        }
+    }
+}
+
 private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptivePresentationControllerDelegate {
     let id: UUID
     let bundle: GRVMLocalCrashExportBundle
@@ -304,11 +445,60 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
     
     private let sharedContextPromise = Promise<SharedApplicationContext>()
 
+    private lazy var grvmNotifyStateStore: GRVMNotifyStateStoring = {
+        guard let accountManager = self.accountManager else {
+            preconditionFailure()
+        }
+        return GRVMNotifyStateStore(accountManager: accountManager)
+    }()
+    private lazy var grvmNotifyCoordinator: GRVMNotifyCoordinator = {
+        let activeAccounts = self.sharedContextPromise.get()
+        |> take(1)
+        |> mapToSignal { sharedApplicationContext in
+            return sharedApplicationContext.sharedContext.activeAccountContexts
+        }
+        let isLocked = self.sharedContextPromise.get()
+        |> take(1)
+        |> mapToSignal { sharedApplicationContext -> Signal<Bool, NoError> in
+            guard let appLockContext = sharedApplicationContext.sharedContext.appLockContext as? AppLockContextImpl else {
+                return .single(false)
+            }
+            return appLockContext.isCurrentlyLocked
+        }
+        return GRVMNotifyCoordinator(environment: GRVMNotifyCoordinator.Environment(
+            stateStore: self.grvmNotifyStateStore,
+            activeAccounts: activeAccounts,
+            authorizedContext: { [weak self] in
+                guard let self else {
+                    return .complete()
+                }
+                return self.authorizedContext()
+            },
+            isLocked: isLocked,
+            present: { [weak self] controller in
+                self?.mainWindow?.present(controller, on: .root)
+            },
+            navigate: { [weak self] accountId, peerId, threadId, messageId in
+                self?.navigateGRVMNotify(
+                    accountId: accountId,
+                    peerId: peerId,
+                    threadId: threadId,
+                    messageId: messageId
+                )
+            },
+            openReturnURL: { url in
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            }
+        ))
+    }()
+    private let grvmNotifyNavigationDisposable = MetaDisposable()
+
     private var accountManager: AccountManager<TelegramAccountManagerTypes>?
     private var accountManagerState: AccountManagerState?
     private var ayuGramFeatureManager: AyuGramFeatureManager?
     private var grvmAccountFeatureRegistry: GRVMAccountFeatureRegistry?
     private let grvmActiveAccountsDisposable = MetaDisposable()
+    private var grvmLocalPremiumCleanupCoordinator: GRVMLocalPremiumCleanupCoordinator?
     private let grvmAppIconDisposable = MetaDisposable()
     private var grvmScreenCapturePrivacyController: GRVMScreenCapturePrivacyController?
     private var grvmLocalCrashExport: GRVMLocalCrashExport?
@@ -411,6 +601,7 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
     private let regularDeviceToken = Promise<Data?>(nil)
 
     deinit {
+        self.grvmNotifyNavigationDisposable.dispose()
         self.grvmScreenCapturePrivacyController?.dispose()
         self.grvmScreenCapturePrivacyController = nil
     }
@@ -1642,10 +1833,15 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
             Logger.shared.log("App \(self.episodeId)", "isActive = \(value)")
         })
         
-        if let url = launchOptions?[.url] {
-            if let url = url as? URL, url.scheme == "tg" || url.scheme == buildConfig.appSpecificUrlScheme {
+        if let url = launchOptions?[.url] as? URL {
+            if !self.enqueueGRVMNotifyURL(url)
+                && (url.scheme == "tg" || url.scheme == buildConfig.appSpecificUrlScheme) {
                 self.openUrlWhenReady(url: url, external: true)
-            } else if let urlString = url as? String, urlString.lowercased().hasPrefix("tg:") || urlString.lowercased().hasPrefix("\(buildConfig.appSpecificUrlScheme):"), let url = URL(string: urlString) {
+            }
+        } else if let urlString = launchOptions?[.url] as? String,
+                  let url = URL(string: urlString) {
+            if !self.enqueueGRVMNotifyURL(url)
+                && (urlString.lowercased().hasPrefix("tg:") || urlString.lowercased().hasPrefix("\(buildConfig.appSpecificUrlScheme):")) {
                 self.openUrlWhenReady(url: url, external: true)
             }
         }
@@ -2053,6 +2249,8 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
         )
         self.bindGRVMLocalCrashLifecycle(sharedContext: sharedContext, accountManager: accountManager)
 
+        self.grvmLocalPremiumCleanupCoordinator = GRVMLocalPremiumCleanupCoordinator(accountManager: accountManager)
+
         let grvmActiveAccountsSignal: Signal<GRVMActiveAccountsSnapshot, NoError> = sharedContext.activeAccountContexts
         |> mapToSignal { primary, accounts, _ -> Signal<GRVMActiveAccountsSnapshot, NoError> in
             return AppDelegate.makeGRVMActiveAccountsSnapshotSignal(
@@ -2065,11 +2263,18 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
         let grvmActiveAccounts: Signal<GRVMActiveAccountsSnapshot, NoError> = grvmActiveAccountsSignal
         |> deliverOnMainQueue
         self.grvmActiveAccountsDisposable.set(grvmActiveAccounts.start(next: { [weak self] snapshot in
-            guard let self, let registry = self.grvmAccountFeatureRegistry else {
+            guard let self else {
                 return
             }
             let primary = snapshot.primary
             let accounts = snapshot.accounts
+            self.grvmLocalPremiumCleanupCoordinator?.updateAccounts(
+                primary: primary,
+                accounts: accounts
+            )
+            guard let registry = self.grvmAccountFeatureRegistry else {
+                return
+            }
             let initialSettings = snapshot.initialSettings
             let activeRecordIds = accounts.map { $0.0.int64 }
             do {
@@ -2133,6 +2338,7 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
         let settingsSignal: Signal<[(PeerId, AyuGramSettings)], NoError> = combineLatest(settingsSignals)
         let migratedSettingsSignal: Signal<Void, NoError> = migrateGRVMSettings(
             accountIds: accountPeerIds,
+            primaryAccountId: primary?.account.peerId,
             accountManager: accountManager
         )
         let migrationCompletionSignal: Signal<GRVMActiveAccountsSnapshot, NoError> = migratedSettingsSignal
@@ -3272,18 +3478,36 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
             }
         }
     }
+
+    private func enqueueGRVMNotifyURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "grvmgram" else {
+            return false
+        }
+        self.grvmNotifyNavigationDisposable.set(nil)
+        _ = self.grvmNotifyCoordinator.enqueue(url: url)
+        return true
+    }
     
     func application(_ application: UIApplication, open url: URL, sourceApplication: String?) -> Bool {
+        if self.enqueueGRVMNotifyURL(url) {
+            return true
+        }
         self.openUrl(url: url)
         return true
     }
     
     func application(_ application: UIApplication, open url: URL, sourceApplication: String?, annotation: Any) -> Bool {
+        if self.enqueueGRVMNotifyURL(url) {
+            return true
+        }
         self.openUrl(url: url)
         return true
     }
     
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
+        if self.enqueueGRVMNotifyURL(url) {
+            return true
+        }
         guard self.openUrlInProgress != url else {
             return true
         }
@@ -3293,6 +3517,9 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
     }
     
     func application(_ application: UIApplication, handleOpen url: URL) -> Bool {
+        if self.enqueueGRVMNotifyURL(url) {
+            return true
+        }
         self.openUrl(url: url)
         return true
     }
@@ -3580,6 +3807,161 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
         |> deliverOnMainQueue).start(next: { context in
             context.startCall(peerId: peerId, isVideo: isVideo)
         }))
+    }
+
+    private func navigateGRVMNotify(
+        accountId: AccountRecordId,
+        peerId: PeerId,
+        threadId: Int64?,
+        messageId: MessageId
+    ) {
+        let verifiedThreadId = threadId.flatMap { value -> Int64? in
+            return value > 0 ? value : nil
+        }
+        let stateStore = self.grvmNotifyStateStore
+        let signal = self.sharedContextPromise.get()
+        |> take(1)
+        |> deliverOnMainQueue
+        |> mapToSignal { sharedApplicationContext -> Signal<SharedApplicationContext, NoError> in
+            sharedApplicationContext.sharedContext.switchToAccount(id: accountId)
+            let isLocked: Signal<Bool, NoError>
+            if let appLockContext = sharedApplicationContext.sharedContext.appLockContext as? AppLockContextImpl {
+                isLocked = appLockContext.isCurrentlyLocked
+            } else {
+                isLocked = .single(false)
+            }
+            return isLocked
+            |> filter { !$0 }
+            |> take(1)
+            |> map { _ in sharedApplicationContext }
+        }
+        |> mapToSignal { [weak self] sharedApplicationContext -> Signal<AuthorizedApplicationContext, NoError> in
+            guard let self else {
+                return .complete()
+            }
+            return combineLatest(
+                sharedApplicationContext.sharedContext.activeAccountContexts |> take(1),
+                stateStore.state() |> take(1)
+            )
+            |> mapToSignal { [weak self] snapshot, state -> Signal<AuthorizedApplicationContext, NoError> in
+                guard let self else {
+                    return .complete()
+                }
+                guard let pairedUserId = state.pairedUserId,
+                      let sessionHash = state.sessionHash,
+                      sessionHash != 0 else {
+                    return .complete()
+                }
+                let matches = snapshot.accounts.filter { recordId, accountContext, _ in
+                    return recordId == accountId
+                        && accountContext.account.peerId.id._internalGetInt64Value() == pairedUserId
+                }
+                guard matches.count == 1 else {
+                    return .complete()
+                }
+                sharedApplicationContext.sharedContext.switchToAccount(id: accountId)
+                return self.finalGRVMNotifyNavigationContext(
+                    accountId: accountId,
+                    sharedApplicationContext: sharedApplicationContext,
+                    stateStore: stateStore
+                )
+            }
+        }
+
+        let navigationDisposables = DisposableSet()
+        self.grvmNotifyNavigationDisposable.set(navigationDisposables)
+
+        let ownershipSignal = self.sharedContextPromise.get()
+        |> take(1)
+        |> mapToSignal { sharedApplicationContext in
+            return combineLatest(
+                sharedApplicationContext.sharedContext.activeAccountContexts,
+                stateStore.state()
+            )
+        }
+        |> deliverOnMainQueue
+        navigationDisposables.add(ownershipSignal.start(next: { [weak self] snapshot, state in
+            guard let pairedUserId = state.pairedUserId,
+                  let sessionHash = state.sessionHash,
+                  sessionHash != 0 else {
+                self?.grvmNotifyNavigationDisposable.set(nil)
+                return
+            }
+            let matches = snapshot.accounts.filter { recordId, accountContext, _ in
+                return recordId == accountId
+                    && accountContext.account.peerId.id._internalGetInt64Value() == pairedUserId
+            }
+            if matches.count != 1 {
+                self?.grvmNotifyNavigationDisposable.set(nil)
+            }
+        }))
+        navigationDisposables.add(signal.start(next: { [weak self] context in
+            guard let self,
+                  let currentContext = self.contextValue,
+                  currentContext === context,
+                  currentContext.context.account.id == accountId else {
+                self?.grvmNotifyNavigationDisposable.set(nil)
+                return
+            }
+            currentContext.openChatWithPeerId(
+                peerId: peerId,
+                threadId: verifiedThreadId,
+                messageId: messageId,
+                storyId: nil,
+                alwaysKeepMessageId: true
+            )
+            self.grvmNotifyNavigationDisposable.set(nil)
+        }))
+    }
+
+    private func finalGRVMNotifyNavigationContext(
+        accountId: AccountRecordId,
+        sharedApplicationContext: SharedApplicationContext,
+        stateStore: GRVMNotifyStateStoring
+    ) -> Signal<AuthorizedApplicationContext, NoError> {
+        let isLocked: Signal<Bool, NoError>
+        if let appLockContext = sharedApplicationContext.sharedContext.appLockContext as? AppLockContextImpl {
+            isLocked = appLockContext.isCurrentlyLocked
+        } else {
+            isLocked = .single(false)
+        }
+        let currentContextAndReadiness = self.context.get()
+        |> mapToSignal { context -> Signal<(AuthorizedApplicationContext?, Bool), NoError> in
+            guard let context else {
+                return .single((nil, false))
+            }
+            return context.isReady.get()
+            |> map { isReady -> (AuthorizedApplicationContext?, Bool) in
+                return (context, isReady)
+            }
+        }
+        return combineLatest(
+            queue: .mainQueue(),
+            currentContextAndReadiness,
+            sharedApplicationContext.sharedContext.activeAccountContexts,
+            stateStore.state(),
+            isLocked
+        )
+        |> mapToSignal { contextAndReadiness, snapshot, state, locked -> Signal<AuthorizedApplicationContext, NoError> in
+            guard let context = contextAndReadiness.0,
+                  contextAndReadiness.1,
+                  context.context.account.id == accountId,
+                  !locked,
+                  let pairedUserId = state.pairedUserId,
+                  let sessionHash = state.sessionHash,
+                  sessionHash != 0 else {
+                return .complete()
+            }
+            let matches = snapshot.accounts.filter { recordId, accountContext, _ in
+                return recordId == accountId
+                    && accountContext.account.peerId.id._internalGetInt64Value() == pairedUserId
+            }
+            guard matches.count == 1 else {
+                return .complete()
+            }
+            return .single(context)
+        }
+        |> take(1)
     }
     
     private func openChatWhenReady(accountId: AccountRecordId?, peerId: PeerId, threadId: Int64?, messageId: MessageId? = nil, activateInput: Bool = false, storyId: StoryId?, openAppIfAny: Bool = false, alwaysKeepMessageId: Bool = false) {

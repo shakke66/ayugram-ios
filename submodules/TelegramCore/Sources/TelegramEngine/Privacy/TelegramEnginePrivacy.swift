@@ -21,6 +21,10 @@ public extension TelegramEngine {
             return ActiveSessionsContext(account: self.account)
         }
 
+        public func grvmNotifySessionHashesOnce() -> Signal<Set<Int64>, GRVMNotifySessionFetchError> {
+            return _internal_grvmNotifySessionHashesOnce(account: self.account)
+        }
+
         public func webSessions() -> WebSessionsContext {
             return WebSessionsContext(account: self.account)
         }
