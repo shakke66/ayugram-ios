@@ -4,14 +4,16 @@
 
 ## Provenance внешней сборки и device run
 
-- Build/IPA: `[заполнить после отдельной сборки]`
-- Git SHA: `[заполнить]`
-- Workflow/run: `[заполнить либо N/A для локальной сборки]`
-- IPA SHA-256: `[заполнить]`
-- Устройство / iOS: `[заполнить перед device run]`
+- Build/IPA: `GRVMgram 12.6.2 (2897)` — `build/ci/30219027355/GRVMgram.ipa`, `72 329 069` байт
+- Git SHA: `ca178190948070621f4668b0ca97ca84d8575b25`
+- Test-only follow-up: `04e0926ac76d0e3b8e73885d6d9a0cacbc488de8` — production sources IPA не изменены
+- Workflow/run: [GitHub Actions run `30219027355`](https://github.com/shakke66/ayugram-ios/actions/runs/30219027355) — `success`
+- IPA SHA-256: `bebbee13c178fbce0e200bb531e8be8a29fbaa41b962060028e85e513b7d8330`
+- IPA validator: `PASS` — `display_name=GRVMgram`, `bundle_name=GRVMgram`, `bundle_id=ph.telegra.Telegraph`, `version=12.6.2`, `build=2897`
+- Устройство / iOS: `[device run не выполнялся; заполнить перед проверкой]`
 - Язык по умолчанию: `Русский`, кроме явно указанной EN-проверки.
 
-Поля выше являются только placeholders. Этот документ не заявляет о наличии готовой IPA, успешной установке или фактическом device PASS. `Ожидаемый результат` каждой карточки описывает критерий будущей проверки, а не уже полученный результат.
+Поля сборки выше заполнены по скачанному artifact и локальной IPA-валидации. Поле устройства остаётся placeholder: документ не заявляет об успешной установке или фактическом device PASS. `Ожидаемый результат` каждой карточки описывает критерий будущей проверки, а не уже полученный результат.
 
 ## Отдельная проверка context menu
 
