@@ -8,6 +8,45 @@
 "GRVMgram.Main.Chats" = "Chats";
 "GRVMgram.Main.Other" = "Other";
 
+// GRVM Notify
+"GRVMgram.Notify.Title" = "GRVM Notify";
+"GRVMgram.Notify.Row" = "Notifications";
+"GRVMgram.Notify.UnsupportedOS" = "GRVM Notify requires iOS 16.4 or later. Notification setup is unavailable on this device.";
+"GRVMgram.Notify.InstallInstructions" = "Safari will open the GRVM Notify setup page. Add it to the Home Screen, open it there, then follow the setup steps.";
+"GRVMgram.Notify.NotConnected" = "No Web session is connected.";
+"GRVMgram.Notify.WebSessionConnected" = "Web session connected";
+"GRVMgram.Notify.WebSessionDisclaimer" = "This confirms only the Telegram Web session. Notification permission and delivery status are available in the GRVM Notify Home Screen app.";
+"GRVMgram.Notify.OwnerAccount" = "Telegram account: %@";
+"GRVMgram.Notify.StartSetup" = "Set Up";
+"GRVMgram.Notify.ContinueSetup" = "Continue Setup";
+"GRVMgram.Notify.OpenDevices" = "Open Devices";
+"GRVMgram.Notify.Disconnect" = "Disconnect";
+"GRVMgram.Notify.Disconnect.Confirmation.Title" = "Disconnect GRVM Notify?";
+"GRVMgram.Notify.Disconnect.Confirmation.Text" = "The saved GRVM Notify Web session will be revoked for this exact Telegram account.";
+"GRVMgram.Notify.Disconnect.Confirmation.Action" = "Disconnect";
+"GRVMgram.Notify.Disconnecting" = "Disconnecting the Web session…";
+"GRVMgram.Notify.DisconnectFailed" = "The Web session could not be revoked. Its ownership is retained; try again or check Devices.";
+"GRVMgram.Notify.OrphanedSession" = "The connected Web session belongs to an account that is not available in this installation.";
+"GRVMgram.Notify.OrphanedInstructions" = "Re-add the same Telegram account or revoke the GRVM Notify session from Devices on another Telegram client. Ownership remains stored until revocation is verified.";
+"GRVMgram.Notify.StatusNotVerified" = "Status not verified";
+"GRVMgram.Notify.StatusNotVerified.Info" = "The session list could not be checked. The saved ownership is retained; try again when the network is available.";
+"GRVMgram.Notify.Authorization.Title" = "Connect GRVM Notify?";
+"GRVMgram.Notify.Authorization.Confirmation" = "Create a separate Telegram Web session for %@?";
+"GRVMgram.Notify.Authorization.Action" = "Connect";
+"GRVMgram.Notify.Authorization.Success" = "Web session connected. Continue in GRVM Notify to verify notification permission and delivery.";
+"GRVMgram.Notify.Authorization.OpenPWAFallback" = "If GRVM Notify did not reopen automatically, open it once from the Home Screen.";
+"GRVMgram.Notify.Error.InvalidLink" = "The GRVM Notify link is invalid. Restart setup from GRVMgram.";
+"GRVMgram.Notify.Error.PendingExpired" = "This setup request expired. Restart setup from GRVMgram.";
+"GRVMgram.Notify.Error.AlreadyConnected" = "A GRVM Notify Web session is already connected. Disconnect it before starting another setup.";
+"GRVMgram.Notify.Error.AccountUnavailable" = "The selected Telegram account is no longer available. Restart setup from that account.";
+"GRVMgram.Notify.Error.AuthInvalid" = "Telegram rejected this authorization token as invalid. Restart setup.";
+"GRVMgram.Notify.Error.AuthExpired" = "This Telegram authorization token expired. Restart setup.";
+"GRVMgram.Notify.Error.AuthAlreadyAccepted" = "This Telegram authorization token was already accepted. Restart setup to create a new token.";
+"GRVMgram.Notify.Error.AuthGeneric" = "Telegram could not create the Web session. Try setup again.";
+"GRVMgram.Notify.Error.Persistence" = "The Web session was created but could not be saved safely. GRVMgram attempted to revoke it; check Devices.";
+"GRVMgram.Notify.Error.OwnershipMismatch" = "The GRVM Notify request no longer belongs to the selected account. Restart setup.";
+"GRVMgram.Notify.Error.ChatUnsynchronized" = "This chat has not synchronized yet. Open it in Telegram and try again.";
+
 // Common GRVMgram choices
 "GRVMgram.Common.Default" = "Default";
 "GRVMgram.Common.Off" = "Off";
@@ -33,8 +72,6 @@
 "GRVMgram.Ghost.Upload" = "Don't Send Upload Progress";
 "GRVMgram.Ghost.StoryPrompt" = "Suggest Ghost Mode for Stories";
 "GRVMgram.Ghost.StoryPrompt.Info" = "Ask before opening a story when private viewing is disabled.";
-"GRVMgram.Ghost.Schedule" = "Use Scheduled Messages";
-"GRVMgram.Ghost.Schedule.Info" = "Automatically schedule messages with a roughly 12-second delay to avoid showing online presence. This is not recommended on slow connections.";
 "GRVMgram.Ghost.Silent" = "Send Without Sound";
 "GRVMgram.Ghost.Silent.Info" = "Choose when outgoing messages are sent silently.";
 "GRVMgram.Ghost.ActiveCount" = "%d/4 enabled";
@@ -115,7 +152,8 @@
 "GRVMgram.Shadow.Unban" = "Unshadow Ban";
 "GRVMgram.Shadow.Author" = "Author";
 "GRVMgram.Shadow.ForwardedAuthor" = "Forwarded Author";
-"GRVMgram.Shadow.ActionWithRole" = "%1$@ %2$@";
+"GRVMgram.Shadow.OriginalAuthor" = "Original Source Author";
+"GRVMgram.Shadow.ActionWithRole" = "%1$@ — %2$@: %3$@";
 
 // General settings
 "GRVMgram.General.Title" = "General";
@@ -161,7 +199,6 @@
 "GRVMgram.Appearance.HideCounters" = "Hide Notification Counters";
 "GRVMgram.Appearance.Header" = "Appearance";
 "GRVMgram.Appearance.Tail" = "Remove Message Tail";
-"GRVMgram.Appearance.Backgrounds" = "Disable Custom Backgrounds";
 "GRVMgram.Appearance.CodeFont" = "Code Font";
 "GRVMgram.Appearance.CodeFont.Preview" = "let app = \"GRVMgram\"\nprint(app)";
 "GRVMgram.Appearance.AvatarCorners" = "Avatar Corners";
@@ -194,7 +231,6 @@
 "GRVMgram.Chat.EditedMark.Default" = "edited";
 "GRVMgram.Chats.Messages.Icons" = "Replace with Icons";
 "GRVMgram.Chats.Messages.FastShare" = "Hide Fast Share Button";
-"GRVMgram.Chats.Messages.ColoredReplies" = "Disable Colored Replies";
 "GRVMgram.Chats.Messages.Width" = "Message Width";
 "GRVMgram.Chats.Messages.Translucent" = "Semi-transparent Deleted";
 "GRVMgram.Chats.Context.Header" = "Context Menu Elements";
@@ -236,6 +272,8 @@
 "GRVMgram.Deleted.Remove.Text" = "Remove this saved deleted message, its history, and exclusively owned archived media? This cannot be undone.";
 "GRVMgram.Deleted.Remove.Action" = "Delete";
 "GRVMgram.Deleted.Remove.ErrorTitle" = "Delete Failed";
+"GRVMgram.Deleted.PurgeLive.Title" = "Delete Message Locally?";
+"GRVMgram.Deleted.PurgeLive.Text" = "The message will first be deleted for everyone, then permanently removed from the local GRVMgram archive. This cannot be undone.";
 "GRVMgram.History.Title" = "GRVMgram History";
 "GRVMgram.History.Empty" = "No edit history has been saved yet.";
 "GRVMgram.History.MessageEmpty" = "[empty]";
@@ -263,6 +301,7 @@
 "GRVMgram.ChatMenu.ViewDeleted" = "View Deleted";
 "GRVMgram.ChatMenu.ClearDeleted" = "Clear Deleted";
 "GRVMgram.Menu.LocalHide" = "Hide Locally";
+"GRVMgram.Menu.DeleteLocal" = "Delete Locally";
 "GRVMgram.Menu.UserMessages" = "User Messages: %@";
 "GRVMgram.Menu.Details" = "Message Details";
 "GRVMgram.Menu.Repeat" = "Repeat Message";

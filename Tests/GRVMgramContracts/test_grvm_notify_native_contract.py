@@ -20,6 +20,54 @@ INFO_PLIST_PATHS = (
 )
 BUILD_PATH = ROOT / "Telegram/BUILD"
 FORK_CONFIG_PATH = ROOT / "Telegram/Telegram-iOS/Config-Fork.xcconfig"
+SETTINGS_CONTROLLER_PATH = ROOT / "submodules/TelegramUI/Sources/GRVMNotifySettingsController.swift"
+MAIN_SETTINGS_PATH = ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramMainController.swift"
+SETTINGS_ACTIONS_PATH = ROOT / "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift"
+GRVM_STRINGS_PATH = ROOT / "submodules/TelegramPresentationData/Sources/GRVMgramStrings.swift"
+GRVM_LOCALIZATION_PATHS = (
+    ROOT / "Telegram/Telegram-iOS/en.lproj/GRVMgram.strings",
+    ROOT / "Telegram/Telegram-iOS/ru.lproj/GRVMgram.strings",
+)
+
+GRVM_NOTIFY_LOCALIZATION_KEYS = (
+    "GRVMgram.Notify.Title",
+    "GRVMgram.Notify.Row",
+    "GRVMgram.Notify.UnsupportedOS",
+    "GRVMgram.Notify.InstallInstructions",
+    "GRVMgram.Notify.NotConnected",
+    "GRVMgram.Notify.WebSessionConnected",
+    "GRVMgram.Notify.WebSessionDisclaimer",
+    "GRVMgram.Notify.OwnerAccount",
+    "GRVMgram.Notify.StartSetup",
+    "GRVMgram.Notify.ContinueSetup",
+    "GRVMgram.Notify.OpenDevices",
+    "GRVMgram.Notify.Disconnect",
+    "GRVMgram.Notify.Disconnect.Confirmation.Title",
+    "GRVMgram.Notify.Disconnect.Confirmation.Text",
+    "GRVMgram.Notify.Disconnect.Confirmation.Action",
+    "GRVMgram.Notify.Disconnecting",
+    "GRVMgram.Notify.DisconnectFailed",
+    "GRVMgram.Notify.OrphanedSession",
+    "GRVMgram.Notify.OrphanedInstructions",
+    "GRVMgram.Notify.StatusNotVerified",
+    "GRVMgram.Notify.StatusNotVerified.Info",
+    "GRVMgram.Notify.Authorization.Title",
+    "GRVMgram.Notify.Authorization.Confirmation",
+    "GRVMgram.Notify.Authorization.Action",
+    "GRVMgram.Notify.Authorization.Success",
+    "GRVMgram.Notify.Authorization.OpenPWAFallback",
+    "GRVMgram.Notify.Error.InvalidLink",
+    "GRVMgram.Notify.Error.PendingExpired",
+    "GRVMgram.Notify.Error.AlreadyConnected",
+    "GRVMgram.Notify.Error.AccountUnavailable",
+    "GRVMgram.Notify.Error.AuthInvalid",
+    "GRVMgram.Notify.Error.AuthExpired",
+    "GRVMgram.Notify.Error.AuthAlreadyAccepted",
+    "GRVMgram.Notify.Error.AuthGeneric",
+    "GRVMgram.Notify.Error.Persistence",
+    "GRVMgram.Notify.Error.OwnershipMismatch",
+    "GRVMgram.Notify.Error.ChatUnsynchronized",
+)
 
 INT32_MAX = 2_147_483_647
 INT64_MAX = 9_223_372_036_854_775_807
@@ -722,6 +770,125 @@ class GRVMNotifyNativeSourceContractTests(unittest.TestCase):
             privacy,
         )
         self.assertIn("_internal_grvmNotifySessionHashesOnce(account: self.account)", privacy)
+
+    def test_main_settings_exposes_stable_callback_driven_notifications_row(self):
+        source = MAIN_SETTINGS_PATH.read_text(encoding="utf-8")
+        self.assertIn("case categoryNotifications(PresentationTheme)", source)
+        self.assertIn("case .categoryNotifications: return 7", source)
+        self.assertIn("strings[.notifyRow]", source)
+        self.assertIn("arguments.openGRVMNotify()", source)
+        self.assertRegex(
+            source,
+            r"public func ayuGramMainController\(\s*context: AccountContext,\s*"
+            r"openGRVMNotify: @escaping \(\) -> Void = \{\}\s*\) -> ViewController",
+        )
+        self.assertNotRegex(source, r"(?m)^import TelegramUI$")
+        self.assertNotIn("grvmNotifySettingsController", source)
+
+        actions = SETTINGS_ACTIONS_PATH.read_text(encoding="utf-8")
+        self.assertIn("ayuGramMainController(", actions)
+        self.assertIn("openGRVMNotify: {", actions)
+        self.assertIn("grvmNotifySettingsController(context: self.context)", actions)
+
+    def test_settings_controller_has_truthful_one_flow_states_and_actions(self):
+        self.assertTrue(
+            SETTINGS_CONTROLLER_PATH.exists(),
+            f"Missing native settings controller: {SETTINGS_CONTROLLER_PATH}",
+        )
+        source = SETTINGS_CONTROLLER_PATH.read_text(encoding="utf-8")
+        for token in (
+            "case unsupportedOS",
+            "case notConnected",
+            "case webSessionConnected",
+            "case connectedToMissingAccount",
+            "case disconnecting",
+            "case statusNotVerified",
+            "case startSetup",
+            "case continueSetup",
+            "case openDevices",
+            "case disconnect",
+            "GRVMNotifyStateStore(accountManager: context.sharedContext.accountManager)",
+            "stateStore.state()",
+            "context.sharedContext.activeAccountContexts",
+            'https://grvm-notify.pages.dev/setup/?grvm_notify=1',
+            "forceExternal: true",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, source)
+        self.assertRegex(source, r"(?:if|guard) #available\(iOS 16\.4, \*\)")
+
+        setup = source[
+            source.index("    private func startSetup()"):
+            source.index("    private func continueSetup()")
+        ]
+        self.assertIn("pendingAccountUserId", setup)
+        self.assertIn("pendingStartedAt", setup)
+        self.assertIn("stateStore.update", setup)
+        self.assertLess(setup.index("stateStore.update"), setup.index("self.openSetupURL()"))
+        self.assertNotIn("present", setup, "Setup must not add a pre-Safari confirmation tap")
+        self.assertNotRegex(source, r"[А-Яа-яЁё]")
+
+    def test_settings_controller_revokes_and_reconciles_only_the_exact_owner(self):
+        self.assertTrue(
+            SETTINGS_CONTROLLER_PATH.exists(),
+            f"Missing native settings controller: {SETTINGS_CONTROLLER_PATH}",
+        )
+        source = SETTINGS_CONTROLLER_PATH.read_text(encoding="utf-8")
+        for token in (
+            "private func resolveOwner(",
+            "context.account.peerId.id._internalGetInt64Value() == pairedUserId",
+            "owners.count == 1",
+            "target.context.engine.privacy.activeSessions()",
+            "makeRecentSessionsController(",
+            "context: target.context",
+            "terminateAnotherSession(id: sessionHash)",
+            "grvmNotifySessionHashesOnce()",
+            "!hashes.contains(target.sessionHash)",
+            "timeout(5.0",
+            "alternate: .fail(.network)",
+            "alternate: .fail(.generic)",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, source)
+        self.assertNotIn("AccountRecordId(rawValue: pairedUserId)", source)
+
+        disconnect = source[
+            source.index("    private func performDisconnect("):
+            source.index("    private func clearPair(")
+        ]
+        self.assertIn("completed: {", disconnect)
+        self.assertIn("self.clearPair(", disconnect)
+        self.assertLess(disconnect.index("completed: {"), disconnect.index("self.clearPair("))
+        error_branch = disconnect[
+            disconnect.index("error: {"):
+            disconnect.index("completed: {")
+        ]
+        self.assertNotIn("clearPair", error_branch)
+
+    def test_notify_localization_is_typed_complete_unique_and_truthful(self):
+        swift = GRVM_STRINGS_PATH.read_text(encoding="utf-8")
+        localized = [path.read_text(encoding="utf-8") for path in GRVM_LOCALIZATION_PATHS]
+        for key in GRVM_NOTIFY_LOCALIZATION_KEYS:
+            with self.subTest(key=key):
+                self.assertEqual(1, swift.count(f'= "{key}"'))
+                for path, source in zip(GRVM_LOCALIZATION_PATHS, localized):
+                    self.assertEqual(
+                        1,
+                        source.count(f'"{key}" = '),
+                        f"{key} must exist exactly once in {path}",
+                    )
+
+        english, russian = localized
+        self.assertIn(
+            '"GRVMgram.Notify.WebSessionConnected" = "Web session connected";',
+            english,
+        )
+        self.assertIn(
+            '"GRVMgram.Notify.WebSessionConnected" = "Web-сессия подключена";',
+            russian,
+        )
+        self.assertNotIn("Notifications work", english)
+        self.assertNotIn("Уведомления работают", russian)
 
     def test_grvmgram_scheme_is_added_without_replacing_compatibility_schemes(self):
         for plist_path in INFO_PLIST_PATHS:

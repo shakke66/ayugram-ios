@@ -14,10 +14,16 @@ import AyuGramLib
 private final class AyuGramMainArguments {
     let context: AccountContext
     let pushController: (ViewController) -> Void
+    let openGRVMNotify: () -> Void
 
-    init(context: AccountContext, pushController: @escaping (ViewController) -> Void) {
+    init(
+        context: AccountContext,
+        pushController: @escaping (ViewController) -> Void,
+        openGRVMNotify: @escaping () -> Void
+    ) {
         self.context = context
         self.pushController = pushController
+        self.openGRVMNotify = openGRVMNotify
     }
 }
 
@@ -32,6 +38,7 @@ private enum AyuGramMainEntry: ItemListNodeEntry {
     case categoryAppearance(PresentationTheme)
     case categoryChats(PresentationTheme)
     case categoryOther(PresentationTheme)
+    case categoryNotifications(PresentationTheme)
 
     var section: ItemListSectionId {
         return AyuGramMainSection.categories.rawValue
@@ -45,6 +52,7 @@ private enum AyuGramMainEntry: ItemListNodeEntry {
         case .categoryAppearance: return 4
         case .categoryChats: return 5
         case .categoryOther: return 6
+        case .categoryNotifications: return 7
         }
     }
 
@@ -84,6 +92,10 @@ private enum AyuGramMainEntry: ItemListNodeEntry {
             return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.mainOther], label: "", sectionId: self.section, style: .blocks, action: {
                 arguments.pushController(ayuGramOtherController(context: arguments.context))
             })
+        case .categoryNotifications:
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.notifyRow], label: "", sectionId: self.section, style: .blocks, action: {
+                arguments.openGRVMNotify()
+            })
         }
     }
 }
@@ -96,17 +108,22 @@ private func ayuGramMainEntries(presentationData: PresentationData) -> [AyuGramM
         .categoryAppearance(presentationData.theme),
         .categoryChats(presentationData.theme),
         .categoryOther(presentationData.theme),
+        .categoryNotifications(presentationData.theme),
     ]
 }
 
-public func ayuGramMainController(context: AccountContext) -> ViewController {
+public func ayuGramMainController(
+    context: AccountContext,
+    openGRVMNotify: @escaping () -> Void = {}
+) -> ViewController {
     var pushControllerImpl: ((ViewController) -> Void)?
 
     let arguments = AyuGramMainArguments(
         context: context,
         pushController: { controller in
             pushControllerImpl?(controller)
-        }
+        },
+        openGRVMNotify: openGRVMNotify
     )
 
     let signal = context.sharedContext.presentationData

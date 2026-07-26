@@ -298,7 +298,15 @@ extension PeerInfoScreenNode {
                 push(self.context.sharedContext.makeStarsTransactionsScreen(context: self.context, starsContext: tonContext))
             }
         case .ayuGramSettings:
-            push(ayuGramMainController(context: self.context))
+            push(ayuGramMainController(
+                context: self.context,
+                openGRVMNotify: { [weak self] in
+                    guard let self else {
+                        return
+                    }
+                    push(grvmNotifySettingsController(context: self.context))
+                }
+            ))
         }
     }
 

@@ -8,6 +8,45 @@
 "GRVMgram.Main.Chats" = "Чаты";
 "GRVMgram.Main.Other" = "Другое";
 
+// GRVM Notify
+"GRVMgram.Notify.Title" = "GRVM Notify";
+"GRVMgram.Notify.Row" = "Уведомления";
+"GRVMgram.Notify.UnsupportedOS" = "Для GRVM Notify требуется iOS 16.4 или новее. На этом устройстве настройка уведомлений недоступна.";
+"GRVMgram.Notify.InstallInstructions" = "В Safari откроется страница настройки GRVM Notify. Добавьте её на экран «Домой», откройте оттуда и выполните шаги настройки.";
+"GRVMgram.Notify.NotConnected" = "Web-сессия не подключена.";
+"GRVMgram.Notify.WebSessionConnected" = "Web-сессия подключена";
+"GRVMgram.Notify.WebSessionDisclaimer" = "Это подтверждает только Telegram Web-сессию. Разрешение на уведомления и состояние доставки доступны в приложении GRVM Notify на экране «Домой».";
+"GRVMgram.Notify.OwnerAccount" = "Аккаунт Telegram: %@";
+"GRVMgram.Notify.StartSetup" = "Настроить";
+"GRVMgram.Notify.ContinueSetup" = "Продолжить настройку";
+"GRVMgram.Notify.OpenDevices" = "Открыть устройства";
+"GRVMgram.Notify.Disconnect" = "Отключить";
+"GRVMgram.Notify.Disconnect.Confirmation.Title" = "Отключить GRVM Notify?";
+"GRVMgram.Notify.Disconnect.Confirmation.Text" = "Сохранённая Web-сессия GRVM Notify будет отозвана именно у этого аккаунта Telegram.";
+"GRVMgram.Notify.Disconnect.Confirmation.Action" = "Отключить";
+"GRVMgram.Notify.Disconnecting" = "Web-сессия отключается…";
+"GRVMgram.Notify.DisconnectFailed" = "Не удалось отозвать Web-сессию. Данные о владельце сохранены; повторите попытку или проверьте раздел «Устройства».";
+"GRVMgram.Notify.OrphanedSession" = "Подключённая Web-сессия принадлежит аккаунту, которого нет в этой установке.";
+"GRVMgram.Notify.OrphanedInstructions" = "Повторно добавьте тот же аккаунт Telegram или отзовите сессию GRVM Notify в разделе «Устройства» другого клиента Telegram. Данные о владельце сохранятся до подтверждения отзыва.";
+"GRVMgram.Notify.StatusNotVerified" = "Статус не проверен";
+"GRVMgram.Notify.StatusNotVerified.Info" = "Не удалось проверить список сессий. Данные о владельце сохранены; повторите попытку после восстановления сети.";
+"GRVMgram.Notify.Authorization.Title" = "Подключить GRVM Notify?";
+"GRVMgram.Notify.Authorization.Confirmation" = "Создать отдельную Telegram Web-сессию для аккаунта %@?";
+"GRVMgram.Notify.Authorization.Action" = "Подключить";
+"GRVMgram.Notify.Authorization.Success" = "Web-сессия подключена. Продолжите в GRVM Notify, чтобы проверить разрешение на уведомления и доставку.";
+"GRVMgram.Notify.Authorization.OpenPWAFallback" = "Если GRVM Notify не открылся автоматически, один раз откройте его с экрана «Домой».";
+"GRVMgram.Notify.Error.InvalidLink" = "Ссылка GRVM Notify недействительна. Перезапустите настройку из GRVMgram.";
+"GRVMgram.Notify.Error.PendingExpired" = "Срок действия запроса настройки истёк. Перезапустите настройку из GRVMgram.";
+"GRVMgram.Notify.Error.AlreadyConnected" = "Web-сессия GRVM Notify уже подключена. Отключите её перед новой настройкой.";
+"GRVMgram.Notify.Error.AccountUnavailable" = "Выбранный аккаунт Telegram больше недоступен. Перезапустите настройку из этого аккаунта.";
+"GRVMgram.Notify.Error.AuthInvalid" = "Telegram отклонил недействительный токен авторизации. Перезапустите настройку.";
+"GRVMgram.Notify.Error.AuthExpired" = "Срок действия токена авторизации Telegram истёк. Перезапустите настройку.";
+"GRVMgram.Notify.Error.AuthAlreadyAccepted" = "Этот токен авторизации Telegram уже принят. Перезапустите настройку, чтобы создать новый токен.";
+"GRVMgram.Notify.Error.AuthGeneric" = "Telegram не смог создать Web-сессию. Повторите настройку.";
+"GRVMgram.Notify.Error.Persistence" = "Web-сессия создана, но её не удалось надёжно сохранить. GRVMgram попытался отозвать её; проверьте раздел «Устройства».";
+"GRVMgram.Notify.Error.OwnershipMismatch" = "Запрос GRVM Notify больше не принадлежит выбранному аккаунту. Перезапустите настройку.";
+"GRVMgram.Notify.Error.ChatUnsynchronized" = "Этот чат ещё не синхронизирован. Откройте его в Telegram и повторите попытку.";
+
 // Общие варианты GRVMgram
 "GRVMgram.Common.Default" = "По умолчанию";
 "GRVMgram.Common.Off" = "Выключено";
@@ -33,8 +72,6 @@
 "GRVMgram.Ghost.Upload" = "Не отправлять прогресс загрузки";
 "GRVMgram.Ghost.StoryPrompt" = "Предлагать гост-режим для историй";
 "GRVMgram.Ghost.StoryPrompt.Info" = "Спрашивать перед открытием истории, если приватный просмотр выключен.";
-"GRVMgram.Ghost.Schedule" = "Использовать отложенные сообщения";
-"GRVMgram.Ghost.Schedule.Info" = "Автоматически откладывать сообщения примерно на 12 секунд, чтобы не показывать статус «в сети». Не рекомендуется при медленном соединении.";
 "GRVMgram.Ghost.Silent" = "Отправлять без звука";
 "GRVMgram.Ghost.Silent.Info" = "Выберите, когда исходящие сообщения отправляются без звука.";
 "GRVMgram.Ghost.ActiveCount" = "Включено: %d/4";
@@ -115,7 +152,8 @@
 "GRVMgram.Shadow.Unban" = "Снять теневой бан";
 "GRVMgram.Shadow.Author" = "Автор";
 "GRVMgram.Shadow.ForwardedAuthor" = "Автор пересланного сообщения";
-"GRVMgram.Shadow.ActionWithRole" = "%1$@ %2$@";
+"GRVMgram.Shadow.OriginalAuthor" = "Автор исходного сообщения";
+"GRVMgram.Shadow.ActionWithRole" = "%1$@ — %2$@: %3$@";
 
 // Общие настройки
 "GRVMgram.General.Title" = "Общие";
@@ -161,7 +199,6 @@
 "GRVMgram.Appearance.HideCounters" = "Скрыть счётчики уведомлений";
 "GRVMgram.Appearance.Header" = "Оформление";
 "GRVMgram.Appearance.Tail" = "Убрать хвост сообщения";
-"GRVMgram.Appearance.Backgrounds" = "Отключить пользовательские фоны";
 "GRVMgram.Appearance.CodeFont" = "Шрифт кода";
 "GRVMgram.Appearance.CodeFont.Preview" = "let app = \"GRVMgram\"\nprint(app)";
 "GRVMgram.Appearance.AvatarCorners" = "Скругление аватаров";
@@ -194,7 +231,6 @@
 "GRVMgram.Chat.EditedMark.Default" = "изменено";
 "GRVMgram.Chats.Messages.Icons" = "Заменять метки значками";
 "GRVMgram.Chats.Messages.FastShare" = "Скрыть кнопку быстрой пересылки";
-"GRVMgram.Chats.Messages.ColoredReplies" = "Отключить цветные ответы";
 "GRVMgram.Chats.Messages.Width" = "Ширина сообщения";
 "GRVMgram.Chats.Messages.Translucent" = "Полупрозрачные удалённые сообщения";
 "GRVMgram.Chats.Context.Header" = "Элементы контекстного меню";
@@ -236,6 +272,8 @@
 "GRVMgram.Deleted.Remove.Text" = "Удалить это сохранённое сообщение, его историю и принадлежащие только ему архивные медиа? Действие нельзя отменить.";
 "GRVMgram.Deleted.Remove.Action" = "Удалить";
 "GRVMgram.Deleted.Remove.ErrorTitle" = "Не удалось удалить";
+"GRVMgram.Deleted.PurgeLive.Title" = "Удалить сообщение локально?";
+"GRVMgram.Deleted.PurgeLive.Text" = "Сначала сообщение будет удалено у всех, затем безвозвратно удалено из локального архива GRVMgram. Действие нельзя отменить.";
 "GRVMgram.History.Title" = "История GRVMgram";
 "GRVMgram.History.Empty" = "История правок пока пуста.";
 "GRVMgram.History.MessageEmpty" = "[пусто]";
@@ -263,6 +301,7 @@
 "GRVMgram.ChatMenu.ViewDeleted" = "Просмотреть удалённые";
 "GRVMgram.ChatMenu.ClearDeleted" = "Очистить удалённые";
 "GRVMgram.Menu.LocalHide" = "Скрыть локально";
+"GRVMgram.Menu.DeleteLocal" = "Удалить локально";
 "GRVMgram.Menu.UserMessages" = "Сообщения пользователя: %@";
 "GRVMgram.Menu.Details" = "Сведения о сообщении";
 "GRVMgram.Menu.Repeat" = "Повторить сообщение";

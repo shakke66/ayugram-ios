@@ -20,6 +20,43 @@ GRVMgram.Main.General
 GRVMgram.Main.Appearance
 GRVMgram.Main.Chats
 GRVMgram.Main.Other
+GRVMgram.Notify.Title
+GRVMgram.Notify.Row
+GRVMgram.Notify.UnsupportedOS
+GRVMgram.Notify.InstallInstructions
+GRVMgram.Notify.NotConnected
+GRVMgram.Notify.WebSessionConnected
+GRVMgram.Notify.WebSessionDisclaimer
+GRVMgram.Notify.OwnerAccount
+GRVMgram.Notify.StartSetup
+GRVMgram.Notify.ContinueSetup
+GRVMgram.Notify.OpenDevices
+GRVMgram.Notify.Disconnect
+GRVMgram.Notify.Disconnect.Confirmation.Title
+GRVMgram.Notify.Disconnect.Confirmation.Text
+GRVMgram.Notify.Disconnect.Confirmation.Action
+GRVMgram.Notify.Disconnecting
+GRVMgram.Notify.DisconnectFailed
+GRVMgram.Notify.OrphanedSession
+GRVMgram.Notify.OrphanedInstructions
+GRVMgram.Notify.StatusNotVerified
+GRVMgram.Notify.StatusNotVerified.Info
+GRVMgram.Notify.Authorization.Title
+GRVMgram.Notify.Authorization.Confirmation
+GRVMgram.Notify.Authorization.Action
+GRVMgram.Notify.Authorization.Success
+GRVMgram.Notify.Authorization.OpenPWAFallback
+GRVMgram.Notify.Error.InvalidLink
+GRVMgram.Notify.Error.PendingExpired
+GRVMgram.Notify.Error.AlreadyConnected
+GRVMgram.Notify.Error.AccountUnavailable
+GRVMgram.Notify.Error.AuthInvalid
+GRVMgram.Notify.Error.AuthExpired
+GRVMgram.Notify.Error.AuthAlreadyAccepted
+GRVMgram.Notify.Error.AuthGeneric
+GRVMgram.Notify.Error.Persistence
+GRVMgram.Notify.Error.OwnershipMismatch
+GRVMgram.Notify.Error.ChatUnsynchronized
 GRVMgram.Common.Default
 GRVMgram.Common.Off
 GRVMgram.Common.Hidden
@@ -42,8 +79,6 @@ GRVMgram.Ghost.Typing
 GRVMgram.Ghost.Upload
 GRVMgram.Ghost.StoryPrompt
 GRVMgram.Ghost.StoryPrompt.Info
-GRVMgram.Ghost.Schedule
-GRVMgram.Ghost.Schedule.Info
 GRVMgram.Ghost.Silent
 GRVMgram.Ghost.Silent.Info
 GRVMgram.Ghost.ActiveCount
@@ -120,6 +155,7 @@ GRVMgram.Shadow.Empty
 GRVMgram.Shadow.Unban
 GRVMgram.Shadow.Author
 GRVMgram.Shadow.ForwardedAuthor
+GRVMgram.Shadow.OriginalAuthor
 GRVMgram.Shadow.ActionWithRole
 GRVMgram.General.Title
 GRVMgram.Translation.Header
@@ -162,7 +198,6 @@ GRVMgram.Appearance.HideBadge
 GRVMgram.Appearance.HideCounters
 GRVMgram.Appearance.Header
 GRVMgram.Appearance.Tail
-GRVMgram.Appearance.Backgrounds
 GRVMgram.Appearance.CodeFont
 GRVMgram.Appearance.CodeFont.Preview
 GRVMgram.Appearance.AvatarCorners
@@ -193,7 +228,6 @@ GRVMgram.Chat.EditedMark.Prompt
 GRVMgram.Chat.EditedMark.Default
 GRVMgram.Chats.Messages.Icons
 GRVMgram.Chats.Messages.FastShare
-GRVMgram.Chats.Messages.ColoredReplies
 GRVMgram.Chats.Messages.Width
 GRVMgram.Chats.Messages.Translucent
 GRVMgram.Chats.Context.Header
@@ -233,6 +267,8 @@ GRVMgram.Deleted.Remove.Title
 GRVMgram.Deleted.Remove.Text
 GRVMgram.Deleted.Remove.Action
 GRVMgram.Deleted.Remove.ErrorTitle
+GRVMgram.Deleted.PurgeLive.Title
+GRVMgram.Deleted.PurgeLive.Text
 GRVMgram.History.Title
 GRVMgram.History.Empty
 GRVMgram.History.MessageEmpty
@@ -258,6 +294,7 @@ GRVMgram.ChatMenu.Title
 GRVMgram.ChatMenu.ViewDeleted
 GRVMgram.ChatMenu.ClearDeleted
 GRVMgram.Menu.LocalHide
+GRVMgram.Menu.DeleteLocal
 GRVMgram.Menu.UserMessages
 GRVMgram.Menu.Details
 GRVMgram.Menu.Repeat
@@ -535,6 +572,7 @@ class GRVMgramLocalizationResourcesContractTests(unittest.TestCase):
         self.assertFalse(any(CYRILLIC.search(value) for value in self.english.values()))
         exact_russian_actions = {
             "GRVMgram.Menu.LocalHide": "Скрыть локально",
+            "GRVMgram.Menu.DeleteLocal": "Удалить локально",
             "GRVMgram.Menu.UserMessages": "Сообщения пользователя: %@",
             "GRVMgram.Menu.Details": "Сведения о сообщении",
             "GRVMgram.Menu.Repeat": "Повторить сообщение",
