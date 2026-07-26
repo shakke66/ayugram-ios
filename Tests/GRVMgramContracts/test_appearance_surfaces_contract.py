@@ -31,6 +31,27 @@ def swift_block(text: str, signature: str) -> str:
 
 
 class AppearanceSurfacesContractTests(unittest.TestCase):
+    def test_avatar_edit_overlay_state_does_not_override_asdisplaynode_corner_radius(self) -> None:
+        avatar = source("submodules/AvatarNode/Sources/AvatarNode.swift")
+        edit_overlay = swift_block(
+            avatar, "public final class AvatarEditOverlayNode"
+        )
+
+        self.assertIsNone(
+            re.search(r"(?m)^\s*private var cornerRadius\s*:", edit_overlay),
+            "ASDisplayNode already exposes cornerRadius; a stored property with the "
+            "same name cannot override it and makes self.cornerRadius ambiguous",
+        )
+        self.assertIn(
+            "private var clipCornerRadius: CGFloat = 0.5", edit_overlay
+        )
+        update_clip = swift_block(edit_overlay, "public func updateClip(")
+        self.assertIn("self.clipCornerRadius = cornerRadius", update_clip)
+        draw_parameters = swift_block(
+            edit_overlay, "override public func drawParameters("
+        )
+        self.assertIn("cornerRadius: self.clipCornerRadius", draw_parameters)
+
     def test_avatar_geometry_is_account_exact_and_draw_stable(self) -> None:
         hooks = source("submodules/TelegramCore/Sources/AyuGramHooks.swift")
         self.assertIn("public static private(set) var primaryChatAppearance", hooks)

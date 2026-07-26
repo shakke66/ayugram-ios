@@ -300,7 +300,7 @@ public final class AvatarEditOverlayNode: ASDisplayNode {
     }
 
     private var clipStyle: AvatarNodeClipStyle = .round
-    private var cornerRadius: CGFloat = 0.5
+    private var clipCornerRadius: CGFloat = 0.5
 
     override public init() {
         super.init()
@@ -311,12 +311,12 @@ public final class AvatarEditOverlayNode: ASDisplayNode {
 
     public func updateClip(clipStyle: AvatarNodeClipStyle, cornerRadius: CGFloat) {
         self.clipStyle = clipStyle
-        self.cornerRadius = cornerRadius
+        self.clipCornerRadius = cornerRadius
         self.setNeedsDisplay()
     }
 
     override public func drawParameters(forAsyncLayer layer: _ASDisplayLayer) -> NSObjectProtocol {
-        return Params(clipStyle: self.clipStyle, cornerRadius: self.cornerRadius)
+        return Params(clipStyle: self.clipStyle, cornerRadius: self.clipCornerRadius)
     }
     
     @objc override public class func draw(_ bounds: CGRect, withParameters parameters: Any?, isCancelled: () -> Bool, isRasterizing: Bool) {
