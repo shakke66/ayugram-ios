@@ -4473,7 +4473,7 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             preparation,
             "OverlayStatusController",
             "controller?.present",
-            "progressController.dismiss()",
+            "progressController?.dismiss()",
         )
 
     def test_local_copy_preparation_is_picker_owned_cancellable_and_bounded(self) -> None:
