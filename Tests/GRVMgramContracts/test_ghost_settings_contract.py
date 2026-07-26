@@ -128,6 +128,8 @@ class GhostSettingsContractTests(unittest.TestCase):
             "goOfflineAfterOnline",
             "readOnAction",
             "setReadOnAction",
+            "useScheduledMessages",
+            "setScheduledMessages",
         ):
             self.assertNotIn(removed, source)
 
@@ -142,7 +144,6 @@ class GhostSettingsContractTests(unittest.TestCase):
             "shouldSuppressContentRead: ((PeerId) -> Bool)",
             "shouldSuppressUploadProgress: ((PeerId) -> Bool)",
             "shouldSuggestGhostForStories: ((PeerId) -> Bool)",
-            "shouldUseScheduledMessages: ((PeerId) -> Bool)",
             "sendWithoutSoundMode: ((PeerId) -> Int32)",
             "isMessageHiddenByFilter: ((PeerId, Message) -> Bool)",
             "isShadowBanned: ((PeerId, PeerId) -> Bool)",
@@ -171,6 +172,7 @@ class GhostSettingsContractTests(unittest.TestCase):
             "shouldSpoofWebviewAsAndroid",
             "shouldIncreaseWebviewHeight",
             "shouldIncreaseWebviewWidth",
+            "shouldUseScheduledMessages",
         ):
             self.assertNotIn(removed_hook, source)
 

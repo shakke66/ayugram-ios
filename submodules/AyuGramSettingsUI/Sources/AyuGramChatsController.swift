@@ -54,7 +54,6 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
     case editedMark(PresentationTheme, String)
     case replaceWithIcons(PresentationTheme, Bool)
     case hideFastShare(PresentationTheme, Bool)
-    case disableColoredReplies(PresentationTheme, Bool)
     case messageWidth(PresentationTheme, String, Double)
     case semiTransparentDeleted(PresentationTheme, Bool)
     case contextMenuHeader(PresentationTheme)
@@ -77,7 +76,7 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         switch self {
         case .stickersHeader, .onlyAddedStickers, .showChannelReactions, .showGroupReactions, .showPrivateReactions, .recentStickersCount: return AyuGramChatsSection.stickers.rawValue
         case .channelsHeader, .quickAdmin, .channelBottomButton: return AyuGramChatsSection.channels.rawValue
-        case .messagesHeader, .showDeletedMark, .showEditedMark, .deletedMark, .editedMark, .replaceWithIcons, .hideFastShare, .disableColoredReplies, .messageWidth, .semiTransparentDeleted: return AyuGramChatsSection.messages.rawValue
+        case .messagesHeader, .showDeletedMark, .showEditedMark, .deletedMark, .editedMark, .replaceWithIcons, .hideFastShare, .messageWidth, .semiTransparentDeleted: return AyuGramChatsSection.messages.rawValue
         case .contextMenuHeader, .showReactionsPanel, .showViewsPanel, .showHideMessage, .showUserMessages, .showMessageDetails, .showRepeatMessage, .showAddFilter: return AyuGramChatsSection.contextMenu.rawValue
         case .messageFieldHeader, .showAttach, .showTTL, .showEmoji, .showVoice, .showGift, .showAiEditor: return AyuGramChatsSection.messageField.rawValue
         }
@@ -101,7 +100,6 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         case .deletedMark: return 13
         case .editedMark: return 14
         case .hideFastShare: return 15
-        case .disableColoredReplies: return 16
         case .messageWidth: return 17
         case .semiTransparentDeleted: return 18
         case .contextMenuHeader: return 19
@@ -135,7 +133,6 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
         case let (.showEditedMark(_, lv), .showEditedMark(_, rv)): return lv == rv
         case let (.replaceWithIcons(_, lv), .replaceWithIcons(_, rv)): return lv == rv
         case let (.hideFastShare(_, lv), .hideFastShare(_, rv)): return lv == rv
-        case let (.disableColoredReplies(_, lv), .disableColoredReplies(_, rv)): return lv == rv
         case let (.messageWidth(_, _, lv), .messageWidth(_, _, rv)): return lv == rv
         case let (.semiTransparentDeleted(_, lv), .semiTransparentDeleted(_, rv)): return lv == rv
         case let (.showReactionsPanel(_, _, lv), .showReactionsPanel(_, _, rv)): return lv == rv
@@ -227,8 +224,6 @@ private enum AyuGramChatsEntry: ItemListNodeEntry {
             )
         case let .hideFastShare(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesFastShare], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideFastShareButton, v) })
-        case let .disableColoredReplies(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.messagesColoredReplies], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableColoredReplies, v) })
         case let .messageWidth(_, label, value):
             return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.messagesWidth], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
                 arguments.updateDouble(\.messageWidthMultiplier, [1.0, 1.25, 1.5, 2.0][(([1.0, 1.25, 1.5, 2.0].firstIndex(where: { abs($0 - value) < 0.001 }) ?? -1) + 1) % 4])
@@ -317,7 +312,6 @@ private func ayuGramChatsEntries(settings: AyuGramSettings, presentationData: Pr
         entries.append(.editedMark(presentationData.theme, settings.editedMessageMark))
     }
     entries.append(.hideFastShare(presentationData.theme, settings.hideFastShareButton))
-    entries.append(.disableColoredReplies(presentationData.theme, settings.disableColoredReplies))
     entries.append(.messageWidth(presentationData.theme, messageWidthLabel, settings.messageWidthMultiplier))
     entries.append(.semiTransparentDeleted(presentationData.theme, settings.semiTransparentDeletedMessages))
     entries.append(.contextMenuHeader(presentationData.theme))

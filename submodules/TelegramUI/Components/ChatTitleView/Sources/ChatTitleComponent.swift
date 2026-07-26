@@ -14,6 +14,7 @@ import PhoneNumberFormat
 import TelegramStringFormatting
 import EmojiStatusComponent
 import GlassBackgroundComponent
+import SwiftSignalKit
 
 public final class ChatNavigationBarTitleView: UIView, NavigationBarTitleView {
     private final class ContentData: Equatable {
@@ -318,6 +319,10 @@ public final class ChatTitleComponent: Component {
         private var statusIcon: ComponentView<Empty>?
         
         private var presenceManager: PeerPresenceStatusManager?
+        private let grvmLocalPremiumStateDisposable = MetaDisposable()
+        private var grvmLocalPremiumStateAccountPeerId: PeerId?
+        private var grvmLocalPremiumStatePeerId: PeerId?
+        private var grvmLocalPremiumState: GRVMLocalPremiumPeerState?
         
         private var component: ChatTitleComponent?
         private weak var state: EmptyComponentState?
@@ -345,6 +350,10 @@ public final class ChatTitleComponent: Component {
         required init?(coder: NSCoder) {
             fatalError("init(coder:) has not been implemented")
         }
+
+        deinit {
+            self.grvmLocalPremiumStateDisposable.dispose()
+        }
         
         @objc private func onTapGesture(_ recognizer: TapLongTapOrDoubleTapGestureRecognizer) {
             if let (gesture, _) = recognizer.lastRecognizedGestureAndLocation {
@@ -367,6 +376,41 @@ public final class ChatTitleComponent: Component {
             
             self.component = component
             self.state = state
+
+            let grvmAccountPeerId = component.context.account.peerId
+            let grvmPeerId: PeerId?
+            switch component.content {
+            case let .peer(peerView, _, _, _, _, _, _, _):
+                grvmPeerId = peerView.peerId
+            default:
+                grvmPeerId = nil
+            }
+            if self.grvmLocalPremiumStateAccountPeerId != grvmAccountPeerId || self.grvmLocalPremiumStatePeerId != grvmPeerId {
+                self.grvmLocalPremiumStateAccountPeerId = grvmAccountPeerId
+                self.grvmLocalPremiumStatePeerId = grvmPeerId
+                self.grvmLocalPremiumState = nil
+                if let grvmPeerId {
+                    self.grvmLocalPremiumStateDisposable.set((
+                        grvmLocalPremiumPeerState(
+                            postbox: component.context.account.postbox,
+                            accountPeerId: grvmAccountPeerId,
+                            peerId: grvmPeerId
+                        )
+                        |> deliverOnMainQueue
+                    ).start(next: { [weak self] grvmState in
+                        guard let self,
+                              self.grvmLocalPremiumStateAccountPeerId == grvmAccountPeerId,
+                              self.grvmLocalPremiumStatePeerId == grvmPeerId,
+                              self.grvmLocalPremiumState != grvmState else {
+                            return
+                        }
+                        self.grvmLocalPremiumState = grvmState
+                        self.state?.updated(transition: .immediate)
+                    }))
+                } else {
+                    self.grvmLocalPremiumStateDisposable.set(nil)
+                }
+            }
             
             var titleSegments: [AnimatedTextComponent.Item] = []
             var titleLeftIcon: TitleIconComponent.Kind?
@@ -447,6 +491,11 @@ public final class ChatTitleComponent: Component {
                             accountPeerId: component.context.account.peerId
                         ).appearance.hidePremiumStatuses
                         let shouldHidePremiumStatus = hidePremiumStatuses && peer.id != component.context.account.peerId
+                        let grvmPresentation = shouldHidePremiumStatus ? nil : grvmLocalPremiumPresentation(
+                            peer: peer,
+                            state: self.grvmLocalPremiumState,
+                            currentTimestamp: Int32(Date().timeIntervalSince1970)
+                        )
                         if peer.isFake {
                             titleCredibilityIcon = .fake
                         } else if peer.isScam {
@@ -455,6 +504,11 @@ public final class ChatTitleComponent: Component {
                             titleStatusIcon = .emojiStatus(emojiStatus)
                         } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !shouldHidePremiumStatus {
                             titleCredibilityIcon = .premium
+                        } else if let grvmPresentation {
+                            titleStatusIcon = .emojiStatus(grvmPresentation.emojiStatus)
+                            if !premiumConfiguration.isPremiumDisabled {
+                                titleCredibilityIcon = .premium
+                            }
                         }
 
                         if peer.isVerified {

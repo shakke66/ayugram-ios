@@ -9,6 +9,7 @@ import MultiAnimationRenderer
 import TelegramNotices
 import FlatBuffers
 import FlatSerialization
+import AyuGramLib
 
 private func grvmIsMediaInstalled(
     _ file: TelegramMediaFile,
@@ -1656,7 +1657,14 @@ public extension EmojiPagerContentComponent {
         hideBackground: Bool = false,
         maskEdge: EmojiPagerContentComponent.MaskEdgeMode = .none
     ) -> Signal<EmojiPagerContentComponent, NoError> {
-        let chats = AyuGramHooks.chatAppearance(accountPeerId: context.account.peerId).chats
+        let chats: Signal<GRVMChatSettings, NoError> = grvmSettings(
+            accountId: context.account.peerId,
+            accountManager: context.sharedContext.accountManager
+        )
+        |> map { settings in
+            return settings.grvmChatAppearanceSettings.chats
+        }
+        |> distinctUntilChanged
         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
         let isPremiumDisabled = premiumConfiguration.isPremiumDisabled
         
@@ -1739,17 +1747,29 @@ public extension EmojiPagerContentComponent {
                 )
             }
         }
+
+        let chatsAndFeaturedStickerPacks = chats
+        |> mapToSignal { chats in
+            let featuredStickerPacks = hasTrending && !chats.showOnlyAddedStickers
+                ? context.account.viewTracker.featuredStickerPacks()
+                : .single([])
+            return featuredStickerPacks
+            |> map { featuredStickerPacks in
+                return (chats, featuredStickerPacks)
+            }
+        }
         
         return combineLatest(
             context.account.postbox.itemCollectionsView(orderedItemListCollectionIds: stickerOrderedItemListCollectionIds, namespaces: stickerNamespaces, aroundIndex: nil, count: 10000000),
             hasPremium(context: context, chatPeerId: chatPeerId, premiumIfSavedMessages: false),
-            hasTrending && !chats.showOnlyAddedStickers ? context.account.viewTracker.featuredStickerPacks() : .single([]),
+            chatsAndFeaturedStickerPacks,
             context.engine.data.get(TelegramEngine.EngineData.Item.ItemCache.Item(collectionId: Namespaces.CachedItemCollection.featuredStickersConfiguration, id: ValueBoxKey(length: 0))),
             ApplicationSpecificNotice.dismissedTrendingStickerPacks(accountManager: context.sharedContext.accountManager),
             peerSpecificPack,
             searchCategories
         )
-        |> map { view, hasPremium, featuredStickerPacks, featuredStickersConfiguration, dismissedTrendingStickerPacks, peerSpecificPack, searchCategories -> EmojiPagerContentComponent in
+        |> map { view, hasPremium, chatsAndFeaturedStickerPacks, featuredStickersConfiguration, dismissedTrendingStickerPacks, peerSpecificPack, searchCategories -> EmojiPagerContentComponent in
+            let (chats, featuredStickerPacks) = chatsAndFeaturedStickerPacks
             let hasPremium = forceHasPremium || hasPremium
             struct ItemGroup {
                 var supergroupId: AnyHashable

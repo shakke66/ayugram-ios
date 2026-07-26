@@ -95,6 +95,7 @@ private final class GRVMIntegerSliderItemNode: ListViewItemNode, ItemListItemNod
     private let titleNode: ImmediateTextNode
     private let valueNode: ImmediateTextNode
     private var sliderView: UISlider?
+    private var sliderFrame: CGRect?
     private var item: GRVMIntegerSliderItem?
     private var lastEmittedValue: Int32?
 
@@ -135,6 +136,7 @@ private final class GRVMIntegerSliderItemNode: ListViewItemNode, ItemListItemNod
         sliderView.addTarget(self, action: #selector(self.sliderValueChanged), for: .valueChanged)
         self.view.addSubview(sliderView)
         self.sliderView = sliderView
+        self.updateSliderConfiguration()
     }
 
     func asyncLayout() -> (_ item: GRVMIntegerSliderItem, _ params: ListViewItemLayoutParams, _ neighbors: ItemListNeighbors) -> (ListViewItemNodeLayout, () -> Void) {
@@ -144,7 +146,8 @@ private final class GRVMIntegerSliderItemNode: ListViewItemNode, ItemListItemNod
             let rightInset: CGFloat = params.rightInset + 16.0
             let valueFont = Font.regular(item.presentationData.fontSize.itemListBaseFontSize)
             let titleFont = Font.regular(item.presentationData.fontSize.itemListBaseFontSize)
-            let valueText = "\(item.value)"
+            let value = min(item.range.upperBound, max(item.range.lowerBound, item.value))
+            let valueText = "\(value)"
             let valueWidth: CGFloat = 56.0
             let titleWidth = max(1.0, params.width - sideInset - rightInset - valueWidth - 16.0)
             self.titleNode.attributedText = NSAttributedString(
@@ -176,7 +179,7 @@ private final class GRVMIntegerSliderItemNode: ListViewItemNode, ItemListItemNod
                     return
                 }
                 self.item = item
-                self.lastEmittedValue = item.value
+                self.lastEmittedValue = value
 
                 if themeUpdated {
                     self.backgroundNode.backgroundColor = item.presentationData.theme.list.itemBlocksBackgroundColor
@@ -250,26 +253,32 @@ private final class GRVMIntegerSliderItemNode: ListViewItemNode, ItemListItemNod
                     width: resolvedValueSize.width,
                     height: resolvedValueSize.height
                 )
-
-                if let sliderView = self.sliderView {
-                    sliderView.minimumValue = Float(item.range.lowerBound)
-                    sliderView.maximumValue = Float(item.range.upperBound)
-                    sliderView.isContinuous = true
-                    sliderView.minimumTrackTintColor = item.presentationData.theme.list.itemAccentColor
-                    sliderView.maximumTrackTintColor = item.presentationData.theme.list.itemSwitchColors.frameColor
-                    sliderView.tintColor = item.presentationData.theme.list.itemAccentColor
-                    sliderView.setValue(Float(item.value), animated: false)
-                    sliderView.accessibilityLabel = item.title
-                    sliderView.accessibilityValue = valueText
-                    sliderView.frame = CGRect(
-                        x: sideInset,
-                        y: sliderY,
-                        width: params.width - sideInset - rightInset,
-                        height: 44.0
-                    )
-                }
+                self.sliderFrame = CGRect(
+                    x: sideInset,
+                    y: sliderY,
+                    width: params.width - sideInset - rightInset,
+                    height: 44.0
+                )
+                self.updateSliderConfiguration()
             })
         }
+    }
+
+    private func updateSliderConfiguration() {
+        guard let sliderView = self.sliderView, let item = self.item, let sliderFrame = self.sliderFrame else {
+            return
+        }
+        let value = min(item.range.upperBound, max(item.range.lowerBound, item.value))
+        sliderView.minimumValue = Float(item.range.lowerBound)
+        sliderView.maximumValue = Float(item.range.upperBound)
+        sliderView.isContinuous = true
+        sliderView.minimumTrackTintColor = item.presentationData.theme.list.itemAccentColor
+        sliderView.maximumTrackTintColor = item.presentationData.theme.list.itemSwitchColors.frameColor
+        sliderView.tintColor = item.presentationData.theme.list.itemAccentColor
+        sliderView.setValue(Float(value), animated: false)
+        sliderView.accessibilityLabel = item.title
+        sliderView.accessibilityValue = "\(value)"
+        sliderView.frame = sliderFrame
     }
 
     @objc private func sliderValueChanged() {

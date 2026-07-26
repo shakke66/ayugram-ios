@@ -17,6 +17,11 @@ MESSAGE_MENU = (
     / "submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift"
 )
 LOCALIZATION_ITEM = ROOT / "submodules/TranslateUI/Sources/LocalizationListItem.swift"
+GRVM_STRINGS = (
+    ROOT / "submodules/TelegramPresentationData/Sources/GRVMgramStrings.swift"
+)
+EN_STRINGS = ROOT / "Telegram/Telegram-iOS/en.lproj/GRVMgram.strings"
+RU_STRINGS = ROOT / "Telegram/Telegram-iOS/ru.lproj/GRVMgram.strings"
 
 
 def read(path: Path) -> str:
@@ -43,6 +48,9 @@ class FilterUIContractTests(unittest.TestCase):
         cls.list_view = read(LIST_VIEW)
         cls.message_menu = read(MESSAGE_MENU)
         cls.localization_item = read(LOCALIZATION_ITEM)
+        cls.grvm_strings = read(GRVM_STRINGS)
+        cls.en_strings = read(EN_STRINGS)
+        cls.ru_strings = read(RU_STRINGS)
 
     def test_backup_envelope_is_public_and_versioned(self) -> None:
         self.assertIn(
@@ -256,6 +264,58 @@ class FilterUIContractTests(unittest.TestCase):
             shadow_update,
         )
         self.assertNotIn("self.reloadChatLocation(", shadow_update)
+
+    def test_forwarded_shadow_targets_keep_roles_identity_and_public_id_separate(self) -> None:
+        start = self.chat.index("func grvmMessageFilterContextMenuItems(")
+        end = self.chat.index("\n    private func grvmSetShadowBanned(", start)
+        message_actions = self.chat[start:end]
+
+        for token in (
+            "func resolveAuthorPeer(_ peerId: PeerId) -> Peer?",
+            "message.peers[peerId]",
+            "message.author?.id == peerId",
+            "message.forwardInfo?.author?.id == peerId",
+            "message.forwardInfo?.source?.id == peerId",
+            "var authors: [(peerId: PeerId, peer: Peer?, label: String)]",
+            "appendAuthor(message.forwardInfo?.author?.id, label: strings[.shadowForwardedAuthor])",
+            "appendAuthor(message.sourceAuthorInfo?.originalAuthor, label: strings[.shadowOriginalAuthor])",
+            "EnginePeer(peer).compactDisplayTitle",
+            "let publicId = grvmFormatPeerId(author.peerId, format: .telegram)",
+            "strings.format(.shadowActionWithRole, action, author.label, targetTitle)",
+            "self?.grvmSetShadowBanned(peerId: author.peerId, value: !isBanned)",
+        ):
+            self.assertIn(token, message_actions)
+
+        self.assertIn("peerId != self.context.account.peerId", message_actions)
+        self.assertNotIn(
+            "authors.contains(where: { $0.peerId == peerId })", message_actions
+        )
+        self.assertNotIn("author.peerId.toInt64()", message_actions)
+        self.assertNotIn("authors.count == 1 ? action", message_actions)
+
+        self.assertIn(
+            'case shadowOriginalAuthor = "GRVMgram.Shadow.OriginalAuthor"',
+            self.grvm_strings,
+        )
+        role_key = "GRVMgram.Shadow.ForwardedAuthor"
+        original_role_key = "GRVMgram.Shadow.OriginalAuthor"
+        action_key = "GRVMgram.Shadow.ActionWithRole"
+        for resource in (self.en_strings, self.ru_strings):
+            forwarded = re.search(
+                rf'"{re.escape(role_key)}"\s*=\s*"([^"]+)";', resource
+            )
+            original = re.search(
+                rf'"{re.escape(original_role_key)}"\s*=\s*"([^"]+)";', resource
+            )
+            action_format = re.search(
+                rf'"{re.escape(action_key)}"\s*=\s*"([^"]+)";', resource
+            )
+            self.assertIsNotNone(forwarded)
+            self.assertIsNotNone(original)
+            self.assertIsNotNone(action_format)
+            self.assertNotEqual(forwarded.group(1), original.group(1))
+            for placeholder in ("%1$@", "%2$@", "%3$@"):
+                self.assertIn(placeholder, action_format.group(1))
 
     def test_show_filtered_is_runtime_only_and_reloads_history(self) -> None:
         window = function_window(self.chat, "func grvmFilteredVisibilityContextMenuItems(")

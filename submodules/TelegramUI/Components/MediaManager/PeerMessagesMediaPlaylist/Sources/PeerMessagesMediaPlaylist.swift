@@ -4,6 +4,7 @@ import Display
 import SwiftSignalKit
 import Postbox
 import TelegramCore
+import TelegramPresentationData
 import TelegramUIPreferences
 import AccountContext
 import MusicAlbumArtResources
@@ -924,19 +925,59 @@ public final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
             }
             let timeout = item.message.minAutoremoveOrClearTimeout
             if self.consumeViewOnce || timeout != viewOnceTimeout {
-                let consume = self.context.engine.messages.markMessageContentAsConsumedInteractively(messageId: item.message.id)
-                let preparation: Signal<Bool, NoError>
+                let consume: () -> Void = {
+                    let _ = self.context.engine.messages.markMessageContentAsConsumedInteractively(
+                        messageId: item.message.id
+                    ).startStandalone()
+                }
                 if self.consumeViewOnce && timeout == viewOnceTimeout {
-                    preparation = AyuGramHooks.prepareConsumableMedia?(
+                    guard AyuGramHooks.shouldPreserveOneTimeMedia?(self.context.account.peerId) == true else {
+                        consume()
+                        return
+                    }
+                    let preparation = AyuGramHooks.prepareConsumableMedia?(
                         self.context.account.peerId,
                         item.message
                     ) ?? .single(false)
+                    let handlePreparationResult: (Bool) -> Void = { prepared in
+                        guard prepared else {
+                            self.displayPreservationError()
+                            return
+                        }
+                        consume()
+                    }
+                    var receivedPreparationResult = false
+                    let _ = (preparation
+                    |> take(1)
+                    |> deliverOnMainQueue).startStandalone(next: { prepared in
+                        receivedPreparationResult = true
+                        handlePreparationResult(prepared)
+                    }, completed: {
+                        guard !receivedPreparationResult else {
+                            return
+                        }
+                        handlePreparationResult(false)
+                    })
                 } else {
-                    preparation = .single(false)
+                    consume()
                 }
-                let _ = (preparation
-                |> mapToSignal { _ in consume }).startStandalone()
             }
         }
+    }
+
+    private func displayPreservationError() {
+        let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+        let strings = GRVMgramStrings(presentationData.strings)
+        let alertController = UIAlertController(
+            title: nil,
+            message: strings[.deletedMediaUnavailable],
+            preferredStyle: .alert
+        )
+        alertController.addAction(UIAlertAction(
+            title: presentationData.strings.Common_OK,
+            style: .default,
+            handler: nil
+        ))
+        self.context.sharedContext.applicationBindings.presentNativeController(alertController)
     }
 }

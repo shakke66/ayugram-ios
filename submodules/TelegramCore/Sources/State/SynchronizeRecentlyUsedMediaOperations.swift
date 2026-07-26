@@ -7,6 +7,11 @@ enum RecentlyUsedMediaCategory {
     case stickers
 }
 
+func grvmRecentStickersLimit() -> Int {
+    let value = AyuGramHooks.recentStickersLimit?() ?? 100
+    return Int(min(200, max(1, value)))
+}
+
 func addSynchronizeRecentlyUsedMediaOperation(transaction: Transaction, category: RecentlyUsedMediaCategory, operation: SynchronizeRecentlyUsedMediaOperationContent) {
     let tag: PeerOperationLogTag
     switch category {
@@ -40,7 +45,7 @@ func addSynchronizeRecentlyUsedMediaOperation(transaction: Transaction, category
 func addRecentlyUsedSticker(transaction: Transaction, fileReference: FileMediaReference) {
     if let resource = fileReference.media.resource as? CloudDocumentMediaResource {
         if let entry = CodableEntry(RecentMediaItem(fileReference.media)) {
-            transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(fileReference.media.fileId).rawValue, contents: entry), removeTailIfCountExceeds: 20)
+            transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(fileReference.media.fileId).rawValue, contents: entry), removeTailIfCountExceeds: grvmRecentStickersLimit())
         }
         addSynchronizeRecentlyUsedMediaOperation(transaction: transaction, category: .stickers, operation: .add(id: resource.fileId, accessHash: resource.accessHash, fileReference: fileReference))
     }

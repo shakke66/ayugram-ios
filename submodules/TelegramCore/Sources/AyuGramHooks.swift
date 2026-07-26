@@ -64,13 +64,9 @@ public final class AyuGramHooks {
     // MARK: - Chats
     public static var shouldShowOnlyAddedStickers: (() -> Bool)?
 
-    // MARK: - Sending
-    public static var shouldUseScheduledMessages: ((PeerId) -> Bool)?
-
     // MARK: - Reanimation (W0)
     public static var shouldSuppressUploadProgress: ((PeerId) -> Bool)?
     public static var shouldSaveForBots: (() -> Bool)?
-    public static var shouldDisableCustomBackgrounds: (() -> Bool)?
     public static var codeFontName: (() -> String)?
     public static var shouldUseQuickAdminShortcuts: (() -> Bool)?
     public static var shouldShowChannelReactions: (() -> Bool)?

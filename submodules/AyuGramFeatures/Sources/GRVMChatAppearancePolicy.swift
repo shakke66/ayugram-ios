@@ -23,7 +23,6 @@ public extension AyuGramSettings {
                 hideNotificationBadge: self.hideNotificationBadge,
                 hideNotificationCounters: self.hideNotificationCounters,
                 removeMessageBubbleTail: self.removeMessageBubbleTail,
-                disableCustomBackgrounds: self.disableCustomBackgrounds,
                 codeFontName: self.codeFontName,
                 hideFolderCounters: self.hideFolderCounters,
                 hideAllChatsFolder: self.hideAllChatsFolder,
@@ -44,7 +43,6 @@ public extension AyuGramSettings {
                 editedMessageMark: self.editedMessageMark,
                 replaceMarksWithIcons: self.replaceMarksWithIcons,
                 hideFastShareButton: self.hideFastShareButton,
-                disableColoredReplies: self.disableColoredReplies,
                 semiTransparentDeletedMessages: self.semiTransparentDeletedMessages,
                 messageWidthMultiplier: messageWidthMultiplier
             ),

@@ -37,7 +37,9 @@ import ChatMessageItemView
 import ChatMessageBubbleItemNode
 import AdsInfoScreen
 import AdsReportScreen
+import AyuGramLib
 import AyuGramSettingsUI
+import AyuGramFeatures
  
 private struct MessageContextMenuData {
     let starStatus: Bool?
@@ -49,10 +51,14 @@ private struct MessageContextMenuData {
     let messageActions: ChatAvailableMessageActions
 }
 
-private enum GRVMContextMenuPlacement: Equatable {
+enum GRVMContextMenuPlacement: Equatable {
     case hidden
     case topLevel
     case more
+}
+
+final class GRVMContextMenuMoreActions {
+    var items: [ContextMenuItem] = []
 }
 
 private struct GRVMContextStatsRoute {
@@ -98,7 +104,7 @@ private func grvmFilteredReadStats(
     )
 }
 
-private func grvmContextMenuPlacement(
+func grvmContextMenuPlacement(
     _ visibility: GRVMContextMenuVisibility,
     modifierPressed: Bool
 ) -> GRVMContextMenuPlacement {
@@ -202,7 +208,7 @@ private func grvmBurnMessage(
                         force: true
                     ).startStandalone()
                 }
-                guard AyuGramHooks.shouldSaveDeletedMessages?(context.account.peerId) == true else {
+                guard AyuGramHooks.shouldPreserveOneTimeMedia?(context.account.peerId) == true else {
                     consume()
                     return
                 }
@@ -210,9 +216,7 @@ private func grvmBurnMessage(
                     context.account.peerId,
                     message
                 ) ?? .single(false)
-                let _ = (preparation
-                |> take(1)
-                |> deliverOnMainQueue).startStandalone(next: { prepared in
+                let handlePreparationResult: (Bool) -> Void = { prepared in
                     guard prepared else {
                         controllerInteraction.displayUndo(.info(
                             title: nil,
@@ -223,8 +227,138 @@ private func grvmBurnMessage(
                         return
                     }
                     consume()
+                }
+                var receivedPreparationResult = false
+                let _ = (preparation
+                |> take(1)
+                |> deliverOnMainQueue).startStandalone(next: { prepared in
+                    receivedPreparationResult = true
+                    handlePreparationResult(prepared)
+                }, completed: {
+                    guard !receivedPreparationResult else {
+                        return
+                    }
+                    handlePreparationResult(false)
                 })
             })
+        ]
+    )
+    controllerInteraction.presentController(alert, nil)
+}
+
+private func grvmLocalPurgeErrorText(
+    _ error: GRVMClearDeletedError,
+    strings: GRVMgramStrings
+) -> String {
+    switch error {
+    case .archiveUnavailable:
+        return strings[.deletedClearArchiveUnavailable]
+    case let .mediaRemovalFailed(count):
+        return strings.format(.deletedClearMediaRemovalFailed, Int32(count))
+    case .databaseFinalizationFailed:
+        return strings[.deletedClearDatabaseFinalizationFailed]
+    }
+}
+
+func grvmContextMoreActionsItem(
+    contextMoreActions: [ContextMenuItem],
+    reactionPanelItems: ContextController.Items?,
+    strings: PresentationStrings
+) -> ContextMenuItem? {
+    guard !contextMoreActions.isEmpty || reactionPanelItems != nil else {
+        return nil
+    }
+    return .action(ContextMenuActionItem(
+        text: "GRVMgram Actions",
+        icon: { theme in
+            return generateTintedImage(
+                image: UIImage(bundleImageName: "Chat/Context Menu/More"),
+                color: theme.contextMenu.primaryColor
+            )
+        },
+        action: { c, _ in
+            var submenuItems: [ContextMenuItem] = [
+                .action(ContextMenuActionItem(
+                    text: strings.Common_Back,
+                    icon: { theme in
+                        return generateTintedImage(
+                            image: UIImage(bundleImageName: "Chat/Context Menu/Back"),
+                            color: theme.contextMenu.primaryColor
+                        )
+                    },
+                    iconSource: nil,
+                    iconPosition: .left,
+                    action: { c, _ in
+                        c?.popItems()
+                    }
+                ))
+            ]
+            if !contextMoreActions.isEmpty {
+                submenuItems.append(.separator)
+                submenuItems.append(contentsOf: contextMoreActions)
+            }
+            var submenu = reactionPanelItems ?? ContextController.Items(content: .list(submenuItems))
+            submenu.content = .list(submenuItems)
+            c?.pushItems(items: .single(submenu))
+        }
+    ))
+}
+
+private func grvmPurgeDeletedMessage(
+    context: AccountContext,
+    message: Message,
+    deleteFromServer: Bool,
+    controllerInteraction: ChatControllerInteraction
+) {
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    let strings = GRVMgramStrings(presentationData.strings)
+    guard let purgeDeletedMessage = AyuGramFeatures.purgeDeletedMessage else {
+        controllerInteraction.displayUndo(.info(
+            title: strings[.deletedRemoveErrorTitle],
+            text: strings[.deletedClearArchiveUnavailable],
+            timeout: nil,
+            customUndoText: nil
+        ))
+        return
+    }
+
+    let alert = textAlertController(
+        context: context,
+        title: deleteFromServer ? strings[.deletedPurgeLiveTitle] : strings[.deletedRemoveTitle],
+        text: deleteFromServer ? strings[.deletedPurgeLiveText] : strings[.deletedRemoveText],
+        actions: [
+            TextAlertAction(
+                type: .genericAction,
+                title: presentationData.strings.Common_Cancel,
+                action: {}
+            ),
+            TextAlertAction(
+                type: .destructiveAction,
+                title: strings[.deletedRemoveAction],
+                action: {
+                    let purge = purgeDeletedMessage(context.account.peerId, message)
+                    let operation: Signal<[MessageId], GRVMClearDeletedError>
+                    if deleteFromServer {
+                        operation = (context.engine.messages.deleteMessagesInteractively(
+                            messageIds: [message.id],
+                            type: .forEveryone
+                        )
+                        |> castError(GRVMClearDeletedError.self))
+                        |> then(purge)
+                    } else {
+                        operation = purge
+                    }
+                    let _ = (operation
+                    |> deliverOnMainQueue).startStandalone(error: { error in
+                        controllerInteraction.displayUndo(.info(
+                            title: strings[.deletedRemoveErrorTitle],
+                            text: grvmLocalPurgeErrorText(error, strings: strings),
+                            timeout: nil,
+                            customUndoText: nil
+                        ))
+                    })
+                }
+            )
         ]
     )
     controllerInteraction.presentController(alert, nil)
@@ -784,7 +918,7 @@ func updatedChatEditInterfaceMessageState(context: AccountContext, state: ChatPr
     )
 }
 
-func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, messages: [Message], controllerInteraction: ChatControllerInteraction?, selectAll: Bool, interfaceInteraction: ChatPanelInterfaceInteraction?, readStats: MessageReadStats? = nil, messageNode: ChatMessageItemView? = nil, modifierPressed: Bool = false) -> Signal<ContextController.Items, NoError> {
+func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, messages: [Message], controllerInteraction: ChatControllerInteraction?, selectAll: Bool, interfaceInteraction: ChatPanelInterfaceInteraction?, readStats: MessageReadStats? = nil, messageNode: ChatMessageItemView? = nil, modifierPressed: Bool = false, grvmMoreActions: GRVMContextMenuMoreActions? = nil) -> Signal<ContextController.Items, NoError> {
     guard let interfaceInteraction = interfaceInteraction, let controllerInteraction = controllerInteraction else {
         return .single(ContextController.Items(content: .list([])))
     }
@@ -1268,12 +1402,13 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.actionSheet.destructiveActionTextColor)
                     },
                     action: { c, _ in
-                        c?.dismiss(result: .dismissWithoutContent, completion: nil)
-                        grvmBurnMessage(
-                            context: context,
-                            message: message,
-                            controllerInteraction: controllerInteraction
-                        )
+                        c?.dismiss(result: .dismissWithoutContent, completion: {
+                            grvmBurnMessage(
+                                context: context,
+                                message: message,
+                                controllerInteraction: controllerInteraction
+                            )
+                        })
                     }
                 )))
             }
@@ -1326,7 +1461,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     guard let chatController = interfaceInteraction.chatController() as? ChatControllerImpl else {
                         return
                     }
-                    chatController.grvmApplyMaxReadIndex(message.index, mode: .localOnly)
+                    chatController.grvmApplyTopReadIndex(mode: .localOnly)
                 }
             )))
         }
@@ -2425,7 +2560,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         }
         
         let viewsPlacement = grvmContextMenuPlacement(contextMenuSettings.views, modifierPressed: modifierPressed)
-        let reactionsPlacement = grvmContextMenuPlacement(contextMenuSettings.reactions, modifierPressed: modifierPressed)
+        let reactionsPlacement: GRVMContextMenuPlacement = .topLevel
         if case .hidden = viewsPlacement {
             canViewStats = false
         }
@@ -2645,6 +2780,32 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         }
 
         if messages.count == 1 {
+            let isArchivedDeletion = message.attributes.contains(where: {
+                $0 is GRVMDeletedMessageAttribute
+            })
+            if !isReplyThreadHead, isArchivedDeletion || data.messageActions.options.contains(.deleteGlobally) {
+                actions.insert(.action(ContextMenuActionItem(
+                    text: grvmStrings[.menuDeleteLocal],
+                    textColor: .destructive,
+                    icon: { theme in
+                        return generateTintedImage(
+                            image: UIImage(bundleImageName: "Chat/Context Menu/Delete"),
+                            color: theme.actionSheet.destructiveActionTextColor
+                        )
+                    },
+                    action: { c, _ in
+                        c?.dismiss(result: .dismissWithoutContent, completion: {
+                            grvmPurgeDeletedMessage(
+                                context: context,
+                                message: message,
+                                deleteFromServer: !isArchivedDeletion,
+                                controllerInteraction: controllerInteraction
+                            )
+                        })
+                    }
+                )), at: 0)
+            }
+
             if !isReplyThreadHead, !isLocallyDeletedMessage(message.attributes) {
                 grvmRouteContextMenuItem(.action(ContextMenuActionItem(
                     text: "Hide Locally",
@@ -2709,37 +2870,14 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
 
-        if !contextMoreActions.isEmpty {
-            actions.insert(.action(ContextMenuActionItem(
-                text: "GRVMgram Actions",
-                icon: { theme in
-                    return generateTintedImage(
-                        image: UIImage(bundleImageName: "Chat/Context Menu/More"),
-                        color: theme.contextMenu.primaryColor
-                    )
-                },
-                action: { c, _ in
-                    var submenuItems: [ContextMenuItem] = [
-                        .action(ContextMenuActionItem(
-                            text: chatPresentationInterfaceState.strings.Common_Back,
-                            icon: { theme in
-                                return generateTintedImage(
-                                    image: UIImage(bundleImageName: "Chat/Context Menu/Back"),
-                                    color: theme.contextMenu.primaryColor
-                                )
-                            },
-                            iconSource: nil,
-                            iconPosition: .left,
-                            action: { c, _ in
-                                c?.popItems()
-                            }
-                        )),
-                        .separator
-                    ]
-                    submenuItems.append(contentsOf: contextMoreActions)
-                    c?.pushItems(items: .single(ContextController.Items(content: .list(submenuItems))))
-                }
-            )), at: 0)
+        if let grvmMoreActions {
+            grvmMoreActions.items = contextMoreActions
+        } else if let moreItem = grvmContextMoreActionsItem(
+            contextMoreActions: contextMoreActions,
+            reactionPanelItems: nil,
+            strings: chatPresentationInterfaceState.strings
+        ) {
+            actions.insert(moreItem, at: 0)
         }
 
         if messages.count == 1,
@@ -2749,7 +2887,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 actions.insert(.separator, at: 0)
             }
             actions.insert(.action(ContextMenuActionItem(
-                text: "History",
+                text: grvmStrings[.menuHistory],
                 icon: { theme in
                     generateTintedImage(
                         image: UIImage(bundleImageName: "Chat/Context Menu/History"),

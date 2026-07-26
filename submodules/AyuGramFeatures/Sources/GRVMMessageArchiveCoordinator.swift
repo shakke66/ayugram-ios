@@ -631,6 +631,7 @@ public final class GRVMMessageArchiveCoordinator {
                         userLocation: .peer(preparation.message.id.peerId),
                         userContentType: fetchResource.userContentType,
                         reference: fetchResource.reference,
+                        reportResultStatus: true,
                         continueInBackground: true
                     )
                     |> map { _ -> Bool in
@@ -926,7 +927,6 @@ public final class GRVMMessageArchiveCoordinator {
         var archivedMessages: [GRVMArchivedMessage] = []
         var plannedMedia: [GRVMMessageKey: [GRVMArchivedMedia]] = [:]
         var resources: [GRVMMessageKey: [GRVMMediaResourceReference]] = [:]
-        var result: [MessageId: [String]] = [:]
 
         for (key, message) in uniqueMessages {
             let messageResources = grvmMediaResources(message.media)
@@ -949,7 +949,6 @@ public final class GRVMMessageArchiveCoordinator {
             ))
             plannedMedia[key] = records
             resources[key] = messageResources
-            result[message.id] = resourceIds
         }
 
         let admittedMedia: [GRVMMessageKey: [GRVMArchivedMedia]]
@@ -958,9 +957,21 @@ public final class GRVMMessageArchiveCoordinator {
         } catch {
             return .unavailable
         }
-        self.index.insertDeleted(Set(uniqueMessages.keys))
+        let admittedKeys = Set(admittedMedia.keys)
+        self.index.insertDeleted(admittedKeys)
 
-        for (key, messageResources) in resources {
+        var result: [MessageId: [String]] = [:]
+        for key in admittedKeys {
+            guard let message = uniqueMessages[key] else {
+                continue
+            }
+            result[message.id] = (resources[key] ?? []).map { $0.id.stringRepresentation }
+        }
+
+        for key in admittedKeys {
+            guard let messageResources = resources[key] else {
+                continue
+            }
             let recordsById = Dictionary(uniqueKeysWithValues: (admittedMedia[key] ?? []).map {
                 ($0.resourceId, $0)
             })
@@ -1132,6 +1143,10 @@ public final class GRVMMessageArchiveCoordinator {
                 }
             }
         }
+    }
+
+    public func purgeDeletedMessage(_ message: Message) -> Signal<[MessageId], GRVMClearDeletedError> {
+        return self.removeDeletedMessage(self.messageKey(message))
     }
 
     public func hasEditHistory(_ id: MessageId) -> Bool {

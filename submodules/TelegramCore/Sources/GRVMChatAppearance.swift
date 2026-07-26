@@ -21,7 +21,6 @@ public struct GRVMAppearanceSettings: Equatable {
     public let hideNotificationBadge: Bool
     public let hideNotificationCounters: Bool
     public let removeMessageBubbleTail: Bool
-    public let disableCustomBackgrounds: Bool
     public let codeFontName: String
     public let hideFolderCounters: Bool
     public let hideAllChatsFolder: Bool
@@ -33,7 +32,6 @@ public struct GRVMAppearanceSettings: Equatable {
         hideNotificationBadge: Bool,
         hideNotificationCounters: Bool,
         removeMessageBubbleTail: Bool,
-        disableCustomBackgrounds: Bool,
         codeFontName: String,
         hideFolderCounters: Bool,
         hideAllChatsFolder: Bool,
@@ -44,7 +42,6 @@ public struct GRVMAppearanceSettings: Equatable {
         self.hideNotificationBadge = hideNotificationBadge
         self.hideNotificationCounters = hideNotificationCounters
         self.removeMessageBubbleTail = removeMessageBubbleTail
-        self.disableCustomBackgrounds = disableCustomBackgrounds
         self.codeFontName = codeFontName
         self.hideFolderCounters = hideFolderCounters
         self.hideAllChatsFolder = hideAllChatsFolder
@@ -67,7 +64,6 @@ public struct GRVMChatSettings: Equatable {
     public let editedMessageMark: String
     public let replaceMarksWithIcons: Bool
     public let hideFastShareButton: Bool
-    public let disableColoredReplies: Bool
     public let semiTransparentDeletedMessages: Bool
     public let messageWidthMultiplier: Double
 
@@ -85,7 +81,6 @@ public struct GRVMChatSettings: Equatable {
         editedMessageMark: String,
         replaceMarksWithIcons: Bool,
         hideFastShareButton: Bool,
-        disableColoredReplies: Bool,
         semiTransparentDeletedMessages: Bool,
         messageWidthMultiplier: Double
     ) {
@@ -102,10 +97,68 @@ public struct GRVMChatSettings: Equatable {
         self.editedMessageMark = editedMessageMark
         self.replaceMarksWithIcons = replaceMarksWithIcons
         self.hideFastShareButton = hideFastShareButton
-        self.disableColoredReplies = disableColoredReplies
         self.semiTransparentDeletedMessages = semiTransparentDeletedMessages
         self.messageWidthMultiplier = messageWidthMultiplier
     }
+}
+
+public func grvmShouldDisplayMessageReactions(
+    accountPeerId: PeerId,
+    message: Message
+) -> Bool {
+    let chats = AyuGramHooks.chatAppearance(accountPeerId: accountPeerId).chats
+    guard let peer = message.peers[message.id.peerId] else {
+        return true
+    }
+
+    if let channel = peer as? TelegramChannel {
+        switch channel.info {
+        case .broadcast:
+            return chats.showChannelReactions
+        case .group:
+            return chats.showGroupReactions
+        }
+    } else if peer is TelegramGroup {
+        return chats.showGroupReactions
+    } else if peer is TelegramUser || peer is TelegramSecretChat {
+        return chats.showPrivateReactions
+    } else {
+        return true
+    }
+}
+
+public func grvmVisibleMessageReactions(
+    accountPeerId: PeerId,
+    message: Message
+) -> ReactionsMessageAttribute? {
+    guard grvmShouldDisplayMessageReactions(
+        accountPeerId: accountPeerId,
+        message: message
+    ) else {
+        return nil
+    }
+    return mergedMessageReactions(
+        attributes: message.attributes,
+        isTags: message.areReactionsTags(accountPeerId: accountPeerId)
+    )
+}
+
+public func grvmVisibleMessageReactionsAndPeers(
+    accountPeerId: PeerId,
+    accountPeer: EnginePeer?,
+    message: Message
+) -> (reactions: [MessageReaction], peers: [(MessageReaction.Reaction, EnginePeer)]) {
+    guard grvmShouldDisplayMessageReactions(
+        accountPeerId: accountPeerId,
+        message: message
+    ) else {
+        return ([], [])
+    }
+    return mergedMessageReactionsAndPeers(
+        accountPeerId: accountPeerId,
+        accountPeer: accountPeer,
+        message: message
+    )
 }
 
 public struct GRVMContextMenuSettings: Equatable {
@@ -185,7 +238,6 @@ public struct GRVMChatAppearanceSettings: Equatable {
             hideNotificationBadge: false,
             hideNotificationCounters: false,
             removeMessageBubbleTail: false,
-            disableCustomBackgrounds: false,
             codeFontName: "",
             hideFolderCounters: false,
             hideAllChatsFolder: false,
@@ -206,7 +258,6 @@ public struct GRVMChatAppearanceSettings: Equatable {
             editedMessageMark: "",
             replaceMarksWithIcons: false,
             hideFastShareButton: false,
-            disableColoredReplies: false,
             semiTransparentDeletedMessages: false,
             messageWidthMultiplier: 1.0
         ),

@@ -22,7 +22,10 @@ DELETED_ATTRIBUTE = (
 
 def swift_sql(source: str, name: str) -> str:
     marker = f'static let {name} = """'
-    start = source.index(marker) + len(marker)
+    start_index = source.find(marker)
+    if start_index < 0:
+        raise AssertionError(f"missing Swift SQL constant: {name}")
+    start = start_index + len(marker)
     return source[start : source.index('"""', start)]
 
 
@@ -323,12 +326,13 @@ class ArchiveContractTests(unittest.TestCase):
             source,
         )
 
-    def test_fresh_schema_executes_and_declares_v4_tables(self) -> None:
+    def test_fresh_schema_executes_and_declares_v5_tables(self) -> None:
         source = STORE.read_text(encoding="utf-8")
         db = sqlite3.connect(":memory:")
         db.executescript(swift_sql(source, "schemaV2"))
         db.executescript(swift_sql(source, "cleanupSchemaV3"))
-        db.execute("PRAGMA user_version = 4")
+        db.executescript(swift_sql(source, "deletionSuppressionSchemaV5"))
+        db.execute("PRAGMA user_version = 5")
         names = {
             row[0]
             for row in db.execute(
@@ -342,6 +346,7 @@ class ArchiveContractTests(unittest.TestCase):
                 "archived_media_blobs",
                 "archived_message_media",
                 "cleanup_jobs",
+                "deleted_message_suppressions",
             }
             <= names
         )
@@ -354,7 +359,7 @@ class ArchiveContractTests(unittest.TestCase):
             ["account_id", "peer_id", "message_namespace", "message_id", "thread_id"],
             message_pk,
         )
-        self.assertEqual(4, db.execute("PRAGMA user_version").fetchone()[0])
+        self.assertEqual(5, db.execute("PRAGMA user_version").fetchone()[0])
         self.assertIn(
             "deletion_source",
             {row[1] for row in db.execute("PRAGMA table_info(archived_messages)")},
@@ -368,7 +373,7 @@ class ArchiveContractTests(unittest.TestCase):
             {row[1] for row in db.execute("PRAGMA table_info(archived_media_blobs)")},
         )
 
-    def test_populated_v2_schema_upgrades_to_v3_without_data_loss(self) -> None:
+    def test_populated_v2_schema_upgrades_to_v5_without_data_loss(self) -> None:
         source = STORE.read_text(encoding="utf-8")
         db = sqlite3.connect(":memory:")
         db.executescript(swift_sql(source, "schemaV2"))
@@ -382,7 +387,8 @@ class ArchiveContractTests(unittest.TestCase):
 
         db.executescript(swift_sql(source, "schemaV2"))
         db.executescript(swift_sql(source, "cleanupSchemaV3"))
-        db.execute("PRAGMA user_version = 4")
+        db.executescript(swift_sql(source, "deletionSuppressionSchemaV5"))
+        db.execute("PRAGMA user_version = 5")
 
         self.assertEqual(
             (7, 11, 0, 22, 0, "kept"),
@@ -391,14 +397,14 @@ class ArchiveContractTests(unittest.TestCase):
                           thread_id, text FROM archived_messages"""
             ).fetchone(),
         )
-        self.assertEqual(4, db.execute("PRAGMA user_version").fetchone()[0])
+        self.assertEqual(5, db.execute("PRAGMA user_version").fetchone()[0])
         self.assertIsNotNone(
             db.execute(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cleanup_jobs'"
             ).fetchone()
         )
 
-    def test_populated_v3_schema_upgrades_to_v4_with_safe_defaults(self) -> None:
+    def test_populated_v3_schema_upgrades_to_v5_with_safe_defaults(self) -> None:
         source = STORE.read_text(encoding="utf-8")
         self.assertIn('static let lifecycleSchemaV4Migration = """', source)
         db = sqlite3.connect(":memory:")
@@ -422,7 +428,8 @@ class ArchiveContractTests(unittest.TestCase):
         )
 
         db.executescript(swift_sql(source, "lifecycleSchemaV4Migration"))
-        db.execute("PRAGMA user_version = 4")
+        db.executescript(swift_sql(source, "deletionSuppressionSchemaV5"))
+        db.execute("PRAGMA user_version = 5")
 
         self.assertEqual(
             ("deleted", 0),
@@ -442,7 +449,46 @@ class ArchiveContractTests(unittest.TestCase):
                 "SELECT resource_id, generation FROM archived_media_blobs"
             ).fetchone(),
         )
-        self.assertEqual(4, db.execute("PRAGMA user_version").fetchone()[0])
+        self.assertEqual(5, db.execute("PRAGMA user_version").fetchone()[0])
+        self.assertIsNotNone(
+            db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                "AND name = 'deleted_message_suppressions'"
+            ).fetchone()
+        )
+
+    def test_v5_suppression_primary_key_is_exact_and_collision_free(self) -> None:
+        source = STORE.read_text(encoding="utf-8")
+        db = sqlite3.connect(":memory:")
+        db.executescript(swift_sql(source, "deletionSuppressionSchemaV5"))
+
+        rows = (
+            (1, 2, 3, 4, 5),
+            (9, 2, 3, 4, 5),
+            (1, 9, 3, 4, 5),
+            (1, 2, 9, 4, 5),
+            (1, 2, 3, 9, 5),
+            (1, 2, 3, 4, 9),
+        )
+        db.executemany(
+            """INSERT INTO deleted_message_suppressions (
+                   account_id, peer_id, message_namespace, message_id, thread_id
+               ) VALUES (?, ?, ?, ?, ?)""",
+            rows,
+        )
+        db.execute(
+            """INSERT OR IGNORE INTO deleted_message_suppressions (
+                   account_id, peer_id, message_namespace, message_id, thread_id
+               ) VALUES (1, 2, 3, 4, 5)"""
+        )
+
+        self.assertEqual(
+            list(rows),
+            db.execute(
+                """SELECT account_id, peer_id, message_namespace, message_id, thread_id
+                   FROM deleted_message_suppressions ORDER BY rowid"""
+            ).fetchall(),
+        )
 
     def test_all_deletion_sources_round_trip_through_archive_column(self) -> None:
         attribute = DELETED_ATTRIBUTE.read_text(encoding="utf-8")
@@ -594,10 +640,11 @@ class ArchiveContractTests(unittest.TestCase):
         for token in (
             "BEGIN IMMEDIATE",
             "ROLLBACK",
-            "PRAGMA user_version = 4",
+            "PRAGMA user_version = 5",
             "case 2:",
             "case 3:",
             "case 4:",
+            "case 5:",
             "activeAccountRecordIds.count == 1",
             "deleted_messages_legacy_v1",
             "edited_messages_legacy_v1",

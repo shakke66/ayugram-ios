@@ -12,7 +12,6 @@ ACCOUNT_AWARE_HOOKS = (
     "shouldSuppressContentRead",
     "shouldSuppressUploadProgress",
     "shouldSuggestGhostForStories",
-    "shouldUseScheduledMessages",
     "sendWithoutSoundMode",
     "isMessageHiddenByFilter",
     "isShadowBanned",

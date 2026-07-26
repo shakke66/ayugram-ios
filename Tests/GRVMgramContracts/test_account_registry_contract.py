@@ -269,6 +269,7 @@ class AccountRegistryContractTests(unittest.TestCase):
         self.assertLess(migrate, completion)
         self.assertIn("return .complete()", snapshot_builder[completion:publish])
         self.assertIn("|> then(snapshotSignal)", snapshot_builder[publish:])
+        self.assertIn("primaryAccountId: primary?.account.peerId", snapshot_builder)
         self.assertLess(snapshot_call, prepare)
         self.assertLess(prepare, register)
         self.assertIn('appendingPathComponent("ayugram_messages.db")', source)

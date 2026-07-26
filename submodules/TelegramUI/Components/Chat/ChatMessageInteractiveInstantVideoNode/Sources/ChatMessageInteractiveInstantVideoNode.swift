@@ -528,7 +528,7 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
             var viewCount: Int? = nil
             var dateReplies = 0
             var starsCount: Int64?
-            var dateReactionsAndPeers = mergedMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: item.message)
+            var dateReactionsAndPeers = grvmVisibleMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: item.message)
             if item.message.isRestricted(platform: "ios", contentSettings: item.context.currentContentSettings.with { $0 }) {
                 dateReactionsAndPeers = ([], [])
             }

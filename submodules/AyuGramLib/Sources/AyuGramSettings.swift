@@ -9,7 +9,6 @@ public struct AyuGramSettings: Codable, Equatable {
     public var suppressStoryReads: Bool
     public var suppressOnlineStatus: Bool
     public var suppressTypingAndUploads: Bool
-    public var useScheduledMessages: Bool
     public var sendWithoutSoundMode: Int32
 
     // MARK: - Message Saving (Spy Mode)
@@ -50,7 +49,6 @@ public struct AyuGramSettings: Codable, Equatable {
     public var hideNotificationBadge: Bool
     public var hideNotificationCounters: Bool
     public var removeMessageBubbleTail: Bool
-    public var disableCustomBackgrounds: Bool
     public var codeFontName: String
     public var hideFolderCounters: Bool
     public var hideAllChatsFolder: Bool
@@ -71,7 +69,6 @@ public struct AyuGramSettings: Codable, Equatable {
     public var editedMessageMark: String
     public var replaceMarksWithIcons: Bool
     public var hideFastShareButton: Bool
-    public var disableColoredReplies: Bool
     public var messageWidthMultiplier: Double
 
     // MARK: - Context Menu
@@ -151,7 +148,6 @@ public struct AyuGramSettings: Codable, Equatable {
             suppressStoryReads: false,
             suppressOnlineStatus: false,
             suppressTypingAndUploads: false,
-            useScheduledMessages: false,
             sendWithoutSoundMode: 0,
             saveDeletedMessages: true,
             saveEditHistory: true,
@@ -175,7 +171,6 @@ public struct AyuGramSettings: Codable, Equatable {
             hideNotificationBadge: false,
             hideNotificationCounters: false,
             removeMessageBubbleTail: false,
-            disableCustomBackgrounds: false,
             codeFontName: "",
             hideFolderCounters: false,
             hideAllChatsFolder: false,
@@ -194,7 +189,6 @@ public struct AyuGramSettings: Codable, Equatable {
             editedMessageMark: "edited",
             replaceMarksWithIcons: false,
             hideFastShareButton: false,
-            disableColoredReplies: false,
             messageWidthMultiplier: 1.0,
             showReactionsPanelInContextMenu: 0,
             showViewsPanelInContextMenu: 0,
@@ -241,7 +235,6 @@ public struct AyuGramSettings: Codable, Equatable {
         suppressStoryReads: Bool,
         suppressOnlineStatus: Bool,
         suppressTypingAndUploads: Bool,
-        useScheduledMessages: Bool,
         sendWithoutSoundMode: Int32,
         saveDeletedMessages: Bool,
         saveEditHistory: Bool,
@@ -265,7 +258,6 @@ public struct AyuGramSettings: Codable, Equatable {
         hideNotificationBadge: Bool,
         hideNotificationCounters: Bool,
         removeMessageBubbleTail: Bool,
-        disableCustomBackgrounds: Bool,
         codeFontName: String,
         hideFolderCounters: Bool,
         hideAllChatsFolder: Bool,
@@ -284,7 +276,6 @@ public struct AyuGramSettings: Codable, Equatable {
         editedMessageMark: String,
         replaceMarksWithIcons: Bool,
         hideFastShareButton: Bool,
-        disableColoredReplies: Bool,
         messageWidthMultiplier: Double,
         showReactionsPanelInContextMenu: Int32,
         showViewsPanelInContextMenu: Int32,
@@ -328,7 +319,6 @@ public struct AyuGramSettings: Codable, Equatable {
         self.suppressStoryReads = suppressStoryReads
         self.suppressOnlineStatus = suppressOnlineStatus
         self.suppressTypingAndUploads = suppressTypingAndUploads
-        self.useScheduledMessages = useScheduledMessages
         self.sendWithoutSoundMode = sendWithoutSoundMode
         self.saveDeletedMessages = saveDeletedMessages
         self.saveEditHistory = saveEditHistory
@@ -352,7 +342,6 @@ public struct AyuGramSettings: Codable, Equatable {
         self.hideNotificationBadge = hideNotificationBadge
         self.hideNotificationCounters = hideNotificationCounters
         self.removeMessageBubbleTail = removeMessageBubbleTail
-        self.disableCustomBackgrounds = disableCustomBackgrounds
         self.codeFontName = codeFontName
         self.hideFolderCounters = hideFolderCounters
         self.hideAllChatsFolder = hideAllChatsFolder
@@ -371,7 +360,6 @@ public struct AyuGramSettings: Codable, Equatable {
         self.editedMessageMark = editedMessageMark
         self.replaceMarksWithIcons = replaceMarksWithIcons
         self.hideFastShareButton = hideFastShareButton
-        self.disableColoredReplies = disableColoredReplies
         self.messageWidthMultiplier = messageWidthMultiplier
         self.showReactionsPanelInContextMenu = showReactionsPanelInContextMenu
         self.showViewsPanelInContextMenu = showViewsPanelInContextMenu
@@ -425,7 +413,6 @@ public struct AyuGramSettings: Codable, Equatable {
             let suppressUploadProgress = try container.decodeIfPresent(Bool.self, forKey: "suppressUploadProgress") ?? false
             self.suppressTypingAndUploads = suppressTypingStatus || suppressUploadProgress
         }
-        self.useScheduledMessages = try container.decodeIfPresent(Bool.self, forKey: "useScheduledMessages") ?? false
         if let sendWithoutSoundMode = try container.decodeIfPresent(Int32.self, forKey: "sendWithoutSoundMode") {
             self.sendWithoutSoundMode = sendWithoutSoundMode
         } else if let sendWithoutSoundOption = try container.decodeIfPresent(Int32.self, forKey: "sendWithoutSoundOption") {
@@ -462,7 +449,6 @@ public struct AyuGramSettings: Codable, Equatable {
         self.hideNotificationBadge = try container.decodeIfPresent(Bool.self, forKey: "hideNotificationBadge") ?? false
         self.hideNotificationCounters = try container.decodeIfPresent(Bool.self, forKey: "hideNotificationCounters") ?? false
         self.removeMessageBubbleTail = try container.decodeIfPresent(Bool.self, forKey: "removeMessageBubbleTail") ?? false
-        self.disableCustomBackgrounds = try container.decodeIfPresent(Bool.self, forKey: "disableCustomBackgrounds") ?? false
         self.codeFontName = try container.decodeIfPresent(String.self, forKey: "codeFontName") ?? ""
         self.hideFolderCounters = try container.decodeIfPresent(Bool.self, forKey: "hideFolderCounters") ?? false
         self.hideAllChatsFolder = try container.decodeIfPresent(Bool.self, forKey: "hideAllChatsFolder") ?? false
@@ -482,7 +468,6 @@ public struct AyuGramSettings: Codable, Equatable {
         self.editedMessageMark = try container.decodeIfPresent(String.self, forKey: "editedMessageMark") ?? "edited"
         self.replaceMarksWithIcons = try container.decodeIfPresent(Bool.self, forKey: "replaceMarksWithIcons") ?? false
         self.hideFastShareButton = try container.decodeIfPresent(Bool.self, forKey: "hideFastShareButton") ?? false
-        self.disableColoredReplies = try container.decodeIfPresent(Bool.self, forKey: "disableColoredReplies") ?? false
         self.messageWidthMultiplier = try container.decodeIfPresent(Double.self, forKey: "messageWidthMultiplier") ?? 1.0
 
         self.showReactionsPanelInContextMenu = try container.decodeIfPresent(Int32.self, forKey: "showReactionsPanelInContextMenu") ?? 0
@@ -547,7 +532,6 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.suppressStoryReads, forKey: "suppressStoryReads")
         try container.encode(self.suppressOnlineStatus, forKey: "suppressOnlineStatus")
         try container.encode(self.suppressTypingAndUploads, forKey: "suppressTypingAndUploads")
-        try container.encode(self.useScheduledMessages, forKey: "useScheduledMessages")
         try container.encode(self.sendWithoutSoundMode, forKey: "sendWithoutSoundMode")
 
         try container.encode(self.saveDeletedMessages, forKey: "saveDeletedMessages")
@@ -576,7 +560,6 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.hideNotificationBadge, forKey: "hideNotificationBadge")
         try container.encode(self.hideNotificationCounters, forKey: "hideNotificationCounters")
         try container.encode(self.removeMessageBubbleTail, forKey: "removeMessageBubbleTail")
-        try container.encode(self.disableCustomBackgrounds, forKey: "disableCustomBackgrounds")
         try container.encode(self.codeFontName, forKey: "codeFontName")
         try container.encode(self.hideFolderCounters, forKey: "hideFolderCounters")
         try container.encode(self.hideAllChatsFolder, forKey: "hideAllChatsFolder")
@@ -596,7 +579,6 @@ public struct AyuGramSettings: Codable, Equatable {
         try container.encode(self.editedMessageMark, forKey: "editedMessageMark")
         try container.encode(self.replaceMarksWithIcons, forKey: "replaceMarksWithIcons")
         try container.encode(self.hideFastShareButton, forKey: "hideFastShareButton")
-        try container.encode(self.disableColoredReplies, forKey: "disableColoredReplies")
         try container.encode(self.messageWidthMultiplier, forKey: "messageWidthMultiplier")
 
         try container.encode(self.showReactionsPanelInContextMenu, forKey: "showReactionsPanelInContextMenu")
@@ -653,9 +635,6 @@ public struct AyuGramSettings: Codable, Equatable {
         self.setGhostModeEnabled(enabled)
     }
 
-    public mutating func setScheduledMessages(_ enabled: Bool) {
-        self.useScheduledMessages = enabled
-    }
 }
 
 public func updateAyuGramSettings(

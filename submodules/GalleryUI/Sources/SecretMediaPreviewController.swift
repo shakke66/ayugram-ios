@@ -549,16 +549,47 @@ public final class SecretMediaPreviewController: ViewController {
                 }
                 self._ready.set(ready |> map { true })
                 if self.consumeOnOpen {
-                    let preparation = AyuGramHooks.prepareConsumableMedia?(
-                        self.context.account.peerId,
-                        message
-                    ) ?? .single(false)
-                    let context = self.context
-                    let consume = preparation
-                    |> mapToSignal { _ -> Signal<Void, NoError> in
-                        return context.engine.messages.markMessageContentAsConsumedInteractively(messageId: message.id)
+                    let preservationEnabled = AyuGramHooks.shouldPreserveOneTimeMedia?(
+                        self.context.account.peerId
+                    ) == true
+                    let preparation: Signal<Bool, NoError>
+                    if preservationEnabled {
+                        preparation = AyuGramHooks.prepareConsumableMedia?(
+                            self.context.account.peerId,
+                            message
+                        ) ?? .single(false)
+                    } else {
+                        preparation = .single(true)
                     }
-                    let _ = consume.startStandalone()
+                    let context = self.context
+                    let consume: () -> Void = {
+                        let _ = context.engine.messages.markMessageContentAsConsumedInteractively(
+                            messageId: message.id
+                        ).startStandalone()
+                    }
+                    guard preservationEnabled else {
+                        consume()
+                        return
+                    }
+                    let handlePreparationResult: (Bool) -> Void = { prepared in
+                        guard prepared else {
+                            self.displayPreservationError()
+                            return
+                        }
+                        consume()
+                    }
+                    var receivedPreparationResult = false
+                    let _ = (preparation
+                    |> take(1)
+                    |> deliverOnMainQueue).startStandalone(next: { prepared in
+                        receivedPreparationResult = true
+                        handlePreparationResult(prepared)
+                    }, completed: {
+                        guard !receivedPreparationResult else {
+                            return
+                        }
+                        handlePreparationResult(false)
+                    })
                 }
             } else {
                 var beginTimeAndTimeout: (Double, Double, Bool)?
@@ -614,6 +645,35 @@ public final class SecretMediaPreviewController: ViewController {
             self.tooltipController = nil
             tooltipController.dismiss()
         }
+    }
+
+    private func displayPreservationError() {
+        self.dismissAllTooltips()
+
+        let sourceView = self.controllerNode.view
+        let absoluteFrame = sourceView.convert(sourceView.bounds, to: nil)
+        let location = CGRect(origin: CGPoint(x: absoluteFrame.midX, y: absoluteFrame.midY), size: CGSize())
+        let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+        let strings = GRVMgramStrings(presentationData.strings)
+        let tooltipController = TooltipScreen(
+            account: self.context.account,
+            sharedContext: self.context.sharedContext,
+            text: .plain(text: strings[.deletedMediaUnavailable]),
+            balancedTextLayout: true,
+            constrainWidth: 240.0,
+            style: .customBlur(UIColor(rgb: 0x18181a), 0.0),
+            arrowStyle: .small,
+            icon: nil,
+            location: .point(location, .top),
+            displayDuration: .default,
+            inset: 8.0,
+            cornerRadius: 8.0,
+            shouldDismissOnTouch: { _, _ in
+                return .dismiss(consume: false)
+            }
+        )
+        self.tooltipController = tooltipController
+        self.present(tooltipController, in: .window(.root))
     }
     
     private func presentViewOnceTooltip() {

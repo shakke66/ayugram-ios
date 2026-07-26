@@ -25,6 +25,12 @@ COORDINATOR = (
     ROOT / "submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"
 )
 REGISTRY = ROOT / "submodules/AyuGramFeatures/Sources/GRVMAccountFeatureRegistry.swift"
+FEATURES = ROOT / "submodules/AyuGramFeatures/Sources/AyuGramFeatures.swift"
+MANAGER = ROOT / "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
+CONTEXT_MENUS = ROOT / "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift"
+TYPED_STRINGS = ROOT / "submodules/TelegramPresentationData/Sources/GRVMgramStrings.swift"
+EN_STRINGS = ROOT / "Telegram/Telegram-iOS/en.lproj/GRVMgram.strings"
+RU_STRINGS = ROOT / "Telegram/Telegram-iOS/ru.lproj/GRVMgram.strings"
 
 
 def swift_block(source: str, signature: str) -> str:
@@ -379,6 +385,73 @@ class LocalDeletionContractTests(unittest.TestCase):
         self.assertIn("authorId: intermediateMessage.authorId", implementation)
         self.assertNotIn("currentMessage.forwardInfo.flatMap", implementation)
         self.assertNotIn("authorId: currentMessage.author?.id", implementation)
+
+    def test_typed_local_purge_bridge_derives_the_exact_key_from_message(self) -> None:
+        features = FEATURES.read_text(encoding="utf-8")
+        manager = MANAGER.read_text(encoding="utf-8")
+        coordinator = COORDINATOR.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "public static var purgeDeletedMessage: ((PeerId, Message) -> Signal<[MessageId], GRVMClearDeletedError>)?",
+            features,
+        )
+        wiring = manager[manager.index("AyuGramFeatures.purgeDeletedMessage =") :]
+        self.assertIn("service.purgeDeletedMessage(message)", wiring[:700])
+
+        purge = swift_block(coordinator, "public func purgeDeletedMessage(_ message: Message)")
+        self.assertIn("self.messageKey(message)", purge)
+        self.assertIn("self.removeDeletedMessage(", purge)
+        self.assertNotIn("account.peerId.toInt64()", purge)
+
+    def test_chat_local_purge_is_permission_independent_for_saved_deletions(self) -> None:
+        source = CONTEXT_MENUS.read_text(encoding="utf-8")
+        self.assertIn("import AyuGramFeatures", source)
+        self.assertIn("let isArchivedDeletion = message.attributes.contains", source)
+        self.assertIn("$0 is GRVMDeletedMessageAttribute", source)
+        availability = (
+            "isArchivedDeletion "
+            "|| data.messageActions.options.contains(.deleteGlobally)"
+        )
+        self.assertIn(availability, source)
+
+        action_start = source.index("text: grvmStrings[.menuDeleteLocal]")
+        action = source[action_start : action_start + 1500]
+        self.assertIn("grvmPurgeDeletedMessage(", action)
+        self.assertIn("deleteFromServer: !isArchivedDeletion", action)
+        self.assertNotIn("GRVMMessageKey(", action)
+
+    def test_live_local_purge_waits_for_confirmed_server_deletion(self) -> None:
+        source = CONTEXT_MENUS.read_text(encoding="utf-8")
+        purge = swift_block(source, "private func grvmPurgeDeletedMessage(")
+
+        self.assertIn("textAlertController(", purge)
+        self.assertIn("deleteMessagesInteractively(", purge)
+        self.assertIn("type: .forEveryone", purge)
+        self.assertIn("AyuGramFeatures.purgeDeletedMessage", purge)
+        self.assertIn("|> then(purge)", purge)
+        self.assertLess(
+            purge.index("deleteMessagesInteractively("),
+            purge.index("|> then(purge)"),
+        )
+
+    def test_local_purge_action_is_typed_and_localized(self) -> None:
+        typed = TYPED_STRINGS.read_text(encoding="utf-8")
+        english = EN_STRINGS.read_text(encoding="utf-8")
+        russian = RU_STRINGS.read_text(encoding="utf-8")
+
+        for case_name, resource_key in (
+            ("menuDeleteLocal", "GRVMgram.Menu.DeleteLocal"),
+            ("deletedPurgeLiveTitle", "GRVMgram.Deleted.PurgeLive.Title"),
+            ("deletedPurgeLiveText", "GRVMgram.Deleted.PurgeLive.Text"),
+        ):
+            with self.subTest(case_name=case_name):
+                self.assertIn(f'case {case_name} = "{resource_key}"', typed)
+                self.assertIn(f'"{resource_key}" = ', english)
+                self.assertIn(f'"{resource_key}" = ', russian)
+        self.assertIn(
+            '"GRVMgram.Menu.DeleteLocal" = "Удалить локально";',
+            russian,
+        )
 
 
 if __name__ == "__main__":

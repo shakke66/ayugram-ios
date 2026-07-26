@@ -178,7 +178,14 @@ class ChatControlsContractTests(unittest.TestCase):
         )
         self.assertIn(normalized(exact_account), normalized(input_data))
         self.assertIn(normalized(exact_account), normalized(emoji_data))
-        self.assertIn(normalized(exact_account), normalized(sticker_data))
+        for token in [
+            "grvmSettings(",
+            "accountId: context.account.peerId",
+            "accountManager: context.sharedContext.accountManager",
+            "settings.grvmChatAppearanceSettings.chats",
+        ]:
+            self.assertIn(normalized(token), normalized(sticker_data))
+        self.assertNotIn(normalized(exact_account), normalized(sticker_data))
         self.assertIn(
             normalized(
                 "let chats = AyuGramHooks.chatAppearance("
@@ -259,6 +266,53 @@ class ChatControlsContractTests(unittest.TestCase):
         ]:
             self.assertIn(normalized(token), normalized(sticker_data))
 
+    def test_recent_sticker_limit_is_live_and_shared_across_runtime_paths(self) -> None:
+        synchronizer = source(
+            "submodules/TelegramCore/Sources/State/"
+            "SynchronizeRecentlyUsedMediaOperations.swift"
+        )
+        helper = swift_block(synchronizer, "func grvmRecentStickersLimit()")
+        for token in [
+            "AyuGramHooks.recentStickersLimit?() ?? 100",
+            "min(200, max(1, value))",
+        ]:
+            self.assertIn(normalized(token), normalized(helper))
+
+        runtime_paths = {
+            "submodules/TelegramCore/Sources/State/ApplyUpdateMessage.swift": 2,
+            "submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift": 1,
+            "submodules/TelegramCore/Sources/State/"
+            "SynchronizeRecentlyUsedMediaOperations.swift": 1,
+        }
+        configured_tail = normalized(
+            "removeTailIfCountExceeds: grvmRecentStickersLimit()"
+        )
+        for path, expected_count in runtime_paths.items():
+            with self.subTest(path=path):
+                text = source(path)
+                self.assertEqual(normalized(text).count(configured_tail), expected_count)
+                recent_sticker_lines = [
+                    line for line in text.splitlines() if "CloudRecentStickers" in line
+                ]
+                for line in recent_sticker_lines:
+                    self.assertNotIn("removeTailIfCountExceeds: 20)", line)
+
+        pager = source(self.pager_path)
+        sticker_data = swift_block(pager, "static func stickerInputData(")
+        for token in [
+            "let chats: Signal<GRVMChatSettings, NoError> = grvmSettings(",
+            "|> map { settings in",
+            "return settings.grvmChatAppearanceSettings.chats",
+            "let chatsAndFeaturedStickerPacks = chats",
+            "|> mapToSignal { chats in",
+            "hasTrending && !chats.showOnlyAddedStickers",
+            "return (chats, featuredStickerPacks)",
+            "|> map { view, hasPremium, chatsAndFeaturedStickerPacks,",
+            "let (chats, featuredStickerPacks) = chatsAndFeaturedStickerPacks",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), normalized(sticker_data))
+
     def test_search_uses_live_installed_sets_without_changing_stock_order(self) -> None:
         keyboard = source(self.keyboard_path)
         keyboard_init = swift_block(
@@ -289,10 +343,13 @@ class ChatControlsContractTests(unittest.TestCase):
             ],
         )
 
-    def test_reaction_row_policy_is_final_and_complete(self) -> None:
-        bubble = source(self.bubble_path)
-        begin_layout = swift_block(bubble, "private static func beginLayout(")
+    def test_reaction_display_policy_is_shared_by_every_renderer(self) -> None:
+        policy = source("submodules/TelegramCore/Sources/GRVMChatAppearance.swift")
+        visibility = swift_block(
+            policy, "public func grvmShouldDisplayMessageReactions("
+        )
         for token in [
+            "AyuGramHooks.chatAppearance(accountPeerId: accountPeerId).chats",
             "as? TelegramChannel",
             "case .broadcast",
             "chats.showChannelReactions",
@@ -303,14 +360,87 @@ class ChatControlsContractTests(unittest.TestCase):
             "is TelegramSecretChat",
             "chats.showPrivateReactions",
         ]:
-            self.assertIn(normalized(token), normalized(begin_layout))
+            self.assertIn(normalized(token), normalized(visibility))
 
-        render_condition = normalized(
-            "if !bubbleReactions.reactions.isEmpty "
-            "&& !item.presentationData.isPreview "
-            "&& grvmShouldShowReactions"
+        visible_attribute = swift_block(
+            policy, "public func grvmVisibleMessageReactions("
         )
-        self.assertIn(render_condition, normalized(begin_layout))
+        self.assertIn(
+            normalized("guard grvmShouldDisplayMessageReactions("),
+            normalized(visible_attribute),
+        )
+        self.assertIn("mergedMessageReactions", visible_attribute)
+
+        visible_peers = swift_block(
+            policy, "public func grvmVisibleMessageReactionsAndPeers("
+        )
+        self.assertIn(
+            normalized("guard grvmShouldDisplayMessageReactions("),
+            normalized(visible_peers),
+        )
+        self.assertIn("mergedMessageReactionsAndPeers", visible_peers)
+
+        row_renderers = [
+            self.bubble_path,
+            "submodules/TelegramUI/Components/Chat/"
+            "ChatMessageReactionsFooterContentNode/Sources/"
+            "ChatMessageReactionsFooterContentNode.swift",
+            "submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/"
+            "Sources/ChatMessageStickerItemNode.swift",
+            "submodules/TelegramUI/Components/Chat/"
+            "ChatMessageAnimatedStickerItemNode/Sources/"
+            "ChatMessageAnimatedStickerItemNode.swift",
+            "submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/"
+            "Sources/ChatMessageInstantVideoItemNode.swift",
+        ]
+        for path in row_renderers:
+            with self.subTest(renderer=path):
+                renderer = source(path)
+                self.assertIn("grvmVisibleMessageReactions(", renderer)
+                self.assertNotIn("mergedMessageReactions(attributes:", renderer)
+        self.assertNotIn("grvmShouldShowReactions", source(self.bubble_path))
+
+        status_renderers = [
+            self.bubble_path,
+            "submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentNode/"
+            "Sources/ChatMessageAttachedContentNode.swift",
+            "submodules/TelegramUI/Components/Chat/ChatMessageContactBubbleContentNode/"
+            "Sources/ChatMessageContactBubbleContentNode.swift",
+            "submodules/TelegramUI/Components/Chat/"
+            "ChatMessageFactCheckBubbleContentNode/Sources/"
+            "ChatMessageFactCheckBubbleContentNode.swift",
+            "submodules/TelegramUI/Components/Chat/"
+            "ChatMessageGiveawayBubbleContentNode/Sources/"
+            "ChatMessageGiveawayBubbleContentNode.swift",
+            "submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/"
+            "Sources/ChatMessageInteractiveFileNode.swift",
+            "submodules/TelegramUI/Components/Chat/"
+            "ChatMessageInteractiveInstantVideoNode/Sources/"
+            "ChatMessageInteractiveInstantVideoNode.swift",
+            "submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/"
+            "Sources/ChatMessageMapBubbleContentNode.swift",
+            "submodules/TelegramUI/Components/Chat/ChatMessageMediaBubbleContentNode/"
+            "Sources/ChatMessageMediaBubbleContentNode.swift",
+            "submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/"
+            "Sources/ChatMessagePollBubbleContentNode.swift",
+            "submodules/TelegramUI/Components/Chat/"
+            "ChatMessageRestrictedBubbleContentNode/Sources/"
+            "ChatMessageRestrictedBubbleContentNode.swift",
+            "submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/"
+            "Sources/ChatMessageStickerItemNode.swift",
+            "submodules/TelegramUI/Components/Chat/"
+            "ChatMessageAnimatedStickerItemNode/Sources/"
+            "ChatMessageAnimatedStickerItemNode.swift",
+            "submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/"
+            "Sources/ChatMessageTextBubbleContentNode.swift",
+            "submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode/"
+            "Sources/ChatMessageTodoBubbleContentNode.swift",
+        ]
+        for path in status_renderers:
+            with self.subTest(renderer=path):
+                renderer = source(path)
+                self.assertIn("grvmVisibleMessageReactionsAndPeers(", renderer)
+                self.assertNotIn("mergedMessageReactionsAndPeers(", renderer)
 
     def test_message_mark_editors_accept_arbitrary_unicode_and_reset_natively(
         self,
@@ -490,12 +620,13 @@ class ChatControlsContractTests(unittest.TestCase):
         self.assertNotIn("shouldHideFastShareButton", bubble)
         self.assertIn("if needsShareButton {", bubble)
 
-    def test_reply_colors_use_the_exact_account_policy(self) -> None:
+    def test_reply_colors_always_use_stock_author_name_colors(self) -> None:
         reply = source(self.reply_path)
         for token in [
-            "let chats = AyuGramHooks.chatAppearance("
-            "accountPeerId: arguments.context.account.peerId).chats",
-            "if !chats.disableColoredReplies",
+            "switch author?.nameColor",
+            "case let .preset(nameColor)",
+            "case let .collectible(collectibleColor)",
+            "giftEmojiFileId = collectibleColor.giftEmojiFileId",
             "authorNameColor ?? arguments.presentationData.theme.theme.chat.message."
             "incoming.accentTextColor",
             "arguments.presentationData.theme.theme.chat.message.outgoing."
@@ -503,6 +634,8 @@ class ChatControlsContractTests(unittest.TestCase):
         ]:
             with self.subTest(token=token):
                 self.assertIn(normalized(token), normalized(reply))
+        self.assertNotIn("disableColoredReplies", reply)
+        self.assertNotIn("let chats = AyuGramHooks.chatAppearance", reply)
         self.assertNotIn("shouldDisableColoredReplies", reply)
 
     def test_tail_is_ready_geometry_and_cached_by_hashable_corners(self) -> None:
@@ -556,6 +689,26 @@ class ChatControlsContractTests(unittest.TestCase):
             "lhs.removeMessageBubbleTail == rhs.removeMessageBubbleTail",
             "previousChatAppearance?.removeMessageBubbleTail "
             "!= chatAppearance.removeMessageBubbleTail",
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(normalized(token), normalized(management))
+
+    def test_reaction_display_settings_rebuild_the_open_chat_live(self) -> None:
+        history = source(self.history_list_path)
+        management = swift_block(
+            history, "private func beginPresentationDataManagement("
+        )
+        for token in [
+            "let reactionDisplay: Signal<",
+            "settings.grvmChatAppearanceSettings.chats",
+            "chats.showChannelReactions",
+            "chats.showGroupReactions",
+            "chats.showPrivateReactions",
+            "previousReactionDisplay?.channel != reactionDisplay.channel",
+            "previousReactionDisplay?.group != reactionDisplay.group",
+            "previousReactionDisplay?.privateChats != reactionDisplay.privateChats",
+            "previousReactionDisplay = reactionDisplay",
+            "strongSelf.chatPresentationDataPromise.set(.single(chatPresentationData))",
         ]:
             with self.subTest(token=token):
                 self.assertIn(normalized(token), normalized(management))

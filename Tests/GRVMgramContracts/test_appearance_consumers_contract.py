@@ -10,6 +10,22 @@ def source(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
+def swift_block(text: str, signature: str) -> str:
+    start = text.find(signature)
+    if start == -1:
+        raise AssertionError(f"Missing Swift block: {signature}")
+    opening_brace = text.index("{", start)
+    depth = 0
+    for index in range(opening_brace, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    raise AssertionError(f"Unterminated Swift block: {signature}")
+
+
 class AppearanceConsumerContractTests(unittest.TestCase):
     def test_app_icon_picker_uses_native_bindings_and_persists_after_success(self) -> None:
         picker = source(
@@ -128,39 +144,79 @@ class AppearanceConsumerContractTests(unittest.TestCase):
             self.assertIn(fragment, text)
         self.assertGreaterEqual(text.count("hideBadges: component.hideBadges"), 3)
 
-    def test_folder_layout_uses_one_account_snapshot_and_one_visible_filter_set(self) -> None:
-        text = source(
+        chat_list = source("submodules/ChatListUI/Sources/ChatListController.swift")
+        chat_list_node = source(
+            "submodules/ChatListUI/Sources/ChatListControllerNode.swift"
+        )
+        peer_selection = source(
+            "submodules/TelegramUI/Components/PeerSelectionController/"
+            "Sources/PeerSelectionController.swift"
+        )
+        legacy_tabs = source(
             "submodules/TelegramUI/Components/ChatList/"
             "ChatListFilterTabContainerNode/Sources/ChatListFilterTabContainerNode.swift"
         )
-        self.assertEqual(text.count("AyuGramHooks.chatAppearance("), 2)
-        self.assertGreaterEqual(
-            text.count("accountPeerId: self.context.account.peerId"), 2
+        for consumer in (chat_list, peer_selection):
+            reload_filters = swift_block(consumer, "private func reloadFilters(")
+            self.assertIn("grvmSettings(", reload_filters)
+            self.assertIn("settings.hideFolderCounters", reload_filters)
+        self.assertIn(
+            "if !controller.hideFolderCounters && unread.value != 0",
+            chat_list_node,
+        )
+        self.assertIn("hideBadges: Bool", legacy_tabs)
+        self.assertIn("self.hideBadges = hideBadges", legacy_tabs)
+        self.assertIn("let badgeSpacing: CGFloat = self.hideBadges ? 0.0 : 4.0", legacy_tabs)
+        self.assertIn("let badgeWidth: CGFloat = self.hideBadges ? 0.0", legacy_tabs)
+        self.assertIn("self.hideBadges || self.unreadCount == 0", legacy_tabs)
+        self.assertNotIn("AyuGramHooks.chatAppearance(", legacy_tabs)
+
+    def test_folder_layout_uses_one_account_snapshot_and_one_visible_filter_set(self) -> None:
+        policy = source(
+            "submodules/TelegramUI/Components/ChatList/"
+            "ChatListFilterTabContainerNode/Sources/ChatListFilterTabContainerNode.swift"
+        )
+        chat_list = source("submodules/ChatListUI/Sources/ChatListController.swift")
+        chat_list_node = source(
+            "submodules/ChatListUI/Sources/ChatListControllerNode.swift"
+        )
+        peer_selection = source(
+            "submodules/TelegramUI/Components/PeerSelectionController/"
+            "Sources/PeerSelectionController.swift"
         )
         for fragment in [
-            "appearance.hideFolderCounters",
-            "appearance.hideAllChatsFolder",
+            "public struct ChatListFilterTabPresentation: Equatable",
+            "public func chatListFilterTabPresentation(",
+            "hideAllChatsFolder && filters.contains(where: { $0.id != .all })",
             "let visibleFilters: [ChatListFilterTabEntry]",
-            "visibleFilters = reorderedFilters.filter",
-            "visibleFilters = reorderedFilters",
+            "visibleFilters = filters.filter { $0.id != .all }",
+            "visibleFilters = filters",
             "resolvedSelectedFilter = visibleFilters.first?.id",
-            "for i in 0 ..< visibleFilters.count",
-            "let filter = visibleFilters[i]",
-            "resolvedSelectedFilter == visibleFilters[i - 1].id",
-            "resolvedSelectedFilter == visibleFilters[i + 1].id",
-            "if !visibleFilters.contains(where:",
-            "for filter in visibleFilters",
-            "visibleFilters.firstIndex(where:",
-            "currentIndex != visibleFilters.count - 1",
-            "resolvedSelectedFilter == visibleFilters.first?.id",
-            "resolvedSelectedFilter == visibleFilters.last?.id",
+            "return ChatListFilterTabPresentation(",
         ]:
             with self.subTest(fragment=fragment):
-                self.assertIn(fragment, text)
-        self.assertNotIn("shouldHideFolderCounters?()", text)
-        self.assertNotIn("shouldHideAllChatsFolder?()", text)
-        self.assertNotIn("selectedFilter == visibleFilters.first?.id", text)
-        self.assertNotIn("selectedFilter == visibleFilters.last?.id", text)
+                self.assertIn(fragment, policy)
+
+        for consumer in (chat_list, peer_selection):
+            reload_filters = swift_block(consumer, "private func reloadFilters(")
+            self.assertEqual(1, reload_filters.count("grvmSettings("))
+            self.assertIn("settings.hideAllChatsFolder", reload_filters)
+            self.assertIn("chatListFilterTabPresentation(", reload_filters)
+            self.assertIn("filterItems.append(.all(unreadCount: 0))", reload_filters)
+            self.assertNotIn("insert(.all, at: 0)", reload_filters)
+
+        update_available = swift_block(
+            chat_list_node, "public func updateAvailableFilters("
+        )
+        self.assertIn("let fallbackId = availableFilters.first?.id ?? .all", update_available)
+        self.assertIn("self.switchToFilter(id: fallbackId", update_available)
+
+        self.assertIn("let tabPresentation = chatListFilterTabPresentation(", chat_list_node)
+        self.assertIn("tabs: tabPresentation.filters.map", chat_list_node)
+        self.assertIn("selectedFilter: tabPresentation.selectedFilter", peer_selection)
+        self.assertIn("let reorderedVisibleFilterIds", chat_list)
+        self.assertIn("let visibleFilterIds", chat_list)
+        self.assertNotIn("AyuGramHooks.chatAppearance(", policy)
 
 
 if __name__ == "__main__":

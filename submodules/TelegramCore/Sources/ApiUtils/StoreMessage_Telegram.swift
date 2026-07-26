@@ -766,7 +766,7 @@ private func grvmIsSingleUnicodeEmoji(_ value: String) -> Bool {
     return value.count == 1 && value.containsEmoji
 }
 
-private func grvmLocalPremiumEmojiEntity(offset: Int32, length: Int32, url: String, text: String?) -> MessageTextEntity? {
+private func grvmLocalPremiumEmojiEntity(offset: Int32, length: Int32, url: String, text: String?) -> (entity: MessageTextEntity, fileId: Int64)? {
     guard let text,
           let fileId = grvmLocalPremiumEmojiFileId(url),
           offset >= 0,
@@ -783,7 +783,10 @@ private func grvmLocalPremiumEmojiEntity(offset: Int32, length: Int32, url: Stri
     guard grvmIsSingleUnicodeEmoji(entityText) else {
         return nil
     }
-    return MessageTextEntity(range: range.location ..< NSMaxRange(range), type: .CustomEmoji(stickerPack: nil, fileId: fileId))
+    return (
+        MessageTextEntity(range: range.location ..< NSMaxRange(range), type: .CustomEmoji(stickerPack: nil, fileId: fileId)),
+        fileId
+    )
 }
 
 func messageTextEntitiesFromApiEntities(_ entities: [Api.MessageEntity], text: String? = nil) -> [MessageTextEntity] {
@@ -821,8 +824,8 @@ func messageTextEntitiesFromApiEntities(_ entities: [Api.MessageEntity], text: S
             result.append(MessageTextEntity(range: Int(offset) ..< Int(offset + length), type: .Pre(language: language)))
         case let .messageEntityTextUrl(messageEntityTextUrlData):
             let (offset, length, url) = (messageEntityTextUrlData.offset, messageEntityTextUrlData.length, messageEntityTextUrlData.url)
-            if let entity = grvmLocalPremiumEmojiEntity(offset: offset, length: length, url: url, text: text) {
-                result.append(entity)
+            if let converted = grvmLocalPremiumEmojiEntity(offset: offset, length: length, url: url, text: text) {
+                result.append(converted.entity)
             } else {
                 result.append(MessageTextEntity(range: Int(offset) ..< Int(offset + length), type: .TextUrl(url: url)))
             }
@@ -885,6 +888,27 @@ func messageTextEntitiesFromApiEntities(_ entities: [Api.MessageEntity], text: S
         }
     }
     return result
+}
+
+func messageTextEntitiesAndGRVMLocalPremiumFileIdsFromApiEntities(_ entities: [Api.MessageEntity], text: String? = nil) -> (entities: [MessageTextEntity], fileIds: [Int64]) {
+    let result = messageTextEntitiesFromApiEntities(entities, text: text)
+    var grvmLocalPremiumFileIds: [Int64] = []
+    for entity in entities {
+        switch entity {
+        case let .messageEntityTextUrl(messageEntityTextUrlData):
+            let (offset, length, url) = (messageEntityTextUrlData.offset, messageEntityTextUrlData.length, messageEntityTextUrlData.url)
+            if let converted = grvmLocalPremiumEmojiEntity(offset: offset, length: length, url: url, text: text) {
+                grvmLocalPremiumFileIds.append(converted.fileId)
+            }
+        case let .messageEntityCustomEmoji(messageEntityCustomEmojiData):
+            let _ = messageEntityCustomEmojiData
+        case let .messageEntityFormattedDate(messageEntityFormattedDateData):
+            let _ = messageEntityFormattedDateData
+        default:
+            break
+        }
+    }
+    return (result, grvmLocalPremiumFileIds)
 }
 
 extension StoreMessage {
@@ -1173,9 +1197,13 @@ extension StoreMessage {
             
                 var entitiesAttribute: TextEntitiesMessageAttribute?
                 if let entities = entities, !entities.isEmpty {
+                    let grvmDecodedEntities = messageTextEntitiesAndGRVMLocalPremiumFileIdsFromApiEntities(entities, text: messageText)
                     let attribute = TextEntitiesMessageAttribute(entities: messageTextEntitiesFromApiEntities(entities, text: messageText))
                     entitiesAttribute = attribute
                     attributes.append(attribute)
+                    if !grvmDecodedEntities.fileIds.isEmpty {
+                        attributes.append(GRVMLocalPremiumEmojiMessageAttribute(fileIds: grvmDecodedEntities.fileIds))
+                    }
                 } else {
                     var noEntities = false
                     loop: for media in medias {

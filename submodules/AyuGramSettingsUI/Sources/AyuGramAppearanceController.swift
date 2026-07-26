@@ -40,7 +40,6 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
     case hideNotificationCounters(PresentationTheme, Bool)
     case appearanceHeader(PresentationTheme)
     case removeBubbleTail(PresentationTheme, Bool)
-    case disableCustomBg(PresentationTheme, Bool)
     case codeFont(PresentationTheme, String)
     case avatarCorners(PresentationTheme, Int32)
     case hidePremiumStatuses(PresentationTheme, Bool)
@@ -51,7 +50,7 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
     var section: ItemListSectionId {
         switch self {
         case .appIconHeader, .appIcon, .hideNotificationBadge, .hideNotificationCounters: return AyuGramAppearanceSection.appIcon.rawValue
-        case .appearanceHeader, .removeBubbleTail, .disableCustomBg, .codeFont, .avatarCorners, .hidePremiumStatuses: return AyuGramAppearanceSection.appearance.rawValue
+        case .appearanceHeader, .removeBubbleTail, .codeFont, .avatarCorners, .hidePremiumStatuses: return AyuGramAppearanceSection.appearance.rawValue
         case .foldersHeader, .hideFolderCounters, .hideAllChats: return AyuGramAppearanceSection.folders.rawValue
         }
     }
@@ -64,7 +63,6 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
         case .hideNotificationCounters: return 3
         case .appearanceHeader: return 4
         case .removeBubbleTail: return 6
-        case .disableCustomBg: return 7
         case .codeFont: return 8
         case .avatarCorners: return 9
         case .hidePremiumStatuses: return 12
@@ -80,7 +78,6 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
         case let (.hideNotificationBadge(_, lv), .hideNotificationBadge(_, rv)): return lv == rv
         case let (.hideNotificationCounters(_, lv), .hideNotificationCounters(_, rv)): return lv == rv
         case let (.removeBubbleTail(_, lv), .removeBubbleTail(_, rv)): return lv == rv
-        case let (.disableCustomBg(_, lv), .disableCustomBg(_, rv)): return lv == rv
         case let (.hideFolderCounters(_, lv), .hideFolderCounters(_, rv)): return lv == rv
         case let (.hideAllChats(_, lv), .hideAllChats(_, rv)): return lv == rv
         case let (.codeFont(_, lv), .codeFont(_, rv)): return lv == rv
@@ -118,8 +115,6 @@ private enum AyuGramAppearanceEntry: ItemListNodeEntry {
             return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.appearanceHeader], sectionId: self.section)
         case let .removeBubbleTail(_, value):
             return ItemListSwitchItem(presentationData: presentationData, title: strings[.appearanceTail], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.removeMessageBubbleTail, v) })
-        case let .disableCustomBg(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.appearanceBackgrounds], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableCustomBackgrounds, v) })
         case let .codeFont(_, value):
             return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.appearanceCodeFont], label: value.isEmpty ? strings[.commonDefault] : value, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
                 arguments.pushController(ayuGramCodeFontController(context: arguments.context, currentFontName: value, onSelect: {
@@ -152,7 +147,6 @@ private func ayuGramAppearanceEntries(settings: AyuGramSettings, presentationDat
     entries.append(.hideNotificationCounters(presentationData.theme, settings.hideNotificationCounters))
     entries.append(.appearanceHeader(presentationData.theme))
     entries.append(.removeBubbleTail(presentationData.theme, settings.removeMessageBubbleTail))
-    entries.append(.disableCustomBg(presentationData.theme, settings.disableCustomBackgrounds))
     entries.append(.codeFont(presentationData.theme, settings.codeFontName))
     entries.append(.avatarCorners(presentationData.theme, settings.avatarCorners))
     entries.append(.hidePremiumStatuses(presentationData.theme, settings.hidePremiumStatuses))

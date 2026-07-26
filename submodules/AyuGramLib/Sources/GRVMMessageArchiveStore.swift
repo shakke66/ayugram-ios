@@ -122,6 +122,17 @@ public final class GRVMMessageArchiveStore {
     ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;
     """
 
+    static let deletionSuppressionSchemaV5 = """
+    CREATE TABLE IF NOT EXISTS deleted_message_suppressions (
+        account_id INTEGER NOT NULL,
+        peer_id INTEGER NOT NULL,
+        message_namespace INTEGER NOT NULL,
+        message_id INTEGER NOT NULL,
+        thread_id INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (account_id, peer_id, message_namespace, message_id, thread_id)
+    );
+    """
+
     static let mediaAdmissionSQL = """
     INSERT INTO archived_media_blobs (
         account_id, resource_id, relative_path, byte_count, kind, copy_state, generation
@@ -298,6 +309,7 @@ public final class GRVMMessageArchiveStore {
                     }
                     try self.execute(database, sql: Self.schemaV2)
                     try self.execute(database, sql: Self.cleanupSchemaV3)
+                    try self.execute(database, sql: Self.deletionSuppressionSchemaV5)
 
                     let accountIds = Array(Set(activeAccountRecordIds))
                     if hasLegacyTables && activeAccountRecordIds.count == 1 && accountIds.count == 1, let accountId = accountIds.first {
@@ -312,20 +324,28 @@ public final class GRVMMessageArchiveStore {
                             try self.executePrepared(database, sql: Self.migrateEditedMediaMappingsV1, values: [.int64(accountId)])
                         }
                     }
-                    try self.execute(database, sql: "PRAGMA user_version = 4")
+                    try self.execute(database, sql: "PRAGMA user_version = 5")
                 case 2:
                     try self.execute(database, sql: Self.schemaV2)
                     try self.execute(database, sql: Self.cleanupSchemaV3)
                     try self.execute(database, sql: Self.lifecycleSchemaV4Migration)
-                    try self.execute(database, sql: "PRAGMA user_version = 4")
+                    try self.execute(database, sql: Self.deletionSuppressionSchemaV5)
+                    try self.execute(database, sql: "PRAGMA user_version = 5")
                 case 3:
                     try self.execute(database, sql: Self.schemaV2)
                     try self.execute(database, sql: Self.cleanupSchemaV3)
                     try self.execute(database, sql: Self.lifecycleSchemaV4Migration)
-                    try self.execute(database, sql: "PRAGMA user_version = 4")
+                    try self.execute(database, sql: Self.deletionSuppressionSchemaV5)
+                    try self.execute(database, sql: "PRAGMA user_version = 5")
                 case 4:
                     try self.execute(database, sql: Self.schemaV2)
                     try self.execute(database, sql: Self.cleanupSchemaV3)
+                    try self.execute(database, sql: Self.deletionSuppressionSchemaV5)
+                    try self.execute(database, sql: "PRAGMA user_version = 5")
+                case 5:
+                    try self.execute(database, sql: Self.schemaV2)
+                    try self.execute(database, sql: Self.cleanupSchemaV3)
+                    try self.execute(database, sql: Self.deletionSuppressionSchemaV5)
                 default:
                     throw GRVMArchiveError.unsupportedSchema(version)
                 }
@@ -342,6 +362,9 @@ public final class GRVMMessageArchiveStore {
                 var admittedByResource: [GRVMStoredMediaKey: GRVMArchivedMedia] = [:]
                 var admittedByMessage: [GRVMMessageKey: [GRVMArchivedMedia]] = [:]
                 for message in messages.lazy {
+                    guard !(try self.isDeletedMessageSuppressed(database, key: message.key)) else {
+                        continue
+                    }
                     try self.executePrepared(
                         database,
                         sql: """
@@ -363,6 +386,7 @@ public final class GRVMMessageArchiveStore {
                         """,
                         values: self.messageValues(message)
                     )
+                    admittedByMessage[message.key] = []
                     let messageMedia = media[message.key] ?? []
                     for record in messageMedia {
                         let mediaKey = GRVMStoredMediaKey(accountId: record.accountId, resourceId: record.resourceId)
@@ -1040,7 +1064,17 @@ public final class GRVMMessageArchiveStore {
     public func beginDeletedCleanup(key: GRVMMessageKey) throws -> GRVMCleanupJob? {
         return try self.perform { database in
             try self.transaction(database) {
-                let rowCount = try self.executePreparedScalarInt64(
+                try self.executePrepared(
+                    database,
+                    sql: """
+                    INSERT OR IGNORE INTO deleted_message_suppressions (
+                        account_id, peer_id, message_namespace, message_id, thread_id
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    values: self.keyValues(key)
+                )
+
+                let archivedRowCount = try self.executePreparedScalarInt64(
                     database,
                     sql: """
                     SELECT COUNT(*) FROM archived_messages
@@ -1049,7 +1083,25 @@ public final class GRVMMessageArchiveStore {
                     """,
                     values: self.keyValues(key)
                 )
-                guard rowCount == 1 else {
+                let revisionCount = try self.executePreparedScalarInt64(
+                    database,
+                    sql: """
+                    SELECT COUNT(*) FROM edit_revisions
+                    WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
+                      AND message_id = ? AND thread_id = ?
+                    """,
+                    values: self.keyValues(key)
+                )
+                let mappingCount = try self.executePreparedScalarInt64(
+                    database,
+                    sql: """
+                    SELECT COUNT(*) FROM archived_message_media
+                    WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
+                      AND message_id = ? AND thread_id = ?
+                    """,
+                    values: self.keyValues(key)
+                )
+                guard archivedRowCount != 0 || revisionCount != 0 || mappingCount != 0 else {
                     return nil
                 }
 
@@ -1422,6 +1474,21 @@ public final class GRVMMessageArchiveStore {
         values: [SQLValue]
     ) throws -> Int64 {
         return try self.scalarInt64(database, sql: sql, values: values)
+    }
+
+    private func isDeletedMessageSuppressed(
+        _ database: OpaquePointer,
+        key: GRVMMessageKey
+    ) throws -> Bool {
+        return try self.executePreparedScalarInt64(
+            database,
+            sql: """
+            SELECT COUNT(*) FROM deleted_message_suppressions
+            WHERE account_id = ? AND peer_id = ? AND message_namespace = ?
+              AND message_id = ? AND thread_id = ?
+            """,
+            values: self.keyValues(key)
+        ) != 0
     }
 
     private func admitMedia(_ database: OpaquePointer, record: GRVMArchivedMedia) throws -> GRVMArchivedMedia {

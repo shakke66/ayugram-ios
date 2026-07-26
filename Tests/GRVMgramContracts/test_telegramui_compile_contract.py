@@ -9,6 +9,11 @@ HISTORY = ROOT / "submodules/TelegramUI/Sources/ChatHistoryListNode.swift"
 CONTEXT_MENUS = (
     ROOT / "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift"
 )
+ENTITY_KEYBOARD_BUILD = ROOT / "submodules/TelegramUI/Components/EntityKeyboard/BUILD"
+EMOJI_PAGER_SIGNALS = (
+    ROOT
+    / "submodules/TelegramUI/Components/EntityKeyboard/Sources/EmojiPagerContentSignals.swift"
+)
 
 
 def section(source: str, start: str, end: str) -> str:
@@ -84,6 +89,7 @@ class TelegramUICompileContractTests(unittest.TestCase):
             "let settingsSignals: [Signal<(PeerId, AyuGramSettings), NoError>] =",
             "let settingsSignal: Signal<[(PeerId, AyuGramSettings)], NoError> = combineLatest(settingsSignals)",
             "let migratedSettingsSignal: Signal<Void, NoError> = migrateGRVMSettings(",
+            "primaryAccountId: primary?.account.peerId,",
             "let migrationCompletionSignal: Signal<GRVMActiveAccountsSnapshot, NoError> = migratedSettingsSignal",
             "return .complete()",
             "let snapshotSignal: Signal<GRVMActiveAccountsSnapshot, NoError> = settingsSignal",
@@ -135,6 +141,13 @@ class TelegramUICompileContractTests(unittest.TestCase):
         items = [item.strip() for item in binding.group("items").split(",")]
         self.assertEqual(11, len(items))
         self.assertEqual("_", items[5])
+
+    def test_entity_keyboard_declares_live_settings_dependency_without_unused_import(self) -> None:
+        build = ENTITY_KEYBOARD_BUILD.read_text(encoding="utf-8")
+        signals = EMOJI_PAGER_SIGNALS.read_text(encoding="utf-8")
+        self.assertIn('"//submodules/AyuGramLib:AyuGramLib"', build)
+        self.assertIn("import AyuGramLib", signals)
+        self.assertNotIn("import AyuGramFeatures", signals)
 
 
 if __name__ == "__main__":

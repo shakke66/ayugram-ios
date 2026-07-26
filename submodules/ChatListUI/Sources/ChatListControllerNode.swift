@@ -76,6 +76,7 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
     
     private var itemNodes: [ChatListFilterTabEntryId: ChatListContainerItemNode] = [:]
     private var pendingItemNode: (ChatListFilterTabEntryId, ChatListContainerItemNode, Disposable)?
+    private var pendingFilterCompletions: [() -> Void] = []
     private(set) var availableFilters: [ChatListContainerNodeFilter] = [.all] {
         didSet {
             self.availableFiltersPromise.set(self.availableFilters)
@@ -86,7 +87,7 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
         return self.availableFiltersPromise.get()
     }
     
-    private var filtersLimit: Int32? = nil
+    private var filterAccessPolicy = ChatListFilterTabAccessPolicy(filterIds: [.all], limit: nil)
     private var selectedId: ChatListFilterTabEntryId
     
     var hintUpdatedStoryExpansion: Bool = false
@@ -594,8 +595,8 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
     }
     
     @objc private func panGesture(_ recognizer: UIPanGestureRecognizer) {
-        let filtersLimit = self.filtersLimit.flatMap({ $0 + 1 }) ?? Int32(self.availableFilters.count)
-        let maxFilterIndex = min(Int(filtersLimit), self.availableFilters.count) - 1
+        let previousFilterId = self.filterAccessPolicy.adjacentAllowedFilter(from: self.selectedId, direction: .previous)
+        let nextFilterId = self.filterAccessPolicy.adjacentAllowedFilter(from: self.selectedId, direction: .next)
         
         switch recognizer.state {
         case .began:
@@ -630,7 +631,7 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
                 }
             }
         case .changed:
-            if let (layout, navigationBarHeight, visualNavigationHeight, originalNavigationHeight: originalNavigationHeight, cleanNavigationBarHeight, insets, isReorderingFilters, isEditing, inlineNavigationLocation, inlineNavigationTransitionFraction, storiesInset) = self.validLayout, let selectedIndex = self.availableFilters.firstIndex(where: { $0.id == self.selectedId }) {
+            if let (layout, navigationBarHeight, visualNavigationHeight, originalNavigationHeight: originalNavigationHeight, cleanNavigationBarHeight, insets, isReorderingFilters, isEditing, inlineNavigationLocation, inlineNavigationTransitionFraction, storiesInset) = self.validLayout {
                 let translation = recognizer.translation(in: self.view)
                 var transitionFraction = translation.x / layout.size.width
                 
@@ -659,7 +660,7 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
                     }
                     
                     let cameraIsAlreadyOpened = self.controller?.hasStoryCameraTransition ?? false
-                    if selectedIndex <= 0 && translation.x > 0.0 {
+                    if previousFilterId == nil && translation.x > 0.0 {
                         transitionFraction = 0.0
                         self.controller?.storyCameraPanGestureChanged(transitionFraction: translation.x / layout.size.width)
                     } else if translation.x <= 0.0 && cameraIsAlreadyOpened {
@@ -671,17 +672,26 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
                         return
                     }
                 } else {
-                    if selectedIndex <= 0 && translation.x > 0.0 {
+                    if previousFilterId == nil && translation.x > 0.0 {
                         let overscroll = translation.x
                         transitionFraction = rubberBandingOffset(offset: overscroll, bandingStart: 0.0) / layout.size.width
+                        if self.filterAccessPolicy.hasBlockedCustomFolder(from: self.selectedId, direction: .previous) {
+                            transitionFraction = 0.0
+                            self.transitionFractionOffset = 0.0
+                            recognizer.isEnabled = false
+                            recognizer.isEnabled = true
+
+                            transition = .animated(duration: 0.45, curve: .spring)
+                            self.displayFilterLimit?()
+                        }
                     }
                 }
                 
-                if selectedIndex >= maxFilterIndex && translation.x < 0.0 {
+                if nextFilterId == nil && translation.x < 0.0 {
                     let overscroll = -translation.x
                     transitionFraction = -rubberBandingOffset(offset: overscroll, bandingStart: 0.0) / layout.size.width
                     
-                    if let filtersLimit = self.filtersLimit, selectedIndex >= filtersLimit - 1 {
+                    if self.filterAccessPolicy.hasBlockedCustomFolder(from: self.selectedId, direction: .next) {
                         transitionFraction = 0.0
                         self.transitionFractionOffset = 0.0
                         recognizer.isEnabled = false
@@ -706,7 +716,7 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
                 self.pinnedHeaderDisplayFractionUpdated?(transition)
             }
         case .cancelled, .ended:
-            if let (layout, navigationBarHeight, visualNavigationHeight, originalNavigationHeight: originalNavigationHeight, cleanNavigationBarHeight, insets, isReorderingFilters, isEditing, inlineNavigationLocation, inlineNavigationTransitionFraction, storiesInset) = self.validLayout, let selectedIndex = self.availableFilters.firstIndex(where: { $0.id == self.selectedId }) {
+            if let (layout, navigationBarHeight, visualNavigationHeight, originalNavigationHeight: originalNavigationHeight, cleanNavigationBarHeight, insets, isReorderingFilters, isEditing, inlineNavigationLocation, inlineNavigationTransitionFraction, storiesInset) = self.validLayout {
                 let translation = recognizer.translation(in: self.view)
                 let velocity = recognizer.velocity(in: self.view)
                 var directionIsToRight: Bool?
@@ -737,14 +747,13 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
                 var applyNodeAsCurrent: ChatListFilterTabEntryId?
                 
                 if let directionIsToRight = directionIsToRight {
-                    var updatedIndex = selectedIndex
+                    let switchToId: ChatListFilterTabEntryId?
                     if directionIsToRight {
-                        updatedIndex = min(updatedIndex + 1, maxFilterIndex)
+                        switchToId = nextFilterId
                     } else {
-                        updatedIndex = max(updatedIndex - 1, 0)
+                        switchToId = previousFilterId
                     }
-                    let switchToId = self.availableFilters[updatedIndex].id
-                    if switchToId != self.selectedId, let itemNode = self.itemNodes[switchToId] {
+                    if let switchToId, switchToId != self.selectedId, let itemNode = self.itemNodes[switchToId] {
                         let _ = itemNode
                         self.selectedId = switchToId
                         applyNodeAsCurrent = switchToId
@@ -836,24 +845,39 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
         }
     }
     
-    public func updateAvailableFilters(_ availableFilters: [ChatListContainerNodeFilter], limit: Int32?) {
-        if self.availableFilters != availableFilters {
+    public func updateAvailableFilters(_ availableFilters: [ChatListContainerNodeFilter], accessPolicy: ChatListFilterTabAccessPolicy) {
+        let filtersChanged = self.availableFilters != availableFilters
+        let accessPolicyChanged = self.filterAccessPolicy != accessPolicy
+        if filtersChanged {
             let apply: () -> Void = { [weak self] in
                 guard let strongSelf = self else {
                     return
                 }
                 strongSelf.availableFilters = availableFilters
-                strongSelf.filtersLimit = limit
+                strongSelf.filterAccessPolicy = accessPolicy
                 if let (layout, navigationBarHeight, visualNavigationHeight, originalNavigationHeight, cleanNavigationBarHeight, insets, isReorderingFilters, isEditing, inlineNavigationLocation, inlineNavigationTransitionFraction, storiesInset) = strongSelf.validLayout {
                     strongSelf.update(layout: layout, navigationBarHeight: navigationBarHeight, visualNavigationHeight: visualNavigationHeight, originalNavigationHeight: originalNavigationHeight, cleanNavigationBarHeight: cleanNavigationBarHeight, insets: insets, isReorderingFilters: isReorderingFilters, isEditing: isEditing, inlineNavigationLocation: inlineNavigationLocation, inlineNavigationTransitionFraction: inlineNavigationTransitionFraction, storiesInset: storiesInset, transition: .immediate)
                 }
             }
             if !availableFilters.contains(where: { $0.id == self.selectedId }) {
-                self.switchToFilter(id: .all, completion: {
+                let fallbackId = availableFilters.first?.id ?? .all
+                if availableFilters.isEmpty {
                     apply()
-                })
+                } else if self.availableFilters.contains(where: { $0.id == fallbackId }) {
+                    self.switchToFilter(id: fallbackId, completion: {
+                        apply()
+                    })
+                } else {
+                    apply()
+                    self.switchToFilter(id: fallbackId)
+                }
             } else {
                 apply()
+            }
+        } else if accessPolicyChanged {
+            self.filterAccessPolicy = accessPolicy
+            if let (layout, navigationBarHeight, visualNavigationHeight, originalNavigationHeight, cleanNavigationBarHeight, insets, isReorderingFilters, isEditing, inlineNavigationLocation, inlineNavigationTransitionFraction, storiesInset) = self.validLayout {
+                self.update(layout: layout, navigationBarHeight: navigationBarHeight, visualNavigationHeight: visualNavigationHeight, originalNavigationHeight: originalNavigationHeight, cleanNavigationBarHeight: cleanNavigationBarHeight, insets: insets, isReorderingFilters: isReorderingFilters, isEditing: isEditing, inlineNavigationLocation: inlineNavigationLocation, inlineNavigationTransitionFraction: inlineNavigationTransitionFraction, storiesInset: storiesInset, transition: .immediate)
             }
         }
     }
@@ -871,6 +895,11 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
     public func switchToFilter(id: ChatListFilterTabEntryId, animated: Bool = true, completion: (() -> Void)? = nil) {
         self.onFilterSwitch?()
         if id != self.selectedId, let index = self.availableFilters.firstIndex(where: { $0.id == id }) {
+            if let pendingItemNode = self.pendingItemNode, pendingItemNode.0 != id {
+                pendingItemNode.2.dispose()
+                self.pendingItemNode = nil
+                self.pendingFilterCompletions.removeAll()
+            }
             if let itemNode = self.itemNodes[id] {
                 guard let (layout, navigationBarHeight, visualNavigationHeight, originalNavigationHeight, cleanNavigationBarHeight, insets, isReorderingFilters, isEditing, inlineNavigationLocation, inlineNavigationTransitionFraction, storiesInset) = self.validLayout else {
                     return
@@ -903,6 +932,10 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
                 self.pendingItemNode?.2.dispose()
                 let disposable = MetaDisposable()
                 self.pendingItemNode = (id, itemNode, disposable)
+                self.pendingFilterCompletions.removeAll()
+                if let completion {
+                    self.pendingFilterCompletions.append(completion)
+                }
                 
                 if !animated {
                     self.selectedId = id
@@ -916,6 +949,8 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
                     guard let strongSelf = self, let itemNode = itemNode, itemNode === strongSelf.pendingItemNode?.1 else {
                         return
                     }
+                    let pendingFilterCompletions = strongSelf.pendingFilterCompletions
+                    strongSelf.pendingFilterCompletions.removeAll()
                     
                     strongSelf.pendingItemNode?.2.dispose()
                     strongSelf.pendingItemNode = nil
@@ -936,7 +971,9 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
                         strongSelf.currentItemFilterUpdated?(strongSelf.currentItemFilter, strongSelf.transitionFraction, .immediate, false)
                         strongSelf.pinnedHeaderDisplayFractionUpdated?(.immediate)
                         
-                        completion?()
+                        for completion in pendingFilterCompletions {
+                            completion()
+                        }
                         return
                     }
                     
@@ -994,7 +1031,9 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
                         strongSelf.pinnedHeaderDisplayFractionUpdated?(transition)
                     }
                     
-                    completion?()
+                    for completion in pendingFilterCompletions {
+                        completion()
+                    }
                 }))
                 
                 if let (layout, _, visualNavigationHeight, originalNavigationHeight, _, insets, _, _, inlineNavigationLocation, inlineNavigationTransitionFraction, storiesInset) = self.validLayout {
@@ -1005,6 +1044,8 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
                     }
                     return
                 }
+            } else if self.pendingItemNode?.0 == id, let completion {
+                self.pendingFilterCompletions.append(completion)
             }
         }
     }
@@ -1513,124 +1554,116 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
         var navigationHeaderPanels: AnyComponent<Empty>?
         if self.controller?.tabContainerData != nil || !panels.isEmpty {
             var tabs: AnyComponent<Empty>?
-            if let tabContainerData = self.controller?.tabContainerData, tabContainerData.0.count > 1 {
-                let selectedTab: HorizontalTabsComponent.Tab.Id
-                switch self.effectiveContainerNode.currentItemFilter {
-                case .all:
-                    selectedTab = AnyHashable(Int32.min)
-                case let .filter(id):
-                    selectedTab = AnyHashable(id)
-                }
-                
-                let isEditing = self.isReorderingFilters || (self.mainContainerNode.currentItemNode.currentState.editing && !self.didBeginSelectingChatsWhileEditing)
-                
-                tabs = AnyComponent(HorizontalTabsComponent(
-                    context: self.context,
-                    theme: self.presentationData.theme,
-                    tabs: tabContainerData.0.map { entry -> HorizontalTabsComponent.Tab in
-                        let id: HorizontalTabsComponent.Tab.Id
-                        let title: HorizontalTabsComponent.Tab.Title
-                        var badge: HorizontalTabsComponent.Tab.Badge?
-                        var isMainTab = false
-                        switch entry {
-                        case .all:
-                            id = Int32.min
-                            title = HorizontalTabsComponent.Tab.Title(text: self.presentationData.strings.ChatList_Tabs_All, entities: [], enableAnimations: false)
-                            isMainTab = true
-                        case let .filter(idValue, text, unread):
-                            id = AnyHashable(idValue)
-                            title = HorizontalTabsComponent.Tab.Title(text: text.text, entities: text.entities, enableAnimations: text.enableAnimations)
-                            if unread.value != 0 {
-                                badge = HorizontalTabsComponent.Tab.Badge(
-                                    title: "\(unread.value)",
-                                    isAccent: unread.hasUnmuted
-                                )
-                            }
-                        }
-                        
-                        return HorizontalTabsComponent.Tab(
-                            id: id,
-                            content: .title(title),
-                            badge: badge,
-                            action: { [weak self] in
-                                guard let self, let tabContainerData = self.controller?.tabContainerData else {
-                                    return
+            if let controller = self.controller, let tabContainerData = controller.tabContainerData {
+                let tabPresentation = chatListFilterTabPresentation(
+                    filters: tabContainerData.0,
+                    selectedFilter: self.effectiveContainerNode.currentItemFilter,
+                    hideAllChatsFolder: controller.hideAllChatsFolder,
+                    limit: tabContainerData.2
+                )
+                if tabPresentation.filters.count > 1 {
+                    let selectedTab: HorizontalTabsComponent.Tab.Id
+                    switch tabPresentation.selectedFilter ?? .all {
+                    case .all:
+                        selectedTab = AnyHashable(Int32.min)
+                    case let .filter(id):
+                        selectedTab = AnyHashable(id)
+                    }
+
+                    let isEditing = self.isReorderingFilters || (self.mainContainerNode.currentItemNode.currentState.editing && !self.didBeginSelectingChatsWhileEditing)
+
+                    tabs = AnyComponent(HorizontalTabsComponent(
+                        context: self.context,
+                        theme: self.presentationData.theme,
+                        tabs: tabPresentation.filters.map { entry -> HorizontalTabsComponent.Tab in
+                            let id: HorizontalTabsComponent.Tab.Id
+                            let title: HorizontalTabsComponent.Tab.Title
+                            var badge: HorizontalTabsComponent.Tab.Badge?
+                            var isMainTab = false
+                            switch entry {
+                            case .all:
+                                id = Int32.min
+                                title = HorizontalTabsComponent.Tab.Title(text: self.presentationData.strings.ChatList_Tabs_All, entities: [], enableAnimations: false)
+                                isMainTab = true
+                            case let .filter(idValue, text, unread):
+                                id = AnyHashable(idValue)
+                                title = HorizontalTabsComponent.Tab.Title(text: text.text, entities: text.entities, enableAnimations: text.enableAnimations)
+                                if !controller.hideFolderCounters && unread.value != 0 {
+                                    badge = HorizontalTabsComponent.Tab.Badge(
+                                        title: "\(unread.value)",
+                                        isAccent: unread.hasUnmuted
+                                    )
                                 }
-                                
-                                let isPremium = self.context.isPremium
-                                
-                                let mappedId: ChatListFilterTabEntryId = entry.id
-                                
-                                var isDisabled = false
-                                if let filtersLimit = tabContainerData.2 {
-                                    guard let folderIndex = tabContainerData.0.firstIndex(where: { $0.id == mappedId }) else {
+                            }
+
+                            return HorizontalTabsComponent.Tab(
+                                id: id,
+                                content: .title(title),
+                                badge: badge,
+                                actionRevision: tabPresentation.accessPolicy.isAllowed(entry.id) ? 1 : 0,
+                                action: { [weak self] in
+                                    guard let self, let tabContainerData = self.controller?.tabContainerData else {
                                         return
                                     }
-                                    isDisabled = !isPremium && folderIndex >= filtersLimit
-                                }
-                                
-                                if isDisabled {
-                                    let filtersCount = tabContainerData.0.count(where: { item in
-                                        if case .all = item {
-                                            return false
-                                        } else {
+
+                                    let mappedId: ChatListFilterTabEntryId = entry.id
+                                    let isDisabled = !tabPresentation.accessPolicy.isAllowed(entry.id)
+
+                                    if isDisabled {
+                                        let filtersCount = tabContainerData.0.count(where: { item in
+                                            if case .all = item {
+                                                return false
+                                            } else {
+                                                return true
+                                            }
+                                        })
+                                        let context = self.context
+                                        var replaceImpl: ((ViewController) -> Void)?
+                                        let controller = PremiumLimitScreen(context: context, subject: .folders, count: Int32(filtersCount), action: {
+                                            let controller = PremiumIntroScreen(context: context, source: .folders)
+                                            replaceImpl?(controller)
                                             return true
+                                        })
+                                        replaceImpl = { [weak controller] c in
+                                            controller?.replace(with: c)
                                         }
-                                    })
-                                    let context = self.context
-                                    var replaceImpl: ((ViewController) -> Void)?
-                                    let controller = PremiumLimitScreen(context: context, subject: .folders, count: Int32(filtersCount), action: {
-                                        let controller = PremiumIntroScreen(context: context, source: .folders)
-                                        replaceImpl?(controller)
-                                        return true
-                                    })
-                                    replaceImpl = { [weak controller] c in
-                                        controller?.replace(with: c)
+                                        self.controller?.push(controller)
+                                    } else {
+                                        self.controller?.selectTab(id: mappedId)
                                     }
-                                    self.controller?.push(controller)
-                                } else {
-                                    self.controller?.selectTab(id: mappedId)
-                                }
-                            },
-                            contextAction: { [weak self] sourceView, gesture in
-                                guard let self, let tabContainerData = self.controller?.tabContainerData else {
-                                    return
-                                }
-                                
-                                let isPremium = self.context.isPremium
-                                
-                                let mappedId: Int32?
-                                switch entry {
-                                case .all:
-                                    mappedId = nil
-                                case let .filter(idValue, _, _):
-                                    mappedId = idValue
-                                }
-                                
-                                var isDisabled = false
-                                if let filtersLimit = tabContainerData.2 {
-                                    guard let folderIndex = tabContainerData.0.firstIndex(where: { $0.id == entry.id }) else {
+                                },
+                                contextAction: { [weak self] sourceView, gesture in
+                                    guard let self else {
                                         return
                                     }
-                                    isDisabled = !isPremium && folderIndex >= filtersLimit
+
+                                    let mappedId: Int32?
+                                    switch entry {
+                                    case .all:
+                                        mappedId = nil
+                                    case let .filter(idValue, _, _):
+                                        mappedId = idValue
+                                    }
+
+                                    let isDisabled = !tabPresentation.accessPolicy.isAllowed(entry.id)
+
+                                    self.controller?.tabContextGesture(id: mappedId, sourceNode: nil, sourceView: sourceView, gesture: gesture, keepInPlace: false, isDisabled: isDisabled)
+                                },
+                                deleteAction: (!isEditing || isMainTab) ? nil : { [weak self] in
+                                    guard let self else {
+                                        return
+                                    }
+                                    if case let .filter(id) = entry.id {
+                                        self.controller?.askForFilterRemoval(id: id)
+                                    }
                                 }
-                                
-                                self.controller?.tabContextGesture(id: mappedId, sourceNode: nil, sourceView: sourceView, gesture: gesture, keepInPlace: false, isDisabled: isDisabled)
-                            },
-                            deleteAction: (!isEditing || isMainTab) ? nil : { [weak self] in
-                                guard let self else {
-                                    return
-                                }
-                                if case let .filter(id) = entry.id {
-                                    self.controller?.askForFilterRemoval(id: id)
-                                }
-                            }
-                        )
-                    },
-                    selectedTab: selectedTab,
-                    isEditing: isEditing,
-                    liftWhileSwitching: layout.deviceMetrics.type != .tablet
-                ))
+                            )
+                        },
+                        selectedTab: selectedTab,
+                        isEditing: isEditing,
+                        liftWhileSwitching: layout.deviceMetrics.type != .tablet
+                    ))
+                }
             }
                 
             navigationHeaderPanels = AnyComponent(HeaderPanelContainerComponent(

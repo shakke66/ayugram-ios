@@ -1861,16 +1861,20 @@ class PeerMessageUIContractTests(unittest.TestCase):
         action = swift_named_closure(read_item, "action")
         for token in (
             "interfaceInteraction.chatController() as? ChatControllerImpl",
-            "message.index",
-            ".localOnly",
+            "chatController.grvmApplyTopReadIndex(mode: .localOnly)",
         ):
             self.assertIn(token, action)
-        read_call = swift_call(action, "grvmApplyMaxReadIndex")
-        self.assertIn("grvmApplyMaxReadIndex(", action)
-        assert_ordered_tokens(
-            self,
-            read_call,
-            ["grvmApplyMaxReadIndex(", "message.index", ".localOnly"],
+        self.assertNotIn("message.index", action)
+        self.assertNotIn("grvmApplyMaxReadIndex(", action)
+
+        chat = source(self.chat_path)
+        self.assertIn(
+            "func grvmApplyTopReadIndex(mode: GRVMReadMode)",
+            chat,
+        )
+        self.assertNotIn(
+            "private func grvmApplyTopReadIndex(mode: GRVMReadMode)",
+            chat,
         )
 
     def test_read_all_uses_top_cloud_index_at_action_time_for_both_locations(self) -> None:

@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTROLLER = (
     ROOT / "submodules/AyuGramSettingsUI/Sources/GRVMMessageHistoryController.swift"
 )
+CONTEXT_MENU = ROOT / "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift"
 ENGLISH = ROOT / "Telegram/Telegram-iOS/en.lproj/GRVMgram.strings"
 RUSSIAN = ROOT / "Telegram/Telegram-iOS/ru.lproj/GRVMgram.strings"
 
@@ -72,9 +73,12 @@ class HistoryPresentationContractTests(unittest.TestCase):
         )
 
     def test_history_action_copy_is_typed_and_exact_in_both_languages(self) -> None:
+        context_menu = CONTEXT_MENU.read_text(encoding="utf-8")
         english = parse_strings(ENGLISH)
         russian = parse_strings(RUSSIAN)
 
+        self.assertIn("text: grvmStrings[.menuHistory]", context_menu)
+        self.assertNotIn('text: "History"', context_menu)
         self.assertEqual(english["GRVMgram.History.Action"], "History")
         self.assertEqual(russian["GRVMgram.History.Action"], "История")
         self.assertEqual(english["GRVMgram.Menu.History"], "History")

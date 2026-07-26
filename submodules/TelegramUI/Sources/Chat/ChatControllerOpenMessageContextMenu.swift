@@ -19,6 +19,27 @@ import TopMessageReactions
 import TelegramNotices
 import PresentationDataUtils
 import AyuGramLib
+import AyuGramFeatures
+
+private func grvmReactionPanelItems(
+    from actions: ContextController.Items
+) -> ContextController.Items? {
+    guard !actions.reactionItems.isEmpty else {
+        return nil
+    }
+    return ContextController.Items(
+        content: .list([]),
+        context: actions.context,
+        reactionItems: actions.reactionItems,
+        selectedReactionItems: actions.selectedReactionItems,
+        reactionsTitle: actions.reactionsTitle,
+        reactionsLocked: actions.reactionsLocked,
+        animationCache: actions.animationCache,
+        alwaysAllowPremiumReactions: actions.alwaysAllowPremiumReactions,
+        allPresetReactionsAreAvailable: actions.allPresetReactionsAreAvailable,
+        getEmojiContent: actions.getEmojiContent
+    )
+}
 
 extension ChatControllerImpl {
     func openMessageContextMenu(message: Message, selectAll: Bool, node: ASDisplayNode, frame: CGRect, anyRecognizer: UIGestureRecognizer?, location: CGPoint?) -> Void {
@@ -48,9 +69,10 @@ extension ChatControllerImpl {
                 return
             }
             
+            let grvmMoreActions = GRVMContextMenuMoreActions()
             let _ = combineLatest(queue: .mainQueue(),
                 self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: self.context.account.peerId)),
-                contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: self.presentationInterfaceState, context: self.context, messages: updatedMessages, controllerInteraction: self.controllerInteraction, selectAll: selectAll, interfaceInteraction: self.interfaceInteraction, messageNode: node as? ChatMessageItemView, modifierPressed: modifierPressed),
+                contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: self.presentationInterfaceState, context: self.context, messages: updatedMessages, controllerInteraction: self.controllerInteraction, selectAll: selectAll, interfaceInteraction: self.interfaceInteraction, messageNode: node as? ChatMessageItemView, modifierPressed: modifierPressed, grvmMoreActions: grvmMoreActions),
                 peerMessageAllowedReactions(context: self.context, message: topMessage),
                 peerMessageSelectedReactions(context: self.context, message: topMessage),
                 topMessageReactions(context: self.context, message: topMessage, subPeerId: self.chatLocation.threadId.flatMap(EnginePeer.Id.init)),
@@ -232,6 +254,28 @@ extension ChatControllerImpl {
                             }
                         }
                     }
+                }
+
+                var reactionPanelItems: ContextController.Items?
+                switch grvmContextMenuPlacement(
+                    settings.grvmChatAppearanceSettings.contextMenu.reactions,
+                    modifierPressed: modifierPressed
+                ) {
+                case .hidden:
+                    actions.reactionItems = []
+                case .topLevel:
+                    break
+                case .more:
+                    reactionPanelItems = grvmReactionPanelItems(from: actions)
+                    actions.reactionItems = []
+                }
+                if let moreItem = grvmContextMoreActionsItem(
+                    contextMoreActions: grvmMoreActions.items,
+                    reactionPanelItems: reactionPanelItems,
+                    strings: self.presentationInterfaceState.strings
+                ), case var .list(itemList) = actions.content {
+                    itemList.insert(moreItem, at: 0)
+                    actions.content = .list(itemList)
                 }
                 
                 self.chatDisplayNode.messageTransitionNode.dismissMessageReactionContexts()

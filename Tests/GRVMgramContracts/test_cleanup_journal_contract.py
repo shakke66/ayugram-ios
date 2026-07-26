@@ -10,15 +10,17 @@ MEDIA_STORE = ROOT / "submodules/AyuGramLib/Sources/GRVMArchivedMediaStore.swift
 
 
 class CleanupJournalContractTests(unittest.TestCase):
-    def test_schema_v4_is_migration_safe(self) -> None:
+    def test_schema_v5_is_migration_safe(self) -> None:
         source = STORE.read_text(encoding="utf-8")
         self.assertIn("CREATE TABLE IF NOT EXISTS cleanup_jobs", source)
         self.assertIn("message_keys BLOB NOT NULL", source)
         self.assertIn("media_records BLOB NOT NULL", source)
-        self.assertIn("PRAGMA user_version = 4", source)
+        self.assertIn("CREATE TABLE IF NOT EXISTS deleted_message_suppressions", source)
+        self.assertIn("PRAGMA user_version = 5", source)
         self.assertIn("case 2:", source)
         self.assertIn("case 3:", source)
         self.assertIn("case 4:", source)
+        self.assertIn("case 5:", source)
 
     def test_cleanup_models_are_codable(self) -> None:
         source = MODELS.read_text(encoding="utf-8")

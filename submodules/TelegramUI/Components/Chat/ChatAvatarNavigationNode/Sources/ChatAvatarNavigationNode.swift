@@ -241,7 +241,8 @@ public final class ChatAvatarNavigationNode: ASDisplayNode {
                     colors: AvatarStoryIndicatorComponent.Colors(theme: theme),
                     activeLineWidth: 1.0,
                     inactiveLineWidth: 1.0,
-                    counters: nil
+                    counters: nil,
+                    normalizedCornerRadius: self.avatarNode.normalizedCornerRadius
                 )),
                 environment: {},
                 containerSize: self.avatarNode.bounds.insetBy(dx: 2.0, dy: 2.0).size
@@ -318,7 +319,11 @@ public final class ChatAvatarNavigationNode: ASDisplayNode {
         self.avatarVideoNode?.updateVisibility(isVisible)
       
         if let videoNode = self.avatarVideoNode {
-            videoNode.updateLayout(size: self.avatarNode.frame.size, cornerRadius: self.avatarNode.frame.size.width / 2.0, transition: .immediate)
+            videoNode.updateLayout(
+                size: self.avatarNode.bounds.size,
+                cornerRadius: min(self.avatarNode.bounds.width, self.avatarNode.bounds.height) * self.avatarNode.normalizedCornerRadius,
+                transition: .immediate
+            )
             videoNode.frame = self.avatarNode.bounds
         }
     }

@@ -11,6 +11,7 @@ import SearchUI
 import ChatListUI
 import CounterControllerTitleView
 import ChatListFilterTabContainerNode
+import AyuGramLib
 
 public final class PeerSelectionControllerImpl: ViewController, PeerSelectionController {
     private let context: AccountContext
@@ -90,6 +91,8 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
     private var searchContentNode: NavigationBarSearchContentNode?
     var tabContainerNode: ChatListFilterTabContainerNode?
     private var tabContainerData: ([ChatListFilterTabEntry], Bool, Int32?)?
+    private var hideFolderCounters = false
+    private var hideAllChatsFolder = false
     
     private let filterDisposable = MetaDisposable()
     
@@ -215,7 +218,13 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
                     strongSelf.tabContainerNode?.cancelAnimations()
                 }
                 if let tabContainerNode = strongSelf.tabContainerNode {
-                    tabContainerNode.update(size: CGSize(width: layout.size.width, height: 44.0), sideInset: layout.safeInsets.left, filters: tabContainerData.0, selectedFilter: filter, isReordering: false, isEditing: false, canReorderAllChats: false, filtersLimit: tabContainerData.2, transitionFraction: fraction, presentationData: strongSelf.presentationData, transition: transition)
+                    let tabPresentation = chatListFilterTabPresentation(
+                        filters: tabContainerData.0,
+                        selectedFilter: filter,
+                        hideAllChatsFolder: strongSelf.hideAllChatsFolder,
+                        limit: tabContainerData.2
+                    )
+                    tabContainerNode.update(size: CGSize(width: layout.size.width, height: 44.0), sideInset: layout.safeInsets.left, filters: tabPresentation.filters, selectedFilter: tabPresentation.selectedFilter, isReordering: false, isEditing: false, canReorderAllChats: false, filtersLimit: tabContainerData.2, transitionFraction: fraction, hideBadges: strongSelf.hideFolderCounters, presentationData: strongSelf.presentationData, transition: transition)
                 }
             }
             
@@ -435,7 +444,13 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
             let tabContainerOffset: CGFloat = 0.0
             let navigationBarHeight = self.navigationBar?.frame.maxY ?? 0.0
             transition.updateFrame(node: tabContainerNode, frame: CGRect(origin: CGPoint(x: 0.0, y: navigationBarHeight - self.additionalNavigationBarHeight - 44.0 - 8.0 + tabContainerOffset), size: CGSize(width: layout.size.width, height: 44.0)))
-            tabContainerNode.update(size: CGSize(width: layout.size.width, height: 44.0), sideInset: layout.safeInsets.left, filters: self.tabContainerData?.0 ?? [], selectedFilter: mainContainerNode.currentItemFilter, isReordering: false, isEditing: false, canReorderAllChats: false, filtersLimit: self.tabContainerData?.2, transitionFraction: mainContainerNode.transitionFraction, presentationData: self.presentationData, transition: .animated(duration: 0.4, curve: .spring))
+            let tabPresentation = chatListFilterTabPresentation(
+                filters: self.tabContainerData?.0 ?? [],
+                selectedFilter: mainContainerNode.currentItemFilter,
+                hideAllChatsFolder: self.hideAllChatsFolder,
+                limit: self.tabContainerData?.2
+            )
+            tabContainerNode.update(size: CGSize(width: layout.size.width, height: 44.0), sideInset: layout.safeInsets.left, filters: tabPresentation.filters, selectedFilter: tabPresentation.selectedFilter, isReordering: false, isEditing: false, canReorderAllChats: false, filtersLimit: self.tabContainerData?.2, transitionFraction: mainContainerNode.transitionFraction, hideBadges: self.hideFolderCounters, presentationData: self.presentationData, transition: .animated(duration: 0.4, curve: .spring))
         }
     }
     
@@ -477,13 +492,18 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
     
     private func reloadFilters(firstUpdate: (() -> Void)? = nil) {
         let filterItems = chatListFilterItems(context: self.context)
+        let settingsSignal = grvmSettings(
+            accountId: self.context.account.peerId,
+            accountManager: self.context.sharedContext.accountManager
+        )
         var notifiedFirstUpdate = false
         self.filterDisposable.set((combineLatest(queue: .mainQueue(),
             filterItems,
             self.context.account.postbox.peerView(id: self.context.account.peerId),
-            self.context.engine.data.get(TelegramEngine.EngineData.Item.Configuration.UserLimits(isPremium: false))
+            self.context.engine.data.get(TelegramEngine.EngineData.Item.Configuration.UserLimits(isPremium: false)),
+            settingsSignal
         )
-        |> deliverOnMainQueue).start(next: { [weak self] countAndFilterItems, peerView, limits in
+        |> deliverOnMainQueue).start(next: { [weak self] countAndFilterItems, peerView, limits, settings in
             guard let strongSelf = self else {
                 return
             }
@@ -496,68 +516,52 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
             for (filter, unreadCount, hasUnmutedUnread) in items {
                 switch filter {
                     case .allChats:
-                        if let isPremium = isPremium, !isPremium && filterItems.count > 0 {
-                            filterItems.insert(.all(unreadCount: 0), at: 0)
-                        } else {
-                            filterItems.append(.all(unreadCount: 0))
-                        }
+                        filterItems.append(.all(unreadCount: 0))
                     case let .filter(id, title, _, _):
                         filterItems.append(.filter(id: id, text: title, unread: ChatListFilterTabEntryUnreadCount(value: unreadCount, hasUnmuted: hasUnmutedUnread)))
                 }
             }
             
             let resolvedItems = filterItems
-        
-            var wasEmpty = false
-            if let tabContainerData = strongSelf.tabContainerData {
-                wasEmpty = tabContainerData.0.count <= 1 || tabContainerData.1
-            } else {
-                wasEmpty = true
-            }
-   
-            var selectedEntryId = !strongSelf.initializedFilters ? .all : (strongSelf.peerSelectionNode.mainContainerNode?.currentItemFilter ?? .all)
-            var resetCurrentEntry = false
-            if !resolvedItems.contains(where: { $0.id == selectedEntryId }) {
-                resetCurrentEntry = true
-                if let tabContainerData = strongSelf.tabContainerData {
-                    var found = false
-                    if let index = tabContainerData.0.firstIndex(where: { $0.id == selectedEntryId }) {
-                        for i in (0 ..< index - 1).reversed() {
-                            if resolvedItems.contains(where: { $0.id == tabContainerData.0[i].id }) {
-                                selectedEntryId = tabContainerData.0[i].id
-                                found = true
-                                break
-                            }
-                        }
-                    }
-                    if !found {
-                        selectedEntryId = .all
-                    }
-                } else {
-                    selectedEntryId = .all
-                }
-            }
             let filtersLimit = isPremium == false ? limits.maxFoldersCount : nil
+        
+            let previousTabPresentation: ChatListFilterTabPresentation?
+            if let tabContainerData = strongSelf.tabContainerData {
+                previousTabPresentation = chatListFilterTabPresentation(
+                    filters: tabContainerData.0,
+                    selectedFilter: strongSelf.peerSelectionNode.mainContainerNode?.currentItemFilter,
+                    hideAllChatsFolder: strongSelf.hideAllChatsFolder,
+                    limit: tabContainerData.2
+                )
+            } else {
+                previousTabPresentation = nil
+            }
+            let wasEmpty = (previousTabPresentation?.filters.count ?? 0) <= 1
+   
+            let requestedSelectedEntryId = !strongSelf.initializedFilters ? .all : (strongSelf.peerSelectionNode.mainContainerNode?.currentItemFilter ?? .all)
+            let tabPresentation = chatListFilterTabPresentation(
+                filters: resolvedItems,
+                selectedFilter: requestedSelectedEntryId,
+                hideAllChatsFolder: settings.hideAllChatsFolder,
+                limit: filtersLimit
+            )
+            let selectedEntryId = tabPresentation.selectedFilter ?? .all
             strongSelf.tabContainerData = (resolvedItems, false, filtersLimit)
+            strongSelf.hideFolderCounters = settings.hideFolderCounters
+            strongSelf.hideAllChatsFolder = settings.hideAllChatsFolder
             var availableFilters: [ChatListContainerNodeFilter] = []
-            var hasAllChats = false
             for item in items {
                 switch item.0 {
                     case .allChats:
-                        hasAllChats = true
-                        if let isPremium = isPremium, !isPremium && availableFilters.count > 0 {
-                            availableFilters.insert(.all, at: 0)
-                        } else {
-                            availableFilters.append(.all)
-                        }
+                        availableFilters.append(.all)
                     case .filter:
                         availableFilters.append(.filter(item.0))
                 }
             }
-            if !hasAllChats {
-                availableFilters.insert(.all, at: 0)
-            }
-            strongSelf.peerSelectionNode.mainContainerNode?.updateAvailableFilters(availableFilters, limit: filtersLimit)
+            let visibleFilterIds = Set(tabPresentation.filters.map(\.id))
+            let allowedFilterIds = Set(tabPresentation.accessPolicy.allowedFilterIds)
+            availableFilters = availableFilters.filter { visibleFilterIds.contains($0.id) && allowedFilterIds.contains($0.id) }
+            strongSelf.peerSelectionNode.mainContainerNode?.updateAvailableFilters(availableFilters, accessPolicy: tabPresentation.accessPolicy)
             
             if let mainContainerNode = strongSelf.peerSelectionNode.mainContainerNode {
                 if isPremium == nil && items.isEmpty {
@@ -576,7 +580,7 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
                 }
             }
             
-            let isEmpty = resolvedItems.count <= 1
+            let isEmpty = tabPresentation.filters.count <= 1
             
             strongSelf.chatListFiltersNonEmpty = !isEmpty
             if wasEmpty != isEmpty, strongSelf.displayNavigationBar {
@@ -587,7 +591,7 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
                 if wasEmpty != isEmpty {
                     strongSelf.containerLayoutUpdated(layout, transition: .immediate)
                 } else if let tabContainerNode = strongSelf.tabContainerNode {
-                    tabContainerNode.update(size: CGSize(width: layout.size.width, height: 44.0), sideInset: layout.safeInsets.left, filters: resolvedItems, selectedFilter: selectedEntryId, isReordering: false, isEditing: false, canReorderAllChats: false, filtersLimit: filtersLimit, transitionFraction: 0.0, presentationData: strongSelf.presentationData, transition: .animated(duration: 0.4, curve: .spring))
+                    tabContainerNode.update(size: CGSize(width: layout.size.width, height: 44.0), sideInset: layout.safeInsets.left, filters: tabPresentation.filters, selectedFilter: tabPresentation.selectedFilter, isReordering: false, isEditing: false, canReorderAllChats: false, filtersLimit: filtersLimit, transitionFraction: 0.0, hideBadges: strongSelf.hideFolderCounters, presentationData: strongSelf.presentationData, transition: .animated(duration: 0.4, curve: .spring))
                 }
             }
             
@@ -596,9 +600,6 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
                 firstUpdate?()
             }
             
-            if resetCurrentEntry {
-                //strongSelf.selectTab(id: selectedEntryId)
-            }
         }))
     }
     

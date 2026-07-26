@@ -71,7 +71,7 @@ private func updateAvatarImageClip(
         imageNode.cornerRadius = 0.0
     case .round, .roundedRect:
         imageNode.clipsToBounds = true
-        imageNode.cornerRadius = displayDimensions.height * cornerRadius
+        imageNode.cornerRadius = min(displayDimensions.width, displayDimensions.height) * cornerRadius
     }
 }
 
@@ -289,11 +289,34 @@ public enum AvatarNodeColorOverride {
 }
 
 public final class AvatarEditOverlayNode: ASDisplayNode {
+    private final class Params: NSObject {
+        let clipStyle: AvatarNodeClipStyle
+        let cornerRadius: CGFloat
+
+        init(clipStyle: AvatarNodeClipStyle, cornerRadius: CGFloat) {
+            self.clipStyle = clipStyle
+            self.cornerRadius = cornerRadius
+        }
+    }
+
+    private var clipStyle: AvatarNodeClipStyle = .round
+    private var cornerRadius: CGFloat = 0.5
+
     override public init() {
         super.init()
         
         self.isOpaque = false
         self.displaysAsynchronously = true
+    }
+
+    public func updateClip(clipStyle: AvatarNodeClipStyle, cornerRadius: CGFloat) {
+        self.clipStyle = clipStyle
+        self.cornerRadius = cornerRadius
+        self.setNeedsDisplay()
+    }
+
+    override public func drawParameters(forAsyncLayer layer: _ASDisplayLayer) -> NSObjectProtocol {
+        return Params(clipStyle: self.clipStyle, cornerRadius: self.cornerRadius)
     }
     
     @objc override public class func draw(_ bounds: CGRect, withParameters parameters: Any?, isCancelled: () -> Bool, isRasterizing: Bool) {
@@ -306,11 +329,23 @@ public final class AvatarEditOverlayNode: ASDisplayNode {
             context.setFillColor(UIColor.clear.cgColor)
             context.fill(bounds)
         }
-        
-        context.beginPath()
-        context.addEllipse(in: CGRect(x: 0.0, y: 0.0, width: bounds.size.width, height:
-            bounds.size.height))
-        context.clip()
+
+        guard let parameters = parameters as? Params else {
+            return
+        }
+
+        switch parameters.clipStyle {
+        case .round, .roundedRect:
+            context.beginPath()
+            context.addPath(UIBezierPath(roundedRect: bounds, cornerRadius: floor(min(bounds.size.width, bounds.size.height) * parameters.cornerRadius)).cgPath)
+            context.clip()
+        case .bubble:
+            context.beginPath()
+            AvatarNode.addAvatarBubblePath(context: context, rect: bounds)
+            context.clip()
+        case .none:
+            break
+        }
         
         context.setFillColor(UIColor(rgb: 0x000000, alpha: 0.4).cgColor)
         context.fill(bounds)
@@ -391,6 +426,7 @@ public final class AvatarNode: ASDisplayNode {
     
     public final class ContentNode: ASDisplayNode {
         private struct Params: Equatable {
+            let accountPeerId: EnginePeer.Id?
             let peerId: EnginePeer.Id?
             let resourceId: String?
             let displayDimensions: CGSize
@@ -398,12 +434,14 @@ public final class AvatarNode: ASDisplayNode {
             let cornerRadius: CGFloat
             
             init(
+                accountPeerId: EnginePeer.Id?,
                 peerId: EnginePeer.Id?,
                 resourceId: String?,
                 displayDimensions: CGSize,
                 clipStyle: AvatarNodeClipStyle,
                 cornerRadius: CGFloat
             ) {
+                self.accountPeerId = accountPeerId
                 self.peerId = peerId
                 self.resourceId = resourceId
                 self.displayDimensions = displayDimensions
@@ -450,7 +488,7 @@ public final class AvatarNode: ASDisplayNode {
             return .none
         }
 
-        var normalizedCornerRadius: CGFloat {
+        public var normalizedCornerRadius: CGFloat {
             if let params = self.params {
                 return params.cornerRadius
             } else if let parameters = self.parameters {
@@ -541,9 +579,53 @@ public final class AvatarNode: ASDisplayNode {
             if let imageNodeMask = self.imageNodeMask {
                 imageNodeMask.frame = CGRect(origin: CGPoint(), size: size)
             }
+            self.updateAvatarClip(displayDimensions: size)
             if !self.displaySuspended {
                 self.setNeedsDisplay()
                 self.editOverlayNode?.setNeedsDisplay()
+            }
+        }
+
+        private func updateAvatarClip(displayDimensions: CGSize) {
+            let accountPeerId = self.params?.accountPeerId ?? self.parameters?.accountPeerId
+            let clipStyle = self.clipStyle
+            let cornerRadius = effectiveAvatarCornerRadius(
+                clipStyle: clipStyle,
+                accountPeerId: accountPeerId
+            )
+            updateAvatarImageClip(
+                imageNode: self.imageNode,
+                clipStyle: clipStyle,
+                displayDimensions: displayDimensions,
+                cornerRadius: cornerRadius
+            )
+            self.editOverlayNode?.updateClip(clipStyle: clipStyle, cornerRadius: cornerRadius)
+
+            if let params = self.params {
+                self.params = Params(
+                    accountPeerId: params.accountPeerId,
+                    peerId: params.peerId,
+                    resourceId: params.resourceId,
+                    displayDimensions: displayDimensions,
+                    clipStyle: params.clipStyle,
+                    cornerRadius: cornerRadius
+                )
+            }
+            if let parameters = self.parameters, parameters.cornerRadius != cornerRadius {
+                self.parameters = AvatarNodeParameters(
+                    theme: parameters.theme,
+                    accountPeerId: parameters.accountPeerId,
+                    peerId: parameters.peerId,
+                    colors: parameters.colors,
+                    letters: parameters.letters,
+                    font: parameters.font,
+                    icon: parameters.icon,
+                    explicitColorIndex: parameters.explicitColorIndex,
+                    hasImage: parameters.hasImage,
+                    clipStyle: parameters.clipStyle,
+                    cornerRadius: cornerRadius,
+                    cutoutRect: parameters.cutoutRect
+                )
             }
         }
         
@@ -727,6 +809,7 @@ public final class AvatarNode: ASDisplayNode {
                             
                             self.editOverlayNode = editOverlayNode
                         }
+                        self.editOverlayNode?.updateClip(clipStyle: clipStyle, cornerRadius: cornerRadius)
                         self.editOverlayNode?.isHidden = false
                     } else {
                         self.editOverlayNode?.isHidden = true
@@ -781,6 +864,7 @@ public final class AvatarNode: ASDisplayNode {
             let cornerRadius = effectiveAvatarCornerRadius(clipStyle: clipStyle, accountPeerId: accountPeerId)
             let smallProfileImage = peer?.smallProfileImage
             let params = Params(
+                accountPeerId: accountPeerId,
                 peerId: peer?.id,
                 resourceId: smallProfileImage?.resource.id.stringRepresentation,
                 displayDimensions: displayDimensions,
@@ -928,6 +1012,7 @@ public final class AvatarNode: ASDisplayNode {
                             
                             self.editOverlayNode = editOverlayNode
                         }
+                        self.editOverlayNode?.updateClip(clipStyle: clipStyle, cornerRadius: cornerRadius)
                         self.editOverlayNode?.isHidden = false
                     } else {
                         self.editOverlayNode?.isHidden = true
@@ -1022,7 +1107,7 @@ public final class AvatarNode: ASDisplayNode {
                 switch parameters.clipStyle {
                 case .round, .roundedRect:
                     context.beginPath()
-                    context.addPath(UIBezierPath(roundedRect: bounds, cornerRadius: floor(bounds.size.width * parameters.cornerRadius)).cgPath)
+                    context.addPath(UIBezierPath(roundedRect: bounds, cornerRadius: floor(min(bounds.size.width, bounds.size.height) * parameters.cornerRadius)).cgPath)
                     context.clip()
                 case .bubble:
                     context.beginPath()
@@ -1208,6 +1293,9 @@ public final class AvatarNode: ASDisplayNode {
     }
     
     public let contentNode: ContentNode
+    public var normalizedCornerRadius: CGFloat {
+        return self.contentNode.normalizedCornerRadius
+    }
     private var storyIndicator: ComponentView<Empty>?
     public private(set) var storyPresentationParams: StoryPresentationParams?
     

@@ -505,7 +505,7 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
         }
     }
     
-    if !reactionsAreInline && !hideAllAdditionalInfo, let reactionsAttribute = mergedMessageReactions(attributes: firstMessage.attributes, isTags: firstMessage.areReactionsTags(accountPeerId: item.context.account.peerId)), !reactionsAttribute.reactions.isEmpty {
+    if !reactionsAreInline && !hideAllAdditionalInfo, let reactionsAttribute = grvmVisibleMessageReactions(accountPeerId: item.context.account.peerId, message: firstMessage), !reactionsAttribute.reactions.isEmpty {
         if result.last?.1 == ChatMessageTextBubbleContentNode.self {
         } else {
             if result.last?.1 == ChatMessagePollBubbleContentNode.self ||
@@ -2316,7 +2316,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         
         let bubbleReactions: ReactionsMessageAttribute
         if needReactions {
-            bubbleReactions = mergedMessageReactions(attributes: item.message.attributes, isTags: item.message.areReactionsTags(accountPeerId: item.context.account.peerId)) ?? ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
+            bubbleReactions = grvmVisibleMessageReactions(accountPeerId: item.context.account.peerId, message: item.message) ?? ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
         } else {
             bubbleReactions = ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
         }
@@ -2548,7 +2548,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 var viewCount: Int?
                 var dateReplies = 0
                 var starsCount: Int64?
-                var dateReactionsAndPeers = mergedMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: message)
+                var dateReactionsAndPeers = grvmVisibleMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: message)
                 if message.isRestricted(platform: "ios", contentSettings: item.context.currentContentSettings.with { $0 }) {
                     dateReactionsAndPeers = ([], [])
                 }
@@ -3189,26 +3189,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         }
         
         var reactionButtonsFinalize: ((CGFloat) -> (CGSize, (_ animation: ListViewItemUpdateAnimation) -> ChatMessageReactionButtonsNode))?
-        let grvmShouldShowReactions: Bool
-        if let peer = firstMessage.peers[firstMessage.id.peerId] {
-            if let channel = peer as? TelegramChannel {
-                switch channel.info {
-                case .broadcast:
-                    grvmShouldShowReactions = chats.showChannelReactions
-                case .group:
-                    grvmShouldShowReactions = chats.showGroupReactions
-                }
-            } else if peer is TelegramGroup {
-                grvmShouldShowReactions = chats.showGroupReactions
-            } else if peer is TelegramUser || peer is TelegramSecretChat {
-                grvmShouldShowReactions = chats.showPrivateReactions
-            } else {
-                grvmShouldShowReactions = true
-            }
-        } else {
-            grvmShouldShowReactions = true
-        }
-        if !bubbleReactions.reactions.isEmpty && !item.presentationData.isPreview && grvmShouldShowReactions {
+        if !bubbleReactions.reactions.isEmpty && !item.presentationData.isPreview {
             var centerAligned = false
             for media in item.message.media {
                 if let action = media as? TelegramMediaAction {

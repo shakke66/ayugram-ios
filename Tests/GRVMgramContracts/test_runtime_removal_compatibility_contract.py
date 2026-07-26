@@ -43,6 +43,8 @@ class RuntimeRemovalCompatibilityContractTests(unittest.TestCase):
             "shouldUseSingleCornerRadius",
             "shouldShowMessageShot",
             "shouldSendWithoutSound",
+            "shouldUseScheduledMessages",
+            "shouldDisableCustomBackgrounds",
         ):
             with self.subTest(symbol=symbol):
                 self.assertNotIn(symbol, hooks)
@@ -66,10 +68,8 @@ class RuntimeRemovalCompatibilityContractTests(unittest.TestCase):
             self.assertIn(token, ghost)
         self.assertNotIn("ghostModeEnabled", ghost)
 
-        schedule = swift_block(manager, "AyuGramHooks.shouldUseScheduledMessages =")
-        self.assertIn("settings.useScheduledMessages", schedule)
-        self.assertNotIn("ghostModeEnabled", schedule)
-        self.assertNotIn("readOnAction", schedule)
+        self.assertNotIn("shouldUseScheduledMessages", manager)
+        self.assertNotIn("settings.useScheduledMessages", manager)
 
         silent = swift_block(manager, "AyuGramHooks.sendWithoutSoundMode =")
         self.assertIn("settings.sendWithoutSoundMode", silent)

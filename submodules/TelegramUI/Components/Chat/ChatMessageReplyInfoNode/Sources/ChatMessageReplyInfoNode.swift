@@ -227,23 +227,20 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
             }
             
             var giftEmojiFileId: Int64?
-            let chats = AyuGramHooks.chatAppearance(accountPeerId: arguments.context.account.peerId).chats
-            if !chats.disableColoredReplies {
-                switch author?.nameColor {
-                case let .preset(nameColor):
-                    let colors = arguments.context.peerNameColors.get(nameColor, dark: arguments.presentationData.theme.theme.overallDarkAppearance)
-                    authorNameColor = colors.main
-                    dashSecondaryColor = colors.secondary
-                    dashTertiaryColor = colors.tertiary
-                case let .collectible(collectibleColor):
-                    let colors = collectibleColor.peerNameColors(dark: arguments.presentationData.theme.theme.overallDarkAppearance)
-                    authorNameColor = colors.main
-                    dashSecondaryColor = colors.secondary
-                    dashTertiaryColor = colors.tertiary
-                    giftEmojiFileId = collectibleColor.giftEmojiFileId
-                default:
-                    break
-                }
+            switch author?.nameColor {
+            case let .preset(nameColor):
+                let colors = arguments.context.peerNameColors.get(nameColor, dark: arguments.presentationData.theme.theme.overallDarkAppearance)
+                authorNameColor = colors.main
+                dashSecondaryColor = colors.secondary
+                dashTertiaryColor = colors.tertiary
+            case let .collectible(collectibleColor):
+                let colors = collectibleColor.peerNameColors(dark: arguments.presentationData.theme.theme.overallDarkAppearance)
+                authorNameColor = colors.main
+                dashSecondaryColor = colors.secondary
+                dashTertiaryColor = colors.tertiary
+                giftEmojiFileId = collectibleColor.giftEmojiFileId
+            default:
+                break
             }
             
             if arguments.isSummarized {

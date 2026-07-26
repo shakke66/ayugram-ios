@@ -125,7 +125,7 @@ class StreamerPrivacyContractTests(unittest.TestCase):
         self.assertGreaterEqual(source.count("grvmScreenCapturePrivacyController?.dispose()"), 2)
         self.assertRegex(
             source,
-            r"deinit\s*\{\s*self\.grvmScreenCapturePrivacyController\?\.dispose\(\)\s*self\.grvmScreenCapturePrivacyController = nil\s*\}",
+            r"deinit\s*\{[^}]*self\.grvmScreenCapturePrivacyController\?\.dispose\(\)\s*self\.grvmScreenCapturePrivacyController = nil\s*\}",
         )
 
     def test_forbidden_capture_tricks_and_overclaims_are_absent(self) -> None:

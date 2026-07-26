@@ -198,6 +198,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     
     var emojiStatusPackDisposable = MetaDisposable()
     var emojiStatusFileAndPackTitle = Promise<(TelegramMediaFile, LoadedStickerPack)?>()
+    private let grvmLocalPremiumStateDisposable = MetaDisposable()
+    private var grvmLocalPremiumStatePeerId: PeerId?
+    private var grvmLocalPremiumState: GRVMLocalPremiumPeerState?
     
     var customNavigationContentNode: PeerInfoPanelNodeNavigationContentNode?
     private var appliedCustomNavigationContentNode: PeerInfoPanelNodeNavigationContentNode?
@@ -383,6 +386,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     
     deinit {
         self.emojiStatusPackDisposable.dispose()
+        self.grvmLocalPremiumStateDisposable.dispose()
     }
     
     override func didLoad() {
@@ -522,6 +526,32 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         self.threadData = threadData
         self.isSearching = isSearching
         self.avatarListNode.listContainerNode.peer = peer.flatMap(EnginePeer.init)
+
+        let grvmPeerId = peer?.id
+        if self.grvmLocalPremiumStatePeerId != grvmPeerId {
+            self.grvmLocalPremiumStatePeerId = grvmPeerId
+            self.grvmLocalPremiumState = nil
+            if let grvmPeerId {
+                self.grvmLocalPremiumStateDisposable.set((
+                    grvmLocalPremiumPeerState(
+                        postbox: self.context.account.postbox,
+                        accountPeerId: self.context.account.peerId,
+                        peerId: grvmPeerId
+                    )
+                    |> deliverOnMainQueue
+                ).start(next: { [weak self] grvmState in
+                    guard let self,
+                          self.grvmLocalPremiumStatePeerId == grvmPeerId,
+                          self.grvmLocalPremiumState != grvmState else {
+                        return
+                    }
+                    self.grvmLocalPremiumState = grvmState
+                    self.requestUpdateLayout?(false)
+                }))
+            } else {
+                self.grvmLocalPremiumStateDisposable.set(nil)
+            }
+        }
         
         let isFirstTime = self.validLayout == nil
         self.validLayout = (width, statusBarHeight, deviceMetrics)
@@ -597,6 +627,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             accountPeerId: self.context.account.peerId
         ).appearance.hidePremiumStatuses
         let shouldHidePremiumStatus = hidePremiumStatuses && peer?.id != self.context.account.peerId
+        let grvmPresentation = shouldHidePremiumStatus ? nil : grvmLocalPremiumPresentation(
+            peer: peer,
+            state: self.grvmLocalPremiumState,
+            currentTimestamp: Int32(Date().timeIntervalSince1970)
+        )
         var credibilityIcon: CredibilityIcon = .none
         var verifiedIcon: CredibilityIcon = .none
         var statusIcon: CredibilityIcon = .none
@@ -609,6 +644,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 statusIcon = .emojiStatus(emojiStatus)
             } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !shouldHidePremiumStatus {
                 credibilityIcon = .premium
+            } else if let grvmPresentation {
+                statusIcon = .emojiStatus(grvmPresentation.emojiStatus)
+                if !premiumConfiguration.isPremiumDisabled {
+                    credibilityIcon = .premium
+                }
             } else {
                 credibilityIcon = .none
             }
@@ -1194,7 +1234,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         var panelSubtitleString: (text: String, attributes: MultiScaleTextState.Attributes)?
         let usernameString: (text: String, attributes: MultiScaleTextState.Attributes)
         if let peer = peer {
-            isPremium = peer.isPremium && !shouldHidePremiumStatus
+            isPremium = (peer.isPremium || grvmPresentation != nil) && !shouldHidePremiumStatus
             isVerified = peer.isVerified
             isFake = peer.isFake || peer.isScam
         }

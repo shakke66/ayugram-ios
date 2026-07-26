@@ -137,20 +137,8 @@ public extension TelegramEngine {
         
         public func setEmojiStatus(file: TelegramMediaFile?, expirationDate: Int32?) -> Signal<Never, NoError> {
             let peerId = self.account.peerId
-            
-            let remoteApply = self.account.network.request(Api.functions.account.updateEmojiStatus(emojiStatus: file.flatMap({ file in
-                var flags: Int32 = 0
-                if let _ = expirationDate {
-                    flags |= (1 << 0)
-                }
-                return Api.EmojiStatus.emojiStatus(.init(flags: flags, documentId: file.fileId.id, until: expirationDate))
-            }) ?? Api.EmojiStatus.emojiStatusEmpty))
-            |> `catch` { _ -> Signal<Api.Bool, NoError> in
-                return .single(.boolFalse)
-            }
-            |> ignoreValues
-            
-            return self.account.postbox.transaction { transaction -> Void in
+
+            return self.account.postbox.transaction { transaction -> Bool in
                 if let file = file {
                     transaction.storeMediaIfNotPresent(media: file)
                     
@@ -159,15 +147,60 @@ public extension TelegramEngine {
                         transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStatusEmoji, item: itemEntry, removeTailIfCountExceeds: 32)
                     }
                 }
-                
+
                 if let peer = transaction.getPeer(peerId) as? TelegramUser {
+                    let currentState = grvmStoredLocalPremiumPeerState(
+                        transaction: transaction,
+                        accountPeerId: peerId,
+                        peerId: peerId
+                    )
+                    let useLocalPremiumStatus = AyuGramHooks.isLocalPremiumEnabled?(peerId) == true
+                        && !peer.flags.contains(.isPremium)
+                        && (peer.emojiStatus == nil || currentState?.fileId == peer.emojiStatus?.fileId)
+
+                    if useLocalPremiumStatus, let file {
+                        let updatedAt = Int32(Date().timeIntervalSince1970)
+                        grvmSetLocalPremiumPeerState(
+                            transaction: transaction,
+                            accountPeerId: peerId,
+                            peerId: peerId,
+                            fileId: file.fileId.id,
+                            updatedAt: updatedAt,
+                            expiresAt: expirationDate ?? Int32.max
+                        )
+                    } else {
+                        grvmRemoveLocalPremiumPeerState(
+                            transaction: transaction,
+                            accountPeerId: peerId,
+                            peerId: peerId
+                        )
+                    }
+
                     updatePeersCustom(transaction: transaction, peers: [peer.withUpdatedEmojiStatus(file.flatMap({ PeerEmojiStatus(content: .emoji(fileId: $0.fileId.id), expirationDate: expirationDate) }))], update: { _, updated in
                         updated
                     })
+
+                    return useLocalPremiumStatus
                 }
+
+                return false
             }
-            |> ignoreValues
-            |> then(remoteApply)
+            |> mapToSignal { useLocalPremiumStatus -> Signal<Never, NoError> in
+                if useLocalPremiumStatus {
+                    return .complete()
+                }
+                return self.account.network.request(Api.functions.account.updateEmojiStatus(emojiStatus: file.flatMap({ file in
+                    var flags: Int32 = 0
+                    if let _ = expirationDate {
+                        flags |= (1 << 0)
+                    }
+                    return Api.EmojiStatus.emojiStatus(.init(flags: flags, documentId: file.fileId.id, until: expirationDate))
+                }) ?? Api.EmojiStatus.emojiStatusEmpty))
+                |> `catch` { _ -> Signal<Api.Bool, NoError> in
+                    return .single(.boolFalse)
+                }
+                |> ignoreValues
+            }
         }
         
         public func updateAccountBusinessHours(businessHours: TelegramBusinessHours?) -> Signal<Never, NoError> {

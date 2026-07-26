@@ -168,14 +168,14 @@ func applyUpdateMessage(postbox: Postbox, stateManager: AccountStateManager, mes
                 }
                 
                 var updatedAttributes: [MessageAttribute] = currentMessage.attributes
+                updatedAttributes = updatedAttributes.filter({ !($0 is GRVMLocalPremiumEmojiMessageAttribute) })
                 if let entities = entities, !entities.isEmpty {
-                    for i in 0 ..< updatedAttributes.count {
-                        if updatedAttributes[i] is TextEntitiesMessageAttribute {
-                            updatedAttributes.remove(at: i)
-                            break
-                        }
-                    }
+                    updatedAttributes = updatedAttributes.filter({ !($0 is TextEntitiesMessageAttribute) })
+                    let grvmDecodedEntities = messageTextEntitiesAndGRVMLocalPremiumFileIdsFromApiEntities(entities, text: currentMessage.text)
                     updatedAttributes.append(TextEntitiesMessageAttribute(entities: messageTextEntitiesFromApiEntities(entities, text: currentMessage.text)))
+                    if !grvmDecodedEntities.fileIds.isEmpty {
+                        updatedAttributes.append(GRVMLocalPremiumEmojiMessageAttribute(fileIds: grvmDecodedEntities.fileIds))
+                    }
                 }
                 
                 updatedAttributes = updatedAttributes.filter({ !($0 is AutoremoveTimeoutMessageAttribute) })
@@ -361,7 +361,7 @@ func applyUpdateMessage(postbox: Postbox, stateManager: AccountStateManager, mes
         }
         for file in sentStickers {
             if let entry = CodableEntry(RecentMediaItem(file)) {
-                transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: 20)
+                transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: grvmRecentStickersLimit())
             }
         }
         for file in sentGifs {
@@ -560,7 +560,7 @@ func applyUpdateGroupMessages(postbox: Postbox, stateManager: AccountStateManage
         
         for file in sentStickers {
             if let entry = CodableEntry(RecentMediaItem(file)) {
-                transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: 20)
+                transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: grvmRecentStickersLimit())
             }
         }
         for file in sentGifs {

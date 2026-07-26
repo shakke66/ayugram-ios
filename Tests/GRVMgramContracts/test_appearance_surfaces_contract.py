@@ -10,6 +10,10 @@ def source(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
+def normalized(text: str) -> str:
+    return "".join(text.split())
+
+
 def swift_block(text: str, signature: str) -> str:
     start = text.find(signature)
     if start == -1:
@@ -48,9 +52,67 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
         radius_policy = swift_block(avatar, "private func effectiveAvatarCornerRadius(")
         self.assertIn("case .roundedRect:\n        return 0.25", radius_policy)
         self.assertNotIn("singleCornerRadius", radius_policy)
+        image_clip = swift_block(avatar, "private func updateAvatarImageClip(")
+        self.assertIn(
+            "min(displayDimensions.width, displayDimensions.height) * cornerRadius",
+            image_clip,
+        )
+        self.assertNotIn("displayDimensions.height * cornerRadius", image_clip)
+
+        content_node = swift_block(avatar, "public final class ContentNode")
+        content_draw = swift_block(
+            content_node, "@objc override public class func draw("
+        )
+        self.assertIn(
+            "min(bounds.size.width, bounds.size.height) * parameters.cornerRadius",
+            content_draw,
+        )
+        self.assertNotIn(
+            "bounds.size.width * parameters.cornerRadius", content_draw
+        )
+
+        edit_overlay = swift_block(
+            avatar, "public final class AvatarEditOverlayNode"
+        )
+        for fragment in [
+            "private final class Params: NSObject",
+            "let clipStyle: AvatarNodeClipStyle",
+            "let cornerRadius: CGFloat",
+            "public func updateClip(",
+            "override public func drawParameters(",
+            "switch parameters.clipStyle",
+            "min(bounds.size.width, bounds.size.height) * parameters.cornerRadius",
+            "AvatarNode.addAvatarBubblePath",
+        ]:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, edit_overlay)
+        self.assertNotIn("context.addEllipse", edit_overlay)
+
+        update_clip = swift_block(
+            content_node, "private func updateAvatarClip(displayDimensions: CGSize)"
+        )
+        self.assertIn(
+            normalized(
+                "self.editOverlayNode?.updateClip(clipStyle: clipStyle, cornerRadius: cornerRadius)"
+            ),
+            normalized(update_clip),
+        )
+        self.assertGreaterEqual(
+            normalized(content_node).count(
+                normalized(
+                    "self.editOverlayNode?.updateClip(clipStyle: clipStyle, cornerRadius: cornerRadius)"
+                )
+            ),
+            3,
+        )
         params = swift_block(avatar, "private struct Params: Equatable")
+        self.assertIn("let accountPeerId: EnginePeer.Id?", params)
         self.assertIn("let cornerRadius: CGFloat", params)
         self.assertNotIn("AyuGramHooks.avatarCornerRadius?()", avatar)
+
+        content_update = swift_block(avatar, "public func updateSize(size: CGSize)")
+        self.assertIn("self.updateAvatarClip(displayDimensions: size)", content_update)
+        self.assertIn("public var normalizedCornerRadius: CGFloat", avatar)
 
         for fragment in [
             "var normalizedCornerRadius: CGFloat",
@@ -82,10 +144,76 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
             "let usesRoundedPath: Bool",
             "cornerRadius: resolvedCornerRadius",
             "if let progress = component.progress, !usesRoundedPath",
+            "min(availableSize.width, availableSize.height)",
+            "let indicatorBounds = CGRect(",
         ]:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, indicator)
         self.assertNotIn("cornerRadius: floor(diameter * 0.27)", indicator)
+
+        navigation = source(
+            "submodules/TelegramUI/Components/Chat/ChatAvatarNavigationNode/"
+            "Sources/ChatAvatarNavigationNode.swift"
+        )
+        story = swift_block(navigation, "public func updateStoryView(")
+        self.assertIn(
+            "normalizedCornerRadius: self.avatarNode.normalizedCornerRadius", story
+        )
+        video = swift_block(navigation, "private func updateVideoVisibility()")
+        self.assertIn(
+            normalized(
+                "min(self.avatarNode.bounds.width, self.avatarNode.bounds.height) "
+                "* self.avatarNode.normalizedCornerRadius"
+            ),
+            normalized(video),
+        )
+
+    def test_avatar_slider_uses_live_current_account_photo_with_real_placeholder(self) -> None:
+        controllers = source(
+            "submodules/AyuGramSettingsUI/Sources/AyuGramIntegerValueControllers.swift"
+        )
+        account_image = swift_block(controllers, "private func grvmAccountAvatarImage(")
+        for token in (
+            "context.account.postbox.peerView(id: context.account.peerId)",
+            "peer.smallProfileImage",
+            "context.account.postbox.mediaBox.resourceData(",
+            "fetchedMediaResource(",
+            "MediaResourceReference.avatar(",
+            "UIImage(contentsOfFile: data.path)",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, account_image)
+
+        preview = swift_block(controllers, "private func grvmAvatarPreviewImage(")
+        self.assertIn("avatarImage: UIImage?", preview)
+        self.assertIn("if let avatarImage, let cgImage = avatarImage.cgImage", preview)
+        self.assertIn("contextGenerator:", preview)
+        self.assertNotIn("rotatedContext:", preview)
+
+        controller = swift_block(controllers, "public func ayuGramAvatarCornersController(")
+        self.assertIn("avatarImage: grvmAccountAvatarImage(context: context)", controller)
+
+    def test_avatar_slider_emits_placeholder_before_remote_photo_and_cancels_fetches(self) -> None:
+        controllers = source(
+            "submodules/AyuGramSettingsUI/Sources/AyuGramIntegerValueControllers.swift"
+        )
+        account_image = swift_block(controllers, "private func grvmAccountAvatarImage(")
+        placeholder = account_image.index("subscriber.putNext(nil)")
+        resource_start = account_image.index(
+            "let resourceDisposable = resourceData.start"
+        )
+        real_image = account_image.index(
+            "subscriber.putNext(UIImage(contentsOfFile: data.path))"
+        )
+        self.assertLess(placeholder, resource_start)
+        self.assertLess(resource_start, real_image)
+        for token in (
+            "return ActionDisposable {",
+            "resourceDisposable.dispose()",
+            "fetchDisposable.dispose()",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, account_image)
 
     def test_live_chat_presentation_uses_exact_account_font_and_stock_corners(self) -> None:
         data = source(
@@ -125,7 +253,9 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
             "accountManager: self.context.sharedContext.accountManager",
             "settings.grvmChatAppearanceSettings.appearance",
             "lhs.codeFontName == rhs.codeFontName",
+            "lhs.avatarCorners == rhs.avatarCorners",
             "previousChatAppearance?.codeFontName != chatAppearance.codeFontName",
+            "previousChatAppearance?.avatarCorners != chatAppearance.avatarCorners",
             "previousChatAppearance = chatAppearance",
             "accountPeerId: strongSelf.context.account.peerId",
             "chatAppearance: chatAppearance",
@@ -151,23 +281,22 @@ class AppearanceSurfacesContractTests(unittest.TestCase):
         self.assertIn("let maxRadius = bubbleCorners.mainRadius", background)
         self.assertIn("let minRadius = bubbleCorners.auxiliaryRadius", background)
 
-    def test_wallpaper_policy_keeps_forced_priority_and_explicit_default(self) -> None:
+    def test_wallpaper_policy_keeps_forced_priority_and_stock_custom_wallpapers(self) -> None:
         chat = source("submodules/TelegramUI/Sources/ChatController.swift")
         forced_start = chat.index("if let forcedWallpaper = strongSelf.forcedWallpaper")
-        start = chat.rindex("let appearance = AyuGramHooks.chatAppearance(", 0, forced_start)
-        wallpaper = chat[start : chat.index("let isFirstTime", start)]
+        wallpaper = chat[forced_start : chat.index("let isFirstTime", forced_start)]
         for fragment in [
-            "AyuGramHooks.chatAppearance(",
-            "accountPeerId: strongSelf.context.account.peerId",
-            "appearance.disableCustomBackgrounds",
-            "presentationData.theme.chat.defaultWallpaper",
+            "presentationData = presentationData.withUpdated(chatWallpaper: forcedWallpaper)",
             "else if let chatWallpaper",
+            "presentationData = presentationData.withUpdated(chatWallpaper: chatWallpaper)",
         ]:
             self.assertIn(fragment, wallpaper)
         self.assertLess(
             wallpaper.index("forcedWallpaper"),
-            wallpaper.index("appearance.disableCustomBackgrounds"),
+            wallpaper.index("else if let chatWallpaper"),
         )
+        self.assertNotIn("disableCustomBackgrounds", wallpaper)
+        self.assertNotIn("presentationData.theme.chat.defaultWallpaper", wallpaper)
         self.assertNotIn("AyuGramHooks.shouldDisableCustomBackgrounds?()", chat)
 
     def test_other_peer_premium_surfaces_use_typed_account_policy(self) -> None:

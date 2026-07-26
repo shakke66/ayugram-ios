@@ -4247,7 +4247,12 @@ func replayFinalState(
                         markHistory: false
                     )
                 }
-            
+
+                grvmUpdateLocalPremiumPeerStates(
+                    transaction: transaction,
+                    accountPeerId: accountPeerId,
+                    messages: messages
+                )
                 let _ = transaction.addMessages(messages, location: location)
                 if case .UpperHistoryBlock = location {
                     for message in messages {
@@ -4515,6 +4520,7 @@ func replayFinalState(
                     mergedIncomingAttributes = nil
                 }
                 var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?
+                var replayedGRVMLocalPremiumMessage: StoreMessage?
                 transaction.updateMessage(id, update: { previousMessage in
                     var updatedFlags = message.flags
                     var updatedLocalTags = message.localTags
@@ -4563,8 +4569,20 @@ func replayFinalState(
                        message.media.contains(where: { $0 is TelegramMediaExpiredContent }) {
                         updatedMedia = preservedConsumable.media
                     }
-                    return .update(message.withUpdatedLocalTags(updatedLocalTags).withUpdatedFlags(updatedFlags).withUpdatedAttributes(updatedAttributes).withUpdatedMedia(updatedMedia))
+                    let grvmUpdatedMessage = message.withUpdatedLocalTags(updatedLocalTags)
+                        .withUpdatedFlags(updatedFlags)
+                        .withUpdatedAttributes(updatedAttributes)
+                        .withUpdatedMedia(updatedMedia)
+                    replayedGRVMLocalPremiumMessage = grvmUpdatedMessage
+                    return .update(grvmUpdatedMessage)
                 })
+                if let replayedGRVMLocalPremiumMessage {
+                    grvmUpdateLocalPremiumPeerStates(
+                        transaction: transaction,
+                        accountPeerId: accountPeerId,
+                        messages: [replayedGRVMLocalPremiumMessage]
+                    )
+                }
                 if let generatedEvent = generatedEvent {
                     addedReactionEvents.append(generatedEvent)
                 }
@@ -5877,7 +5895,7 @@ func replayFinalState(
         }).map({ $0.1 })
         for file in stickerFiles {
             if let entry = CodableEntry(RecentMediaItem(file)) {
-                transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: 20)
+                transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: grvmRecentStickersLimit())
             }
         }
     }

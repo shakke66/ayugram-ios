@@ -148,6 +148,37 @@ class PartialUIControllerContractTests(unittest.TestCase):
         ):
             self.assertIn(token, recent)
 
+    def test_integer_slider_replays_latest_configuration_after_view_load(self) -> None:
+        slider = source(
+            "submodules/AyuGramSettingsUI/Sources/GRVMIntegerSliderItem.swift"
+        )
+        self.assertIn("private var sliderFrame: CGRect?", slider)
+
+        did_load = swift_block(slider, "override func didLoad()")
+        self.assertIn("self.updateSliderConfiguration()", did_load)
+
+        layout = swift_block(slider, "func asyncLayout()")
+        self.assertIn("self.sliderFrame = CGRect(", layout)
+        self.assertIn("self.updateSliderConfiguration()", layout)
+        self.assertNotIn("if let sliderView = self.sliderView", layout)
+
+        configuration = swift_block(
+            slider, "private func updateSliderConfiguration()"
+        )
+        for token in (
+            "guard let sliderView = self.sliderView",
+            "let item = self.item",
+            "let sliderFrame = self.sliderFrame",
+            "let value = min(item.range.upperBound, max(item.range.lowerBound, item.value))",
+            "sliderView.minimumValue = Float(item.range.lowerBound)",
+            "sliderView.maximumValue = Float(item.range.upperBound)",
+            "sliderView.setValue(Float(value), animated: false)",
+            'sliderView.accessibilityValue = "\\(value)"',
+            "sliderView.frame = sliderFrame",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, configuration)
+
     def test_channel_bottom_selector_is_discuss_then_hidden_and_normalizes_legacy(self) -> None:
         text = source(
             "submodules/AyuGramSettingsUI/Sources/AyuGramChannelBottomButtonController.swift"

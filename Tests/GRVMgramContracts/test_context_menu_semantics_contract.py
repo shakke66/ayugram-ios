@@ -121,7 +121,7 @@ class ContextMenuSemanticsContractTests(unittest.TestCase):
             menu,
         )
         self.assertIn("contextMoreActions", menu)
-        self.assertEqual(menu.count('text: "GRVMgram Actions"'), 1)
+        self.assertEqual(self.context_menu.count('text: "GRVMgram Actions"'), 1)
         self.assertIn("pushItems", menu)
         self.assertIn("popItems", menu)
         self.assertNotIn("func ayuVisible", menu)
@@ -214,7 +214,7 @@ class ContextMenuSemanticsContractTests(unittest.TestCase):
         self.assertIn("enqueueGRVMRepeatedMessage(account: context.account", menu)
         self.assertIn("displayUndo", menu)
 
-    def test_filter_seed_and_independent_views_reactions_modes_are_preserved(self) -> None:
+    def test_filter_seed_and_picker_routing_are_separate_from_stats(self) -> None:
         filters = swift_block(self.chat, "func grvmMessageFilterContextMenuItems(")
         self.assertIn("initialExpression: message.text", filters)
         self.assertIn("initialPeerId: message.id.peerId", filters)
@@ -229,9 +229,22 @@ class ContextMenuSemanticsContractTests(unittest.TestCase):
             self.context_menu, "func contextMenuForChatPresentationInterfaceState("
         )
         self.assertIn("contextMenuSettings.views", menu)
-        self.assertIn("contextMenuSettings.reactions", menu)
+        self.assertNotIn("contextMenuSettings.reactions", menu)
         self.assertIn("canViewStats", menu)
         self.assertIn("reactionCount", menu)
+
+        open_menu = swift_block(self.open_menu, "func openMessageContextMenu(")
+        for token in (
+            "settings.grvmChatAppearanceSettings.contextMenu.reactions",
+            "grvmContextMenuPlacement(",
+            "case .hidden",
+            "case .topLevel",
+            "case .more",
+            "actions.reactionItems = []",
+            "grvmReactionPanelItems(from: actions)",
+            "grvmContextMoreActionsItem(",
+        ):
+            self.assertIn(token, open_menu)
 
         legacy = self.context_menu + self.open_menu
         for hook in (
@@ -245,65 +258,70 @@ class ContextMenuSemanticsContractTests(unittest.TestCase):
         ):
             self.assertNotIn(f"AyuGramHooks.{hook}", legacy)
 
-    def test_views_and_reactions_follow_independent_placement_truth_table(self) -> None:
-        def routes(views: str, reactions: str) -> list[tuple[str, bool, bool]]:
-            result = []
-            for placement in ("topLevel", "more"):
-                include_views = views == placement
-                include_reactions = reactions == placement
-                if include_views or include_reactions:
-                    result.append((placement, include_views, include_reactions))
-            return result
-
-        cases = (
-            ("hidden", "hidden", []),
-            ("topLevel", "hidden", [("topLevel", True, False)]),
-            ("more", "hidden", [("more", True, False)]),
-            ("hidden", "topLevel", [("topLevel", False, True)]),
-            ("hidden", "more", [("more", False, True)]),
-            ("topLevel", "topLevel", [("topLevel", True, True)]),
-            ("more", "more", [("more", True, True)]),
-            (
-                "topLevel",
-                "more",
-                [("topLevel", True, False), ("more", False, True)],
-            ),
-            (
-                "more",
-                "topLevel",
-                [("topLevel", False, True), ("more", True, False)],
-            ),
+    def test_reaction_picker_routes_hidden_top_level_and_existing_more_menu(self) -> None:
+        collector = swift_block(
+            self.context_menu, "final class GRVMContextMenuMoreActions"
         )
-        for views, reactions, expected in cases:
-            with self.subTest(views=views, reactions=reactions):
-                self.assertEqual(routes(views, reactions), expected)
+        self.assertIn("var items: [ContextMenuItem]", collector)
 
-        route = swift_block(self.context_menu, "func grvmContextStatsRoutes(")
+        more_item = swift_block(
+            self.context_menu, "func grvmContextMoreActionsItem("
+        )
         for token in (
-            "viewsPlacement == placement",
-            "reactionsPlacement == placement",
-            "includeReadReports",
-            "includeReactions",
-            "[.topLevel, .more]",
+            "contextMoreActions",
+            "reactionPanelItems",
+            'text: "GRVMgram Actions"',
+            "reactionPanelItems ?? ContextController.Items",
+            "submenuItems.append(contentsOf: contextMoreActions)",
+            "pushItems",
+            "popItems",
         ):
-            self.assertIn(token, route)
+            self.assertIn(token, more_item)
+
+        panel_copy = swift_block(self.open_menu, "func grvmReactionPanelItems(")
+        for token in (
+            "actions.reactionItems",
+            "actions.selectedReactionItems",
+            "actions.reactionsTitle",
+            "actions.reactionsLocked",
+            "actions.getEmojiContent",
+        ):
+            self.assertIn(token, panel_copy)
+
+        open_menu = swift_block(self.open_menu, "func openMessageContextMenu(")
+        self.assertIn("let grvmMoreActions = GRVMContextMenuMoreActions()", open_menu)
+        self.assertIn("grvmMoreActions: grvmMoreActions", open_menu)
+        self.assertIn(
+            "actions.reactionItems = topReactions.map", open_menu
+        )
+        switch = swift_block(open_menu, "switch grvmContextMenuPlacement(")
+        self.assertIn("case .hidden", switch)
+        self.assertIn("actions.reactionItems = []", switch)
+        self.assertIn("case .topLevel", switch)
+        self.assertIn("break", switch)
+        self.assertIn("case .more", switch)
+        self.assertIn("grvmReactionPanelItems(from: actions)", switch)
+        self.assertEqual(switch.count("actions.reactionItems = []"), 2)
+
+    def test_read_report_item_is_not_controlled_by_picker_visibility(self) -> None:
+        menu = swift_block(
+            self.context_menu, "func contextMenuForChatPresentationInterfaceState("
+        )
+        self.assertNotIn("contextMenuSettings.reactions", menu)
+        self.assertIn(
+            "let reactionsPlacement: GRVMContextMenuPlacement = .topLevel", menu
+        )
+        self.assertIn("grvmContextStatsRoutes(", menu)
+        self.assertIn("includeReadReports: route.includeReadReports", menu)
+        self.assertIn("includeReactions: route.includeReactions", menu)
+        self.assertIn(
+            "message.attributes.filter { !($0 is ReactionsMessageAttribute) }", menu
+        )
 
         filtered = swift_block(self.context_menu, "func grvmFilteredReadStats(")
         self.assertIn("includeReactions ? stats.reactionCount : 0", filtered)
         self.assertIn("includeReadReports ? stats.peers : []", filtered)
         self.assertIn("includeReadReports ? stats.readTimestamps : [:]", filtered)
-
-        menu = swift_block(
-            self.context_menu, "func contextMenuForChatPresentationInterfaceState("
-        )
-        self.assertIn("grvmContextStatsRoutes(", menu)
-        self.assertIn("case .topLevel", menu)
-        self.assertIn("actions.insert(statsItem", menu)
-        self.assertIn("case .more", menu)
-        self.assertIn("contextMoreActions.append(statsItem)", menu)
-        self.assertIn("includeReadReports: route.includeReadReports", menu)
-        self.assertIn("includeReactions: route.includeReactions", menu)
-        self.assertIn("message.attributes.filter { !($0 is ReactionsMessageAttribute) }", menu)
 
         item = swift_block(self.context_menu, "final class ChatReadReportContextItem")
         self.assertIn("fileprivate let includeReadReports: Bool", item)
@@ -314,31 +332,6 @@ class ContextMenuSemanticsContractTests(unittest.TestCase):
         self.assertIn("if self.item.includeReadReports", node)
         self.assertIn("grvmFilteredReadStats(", node)
         self.assertIn("self.item.includeReactions ? self.customEmojiPacks : []", node)
-
-    def test_hidden_reactions_skip_menu_level_merge_and_validation(self) -> None:
-        menu = swift_block(
-            self.context_menu, "func contextMenuForChatPresentationInterfaceState("
-        )
-        reaction_window = menu[
-            menu.index("var canViewStats = false") : menu.index(
-                "let isEdited = message.attributes.contains("
-            )
-        ]
-        self.assertLess(
-            reaction_window.index("let reactionsPlacement"),
-            reaction_window.index("mergedMessageReactionsAndPeers("),
-        )
-
-        non_hidden_guard = swift_block(
-            reaction_window, "if reactionsPlacement != .hidden"
-        )
-        self.assertIn("mergedMessageReactionsAndPeers(", non_hidden_guard)
-        self.assertIn("if let reactionsAttribute = message.reactionsAttribute", non_hidden_guard)
-        self.assertEqual(reaction_window.count("mergedMessageReactionsAndPeers("), 1)
-        self.assertEqual(
-            reaction_window.count("if let reactionsAttribute = message.reactionsAttribute"),
-            1,
-        )
 
     def test_stock_delete_send_now_and_history_remain_independent(self) -> None:
         menu = swift_block(

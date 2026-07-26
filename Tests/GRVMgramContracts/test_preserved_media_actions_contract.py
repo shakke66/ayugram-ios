@@ -2578,6 +2578,28 @@ class ArchiveHooksSentinelContractTests(SourceContractTestCase):
         self.assertLess(prepare.find("fetchedMediaResource("), prepare.find("completedResourcePath"))
         self.assertLess(prepare.find("completedResourcePath"), prepare.find("reserveConsumableMedia("))
 
+    def test_prepare_fetch_is_terminal_and_fail_closed(self) -> None:
+        prepare = swift_block(
+            source("submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"),
+            "public func prepareConsumableMedia(",
+        )
+        fetch_calls = swift_calls(prepare, "fetchedMediaResource")
+
+        self.assertTrue(fetch_calls, msg="Consumable preparation must explicitly fetch primary media")
+        for call in fetch_calls:
+            self.assertContains(
+                call,
+                "reportResultStatus: true",
+            )
+        self.assertContainsAll(
+            prepare,
+            "|> `catch`",
+            ".single(false)",
+            "resourceData(",
+            "option: .complete(waitUntilFetchStatus: true)",
+            "|> take(1)",
+        )
+
     def test_prepare_persists_every_terminal_record_before_attaching_marker(self) -> None:
         prepare = swift_block(
             source("submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift"),
@@ -3395,12 +3417,13 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             action,
             "textAlertController",
             "destructiveAction",
-            "shouldSaveDeletedMessages",
+            "shouldPreserveOneTimeMedia",
             "prepareConsumableMedia",
             "strings[.burnError]",
             "markMessageContentAsConsumedInteractively",
             "force: true",
         )
+        self.assertNotContains(action, "shouldSaveDeletedMessages")
         self.assertRegex(action, r"func\s+grvmBurnMessage\([^)]*message\s*:\s*Message")
         prepare_calls = swift_calls(action, "prepareConsumableMedia")
         self.assertEqual(1, len(prepare_calls))
@@ -3420,7 +3443,7 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             "textAlertController",
             "destructiveAction",
             "force: true",
-            "shouldSaveDeletedMessages",
+            "shouldPreserveOneTimeMedia",
             "prepareConsumableMedia",
         )
         confirmation_candidates = [
@@ -3432,7 +3455,7 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         confirmation = confirmation_candidates[0]
         self.assertContainsAll(
             confirmation,
-            "shouldSaveDeletedMessages",
+            "shouldPreserveOneTimeMedia",
             "prepareConsumableMedia",
             "burnError",
             "markMessageContentAsConsumedInteractively",
@@ -3467,6 +3490,21 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             force_sites,
         )
 
+    def test_burn_waits_for_context_menu_dismissal(self) -> None:
+        context_menu = source(
+            "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift"
+        )
+        _, burn_action = action_item_containing(context_menu, "grvmBurnMessage")
+        dismiss_calls = swift_calls(burn_action, "c?.dismiss")
+
+        self.assertEqual(1, len(dismiss_calls))
+        self.assertContainsAll(
+            dismiss_calls[0],
+            "completion: {",
+            "grvmBurnMessage(",
+        )
+        self.assertEqual(1, burn_action.count("grvmBurnMessage("))
+
     def test_task9_and_task10_public_copy_uses_typed_selected_language_strings(self) -> None:
         context_menu = source(
             "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift"
@@ -3481,7 +3519,9 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         local_copy_item, _ = action_item_containing(
             context_menu, "grvmForwardLocalCopy"
         )
-        read_item, _ = action_item_containing(context_menu, "grvmApplyMaxReadIndex")
+        read_item, _ = action_item_containing(
+            context_menu, "grvmApplyTopReadIndex(mode: .localOnly)"
+        )
 
         self.assertContainsAll(
             burn,
@@ -3729,6 +3769,82 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
         )
         self.assertNotContains(playback_started, "force: true")
         self.assertEqual(1, playback_started.count("markMessageContentAsConsumedInteractively"))
+
+    def test_first_open_consumes_only_after_preservation_success(self) -> None:
+        preview = source("submodules/GalleryUI/Sources/SecretMediaPreviewController.swift")
+        playlist = source(
+            "submodules/TelegramUI/Components/MediaManager/PeerMessagesMediaPlaylist/Sources/PeerMessagesMediaPlaylist.swift"
+        )
+        playlist_build = source(
+            "submodules/TelegramUI/Components/MediaManager/PeerMessagesMediaPlaylist/BUILD"
+        )
+        preview_gate = swift_block(
+            swift_block(preview, "private func applyMessageView()"),
+            "if self.consumeOnOpen",
+        )
+        playlist_gate = swift_block(
+            swift_block(playlist, "public func onItemPlaybackStarted("),
+            "if self.consumeViewOnce && timeout == viewOnceTimeout",
+        )
+
+        for name, flow in (("preview", preview_gate), ("playlist", playlist_gate)):
+            with self.subTest(surface=name):
+                self.assertContainsAll(
+                    flow,
+                    "shouldPreserveOneTimeMedia",
+                    "prepareConsumableMedia",
+                    "|> take(1)",
+                    "var receivedPreparationResult = false",
+                    "let handlePreparationResult",
+                    "guard prepared else",
+                    "displayPreservationError()",
+                    "consume()",
+                    "completed: {",
+                    "handlePreparationResult(false)",
+                )
+                self.assertNotContains(flow, "shouldSaveDeletedMessages")
+                self.assertMatches(
+                    flow,
+                    r"(?s)guard\s+(?:AyuGramHooks\.shouldPreserveOneTimeMedia\?\([^)]*\)\s*==\s*true|preservationEnabled)\s+else\s*\{.*?consume\(\).*?return",
+                )
+                self.assertOrdered(
+                    flow,
+                    "shouldPreserveOneTimeMedia",
+                    "prepareConsumableMedia",
+                    "guard prepared else",
+                )
+                self.assertOrdered(
+                    swift_block(flow, "let handlePreparationResult"),
+                    "guard prepared else",
+                    "displayPreservationError()",
+                    "return",
+                    "consume()",
+                )
+
+        preview_error = swift_block(preview, "private func displayPreservationError()")
+        self.assertContainsAll(
+            preview_error,
+            "GRVMgramStrings",
+            "strings[.deletedMediaUnavailable]",
+            "TooltipScreen",
+            "self.present(",
+        )
+        playlist_error = swift_block(playlist, "private func displayPreservationError()")
+        self.assertContainsAll(
+            playlist,
+            "import TelegramPresentationData",
+        )
+        self.assertContainsAll(
+            playlist_error,
+            "GRVMgramStrings",
+            "strings[.deletedMediaUnavailable]",
+            "UIAlertController",
+            "presentNativeController",
+        )
+        self.assertContains(
+            playlist_build,
+            '"//submodules/TelegramPresentationData:TelegramPresentationData"',
+        )
 
     def test_reservation_and_preview_receipt_outlive_ui_disposal(self) -> None:
         coordinator = source(
@@ -4358,6 +4474,67 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             "OverlayStatusController",
             "controller?.present",
             "progressController.dismiss()",
+        )
+
+    def test_local_copy_preparation_is_picker_owned_cancellable_and_bounded(self) -> None:
+        forward = source("submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift")
+        common_forward = swift_block(forward, "func forwardMessages(messages: [Message]")
+        preparation = swift_block(common_forward, "if let localCopy")
+
+        self.assertContainsAll(
+            preparation,
+            "guard let controller else",
+            "MetaDisposable()",
+            "var terminal = false",
+            "guard !terminal else",
+            "terminal = true",
+            "preparationDisposable.set(",
+            "preparationDisposable.dispose()",
+            "|> timeout(",
+            "alternate: .fail(.unavailable)",
+            ".loading(cancelled: {",
+            "progressController.dismiss()",
+            "preparingLocalCopy = false",
+        )
+        self.assertNotContains(preparation, ".loading(cancelled: nil)")
+        self.assertContains(preparation, "controller.present(progressController, in: .current)")
+        self.assertOrdered(
+            preparation,
+            "guard let controller else",
+            "controller.present(progressController, in: .current)",
+        )
+        self.assertNotContains(preparation, "controller?.present(progressController, in: .window(.root))")
+
+    def test_local_copy_empty_completion_cleans_loading_and_shows_error(self) -> None:
+        forward = source("submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift")
+        common_forward = swift_block(forward, "func forwardMessages(messages: [Message]")
+        preparation = swift_block(common_forward, "if let localCopy")
+        completion = swift_block(preparation, "completed: {")
+
+        self.assertContainsAll(
+            preparation,
+            "var receivedPayload = false",
+            "receivedPayload = true",
+            "let completePreparation",
+            "let displayLocalCopyError",
+        )
+        self.assertContainsAll(
+            completion,
+            "guard !receivedPayload else",
+            "completePreparation()",
+            "displayLocalCopyError(.unavailable)",
+        )
+        self.assertContainsAll(
+            swift_block(preparation, "error: {"),
+            "completePreparation()",
+            "displayLocalCopyError(error)",
+        )
+        self.assertContainsAll(
+            swift_block(preparation, "next: {"),
+            "receivedPayload = true",
+            "completePreparation()",
+            "preparedLocalCopy = payload",
+            "multiplePeersSelected?(",
         )
 
     def test_local_copy_temp_lifetime_is_owned_until_stock_enqueue(self) -> None:

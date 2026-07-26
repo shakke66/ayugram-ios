@@ -36,6 +36,7 @@ swift_library(
         "//submodules/TelegramUI/Components/Chat/ForwardAccessoryPanelNode",
         "//submodules/CounterControllerTitleView",
         "//submodules/TelegramUI/Components/ChatList/ChatListFilterTabContainerNode",
+        "//submodules/AyuGramLib:AyuGramLib",
         "//submodules/ComponentFlow",
         "//submodules/Components/ComponentDisplayAdapters",
         "//submodules/TelegramUI/Components/EdgeEffect",

@@ -33,7 +33,6 @@ class RemovalSchemaContractTests(unittest.TestCase):
             "public var suppressStoryReads: Bool",
             "public var suppressOnlineStatus: Bool",
             "public var suppressTypingAndUploads: Bool",
-            "public var useScheduledMessages: Bool",
             "public var sendWithoutSoundMode: Int32",
         ):
             self.assertIn(declaration, settings)
@@ -45,6 +44,9 @@ class RemovalSchemaContractTests(unittest.TestCase):
             "public var suppressUploadProgress:",
             "public var goOfflineAfterOnline:",
             "public var readOnAction:",
+            "public var useScheduledMessages:",
+            "public var disableCustomBackgrounds:",
+            "public var disableColoredReplies:",
             "public var sendWithoutSound:",
             "public var sendWithoutSoundOption:",
         ):
@@ -96,6 +98,9 @@ class RemovalSchemaContractTests(unittest.TestCase):
             "ghostLockedComponents",
             "goOfflineAfterOnline",
             "readOnAction",
+            "useScheduledMessages",
+            "disableCustomBackgrounds",
+            "disableColoredReplies",
             "spoofWebviewAsAndroid",
             "increaseWebviewSize",
             "increaseWebviewHeight",
@@ -145,6 +150,8 @@ class RemovalControllerContractTests(unittest.TestCase):
             "ghostLockedComponents",
             "ghostComponentGoOfflineAfterOnline",
             "readOnAction",
+            "useScheduledMessages",
+            "ghostSchedule",
             "ayuGramGhostLockedComponentsController",
         ):
             self.assertNotIn(token, core)
@@ -163,6 +170,9 @@ class RemovalControllerContractTests(unittest.TestCase):
             "messageBubbleRadius",
             "singleCornerRadius",
             "adaptiveCoverColor",
+            "disableCustomBg",
+            "disableCustomBackgrounds",
+            "appearanceBackgrounds",
         ):
             self.assertNotIn(token, appearance)
 
@@ -171,6 +181,8 @@ class RemovalControllerContractTests(unittest.TestCase):
             "showAttachPopup",
             "showCommands",
             "showEmojiPopup",
+            "disableColoredReplies",
+            "messagesColoredReplies",
         ):
             self.assertNotIn(token, chats)
 
@@ -297,6 +309,8 @@ class RemovalRuntimeContractTests(unittest.TestCase):
             "showCommandsButton",
             "showAttachPopup",
             "showEmojiPopup",
+            "disableCustomBackgrounds",
+            "disableColoredReplies",
         ):
             self.assertNotIn(token, policy)
             self.assertNotIn(token, model)
@@ -311,6 +325,15 @@ class RemovalRuntimeContractTests(unittest.TestCase):
         self.assertNotIn("messageBubbleRadius", presentation)
         self.assertIn("mainRadius: chatBubbleCorners.mainRadius", presentation)
         self.assertIn("hasTails: chatBubbleCorners.hasTails && !appearance.removeMessageBubbleTail", presentation)
+
+        reply = source(
+            "submodules/TelegramUI/Components/Chat/ChatMessageReplyInfoNode/"
+            "Sources/ChatMessageReplyInfoNode.swift"
+        )
+        self.assertNotIn("disableColoredReplies", reply)
+        self.assertIn("switch author?.nameColor", reply)
+        self.assertIn("case let .preset(nameColor):", reply)
+        self.assertIn("case let .collectible(collectibleColor):", reply)
 
         peer_header = source(
             "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift"
@@ -416,6 +439,8 @@ class RemovalRuntimeContractTests(unittest.TestCase):
             "messageBubbleRadius",
             "shouldUseSingleCornerRadius",
             "shouldShowMessageShot",
+            "shouldUseScheduledMessages",
+            "shouldDisableCustomBackgrounds",
         )
         for name in removed_hooks:
             self.assertNotIn(name, hooks)

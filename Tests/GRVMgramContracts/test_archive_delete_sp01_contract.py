@@ -163,6 +163,56 @@ class ArchiveDeleteSP01ContractTests(unittest.TestCase):
         self.assertIn("targetedReferencesByResourceId[resourceId, default: 0] += referenceCount", revalidation)
         self.assertIn("references == Int64(targetedReferences)", revalidation)
 
+    def test_exact_purge_tombstone_precedes_presence_checks_and_archive_admission(self) -> None:
+        value = STORE.read_text(encoding="utf-8")
+        save = section(value, "public func saveDeleted(", "public func saveRevision(")
+        targeted = section(
+            value,
+            "public func beginDeletedCleanup(key:",
+            "public func beginExcludedSenderCleanup(",
+        )
+
+        tombstone_insert = "INSERT OR IGNORE INTO deleted_message_suppressions"
+        self.assertIn(tombstone_insert, targeted)
+        self.assertLess(targeted.index(tombstone_insert), targeted.index("archivedRowCount"))
+        for token in (
+            "archivedRowCount",
+            "revisionCount",
+            "mappingCount",
+            "archivedRowCount != 0 || revisionCount != 0 || mappingCount != 0",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, targeted)
+
+        suppression_gate = "guard !(try self.isDeletedMessageSuppressed(database, key: message.key)) else"
+        self.assertIn(suppression_gate, save)
+        self.assertLess(save.index(suppression_gate), save.index("INSERT INTO archived_messages"))
+
+    def test_deleted_admission_distinguishes_text_only_rows_from_suppression(self) -> None:
+        store = STORE.read_text(encoding="utf-8")
+        coordinator = COORDINATOR.read_text(encoding="utf-8")
+        save = section(store, "public func saveDeleted(", "public func saveRevision(")
+        preservation = section(
+            coordinator,
+            "private func preserveDeletedMessagesOnQueue(",
+            "public func preserveEditRevision(",
+        )
+
+        empty_admission = "admittedByMessage[message.key] = []"
+        self.assertIn(empty_admission, save)
+        self.assertLess(save.index("INSERT INTO archived_messages"), save.index(empty_admission))
+        self.assertLess(save.index(empty_admission), save.index("for record in messageMedia"))
+
+        for token in (
+            "let admittedKeys = Set(admittedMedia.keys)",
+            "self.index.insertDeleted(admittedKeys)",
+            "for key in admittedKeys",
+            "guard let message = uniqueMessages[key]",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, preservation)
+        self.assertNotIn("self.index.insertDeleted(Set(uniqueMessages.keys))", preservation)
+
     def test_exact_cleanup_evicts_both_deleted_and_revision_runtime_indexes(self) -> None:
         index = INDEX.read_text(encoding="utf-8")
         coordinator = COORDINATOR.read_text(encoding="utf-8")
@@ -198,6 +248,37 @@ class ArchiveDeleteSP01ContractTests(unittest.TestCase):
         self.assertIn("self.store.beginDeletedCleanup(key: key)", removal)
         self.assertIn("self.addCleanupWaiter", removal)
         self.assertIn("self.startCleanupExecutorIfNeeded()", removal)
+
+    def test_exact_suppression_schema_is_v5_and_never_removed_by_finalization(self) -> None:
+        value = STORE.read_text(encoding="utf-8")
+        schema = section(
+            value,
+            'static let deletionSuppressionSchemaV5 = """',
+            'static let mediaAdmissionSQL = """',
+        )
+        for token in (
+            "CREATE TABLE IF NOT EXISTS deleted_message_suppressions",
+            "account_id INTEGER NOT NULL",
+            "peer_id INTEGER NOT NULL",
+            "message_namespace INTEGER NOT NULL",
+            "message_id INTEGER NOT NULL",
+            "thread_id INTEGER NOT NULL DEFAULT 0",
+            "PRIMARY KEY (account_id, peer_id, message_namespace, message_id, thread_id)",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, schema)
+
+        migration = section(value, "public func migrate(", "public func saveDeleted(")
+        self.assertIn("case 5:", migration)
+        self.assertIn("PRAGMA user_version = 5", migration)
+        self.assertGreaterEqual(migration.count("Self.deletionSuppressionSchemaV5"), 5)
+
+        finalize = section(
+            value,
+            "public func finalizeDeletedCleanup(",
+            "private func perform<",
+        )
+        self.assertNotIn("DELETE FROM deleted_message_suppressions", finalize)
 
     def test_archive_row_long_press_confirms_exact_removal_and_surfaces_errors(self) -> None:
         value = DELETED_CONTROLLER.read_text(encoding="utf-8")

@@ -218,82 +218,35 @@ class GhostRuntimeContractTests(unittest.TestCase):
             (ROOT / "submodules/AyuGramLib/Sources/GRVMGhostModels.swift").exists()
         )
 
-    def test_schedule_policy_distinguishes_uploads_and_clamps_overflow(self) -> None:
-        schedule_path = (
-            ROOT / "submodules/AyuGramLib/Sources/GRVMGhostSchedule.swift"
-        )
-        self.assertTrue(schedule_path.exists(), "Ghost schedule helper is missing")
-        schedule = swift_block(
-            schedule_path.read_text(encoding="utf-8"),
-            "public func grvmGhostScheduleDelay(",
-        )
-        for token in (
-            "messages: [EnqueueMessage]",
-            "proxyEnabled: Bool",
-            "var baseDelay = 12.0",
-            "file.isVoice || file.isInstantVideo",
-            "baseDelay = max(baseDelay, 17.0)",
-            "case .standalone",
-            "as? LocalFileMediaResource",
-            "localResource.size",
-            "Double(resourceSize)",
-            "1_048_576.0",
-            "ceil(sizeMiB * 0.7)",
-            "13.0 + max(6.0, sizeDelay)",
-            "max(19.0, uploadDelay)",
-            "proxyEnabled ? ceil(baseDelay * 1.2) : baseDelay",
-            "Double(Int32.max)",
-            "Int32(min(",
-        ):
-            self.assertIn(token, schedule)
-        self.assertRegex(
-            schedule,
-            r"guard let resourceSize = localResource\.size, resourceSize >= 0 else \{\s*continue\s*\}",
-        )
-        self.assertNotIn("4.5", schedule)
+    def test_removed_schedule_leaves_only_stock_scheduled_message_pipeline(self) -> None:
+        schedule_path = ROOT / "submodules/AyuGramLib/Sources/GRVMGhostSchedule.swift"
+        self.assertFalse(schedule_path.exists())
 
-    def test_ghost_schedule_reads_one_proxy_snapshot_inside_the_ghost_gate(self) -> None:
+        hooks = source("submodules/TelegramCore/Sources/AyuGramHooks.swift")
+        manager = source("submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift")
+        self.assertNotIn("shouldUseScheduledMessages", hooks)
+        self.assertNotIn("shouldUseScheduledMessages", manager)
+        self.assertNotIn("settings.useScheduledMessages", manager)
+
         chat = source("submodules/TelegramUI/Sources/ChatController.swift")
         send = swift_block(chat, "func sendMessages(_ messages:")
-        gate_signature = (
-            "if !commit && !isScheduledMessages "
-            "&& AyuGramHooks.shouldUseScheduledMessages?(self.context.account.peerId) == true"
-        )
-        gate = swift_block(send, gate_signature)
-        for token in (
-            "accountManager.sharedData(keys: [SharedDataKeys.proxySettings])",
-            "|> take(1)",
-            "SharedDataKeys.proxySettings]?.get(ProxySettings.self)",
-            "effectiveActiveServer != nil",
-            "grvmGhostScheduleDelay(messages: messages, proxyEnabled: proxyEnabled)",
-            "Int32(clamping:",
-            "commit: true",
-            "return",
+        for removed in (
+            "shouldUseScheduledMessages",
+            "grvmGhostScheduleDelay",
+            "SharedDataKeys.proxySettings",
         ):
-            self.assertIn(token, gate)
-        self.assertEqual(1, send.count("grvmGhostScheduleDelay("))
-        self.assertNotIn("fileSizeMB * 4.5", send)
-        self.assertLess(send.index(gate_signature), send.index("accountManager.sharedData"))
-        self.assertLess(send.index(gate_signature), send.index("grvmGhostScheduleDelay("))
-        self.assertGreater(
-            send.rindex("enqueueMessages(account:"),
-            send.index("grvmGhostScheduleDelay("),
-        )
-
-    def test_ghost_schedule_retains_send_until_proxy_snapshot_commit(self) -> None:
-        chat = source("submodules/TelegramUI/Sources/ChatController.swift")
-        send = swift_block(chat, "func sendMessages(_ messages:")
-        gate = swift_block(
-            send,
-            "if !commit && !isScheduledMessages "
-            "&& AyuGramHooks.shouldUseScheduledMessages?(self.context.account.peerId) == true",
-        )
-        callback = swift_block(gate, ".startStandalone(next:")
-
-        self.assertNotIn("[weak self]", callback)
-        self.assertNotIn("guard let self else", callback)
-        self.assertIn("self.sendMessages(", callback)
-        self.assertIn("commit: true", callback)
+            self.assertNotIn(removed, send)
+        for stock in (
+            "shouldDivertMessagesToScheduled(messages: messages)",
+            "OutgoingScheduleInfoMessageAttribute",
+            "if case .scheduledMessages = self.presentationInterfaceState.subject",
+            "if commit || !isScheduledMessages",
+            "enqueueMessages(account:",
+            "presentScheduleTimePicker",
+            "transformEnqueueMessages",
+            "shouldOpenScheduledMessages",
+        ):
+            self.assertIn(stock, send)
 
     def test_removed_read_after_action_has_no_runtime_wiring(self) -> None:
         paths = (
@@ -307,17 +260,6 @@ class GhostRuntimeContractTests(unittest.TestCase):
         self.assertNotIn("shouldMarkReadAfterAction", runtime)
         self.assertNotIn("grvmMarkCurrentChatReadAfterAction", runtime)
         self.assertNotIn("readOnAction", runtime)
-
-    def test_schedule_is_independent_of_master_and_removed_read_on_action(self) -> None:
-        manager = source(
-            "submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift"
-        )
-        schedule = swift_block(
-            manager, "AyuGramHooks.shouldUseScheduledMessages ="
-        )
-        self.assertIn("settings.useScheduledMessages", schedule)
-        self.assertNotIn("settings.ghostModeEnabled", schedule)
-        self.assertNotIn("readOnAction", schedule)
 
     def test_silent_send_uses_the_canonical_three_mode_selector(self) -> None:
         manager = swift_block(

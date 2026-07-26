@@ -665,8 +665,9 @@ public final class AvatarStoryIndicatorComponent: Component {
             let diameter: CGFloat
             
             let maxOuterInset = component.activeLineWidth * 2.0
-            diameter = availableSize.width + maxOuterInset * 2.0
-            let imageDiameter = ceil(availableSize.width + maxOuterInset * 2.0)
+            let availableDiameter = min(availableSize.width, availableSize.height)
+            diameter = availableDiameter + maxOuterInset * 2.0
+            let imageDiameter = ceil(diameter)
             
             let activeColors: [CGColor]
             let inactiveColors: [CGColor]
@@ -705,6 +706,12 @@ public final class AvatarStoryIndicatorComponent: Component {
                 context.clear(CGRect(origin: CGPoint(), size: size))
                 
                 context.setLineCap(.round)
+                let indicatorBounds = CGRect(
+                    x: floor((size.width - diameter) * 0.5),
+                    y: floor((size.height - diameter) * 0.5),
+                    width: diameter,
+                    height: diameter
+                )
                 
                 var locations: [CGFloat] = [0.0, 1.0]
                 
@@ -712,7 +719,7 @@ public final class AvatarStoryIndicatorComponent: Component {
                     if usesRoundedPath {
                         let lineWidth: CGFloat = (component.hasUnseen || component.hasLiveItems) ? component.activeLineWidth : component.inactiveLineWidth
                         context.setLineWidth(lineWidth)
-                        let path = UIBezierPath(roundedRect: CGRect(origin: CGPoint(x: size.width * 0.5 - diameter * 0.5, y: size.height * 0.5 - diameter * 0.5), size: size).insetBy(dx: lineWidth * 0.5, dy: lineWidth * 0.5), cornerRadius: resolvedCornerRadius)
+                        let path = UIBezierPath(roundedRect: indicatorBounds.insetBy(dx: lineWidth * 0.5, dy: lineWidth * 0.5), cornerRadius: resolvedCornerRadius)
                         
                         var startPoint: CGPoint?
                         var vertices: [CurveVertex] = []
@@ -856,10 +863,10 @@ public final class AvatarStoryIndicatorComponent: Component {
                     let lineWidth: CGFloat = (component.hasUnseen || component.hasLiveItems) ? component.activeLineWidth : component.inactiveLineWidth
                     context.setLineWidth(lineWidth)
                     if usesRoundedPath {
-                        let path = UIBezierPath(roundedRect: CGRect(origin: CGPoint(x: size.width * 0.5 - diameter * 0.5, y: size.height * 0.5 - diameter * 0.5), size: size).insetBy(dx: lineWidth * 0.5, dy: lineWidth * 0.5), cornerRadius: resolvedCornerRadius)
+                        let path = UIBezierPath(roundedRect: indicatorBounds.insetBy(dx: lineWidth * 0.5, dy: lineWidth * 0.5), cornerRadius: resolvedCornerRadius)
                         context.addPath(path.cgPath)
                     } else {
-                        context.addEllipse(in: CGRect(origin: CGPoint(x: size.width * 0.5 - diameter * 0.5, y: size.height * 0.5 - diameter * 0.5), size: size).insetBy(dx: lineWidth * 0.5, dy: lineWidth * 0.5))
+                        context.addEllipse(in: indicatorBounds.insetBy(dx: lineWidth * 0.5, dy: lineWidth * 0.5))
                     }
                     
                     context.replacePathWithStrokedPath()

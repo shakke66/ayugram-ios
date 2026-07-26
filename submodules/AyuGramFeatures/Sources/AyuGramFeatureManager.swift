@@ -354,6 +354,12 @@ public final class AyuGramFeatureManager {
             }
             return service.removeDeletedMessage(key)
         }
+        AyuGramFeatures.purgeDeletedMessage = { [weak self] accountPeerId, message in
+            guard let service = self?.registry.service(accountPeerId: accountPeerId) else {
+                return .fail(.archiveUnavailable)
+            }
+            return service.purgeDeletedMessage(message)
+        }
         AyuGramFeatures.editHistory = { [weak self] accountPeerId, messageId in
             return self?.registry.service(accountPeerId: accountPeerId)?.editHistory(messageId) ?? .single([])
         }
@@ -460,15 +466,8 @@ public final class AyuGramFeatureManager {
             return self?.currentSettings.showOnlyAddedStickers ?? false
         }
 
-        // MARK: - Sending
-        AyuGramHooks.shouldUseScheduledMessages = { [weak self] accountPeerId in
-            guard let settings = self?.settings(accountPeerId: accountPeerId) else { return false }
-            return settings.useScheduledMessages
-        }
-
         // MARK: - W0 Reanimation & 6.7.8
         AyuGramHooks.shouldSaveForBots = { [weak self] in self?.currentSettings.saveForBots ?? false }
-        AyuGramHooks.shouldDisableCustomBackgrounds = { [weak self] in self?.currentSettings.disableCustomBackgrounds ?? false }
         AyuGramHooks.codeFontName = { [weak self] in self?.currentSettings.codeFontName ?? "" }
         AyuGramHooks.shouldShowChannelReactions = { [weak self] in self?.currentSettings.showChannelReactions ?? true }
         AyuGramHooks.shouldShowGroupReactions = { [weak self] in self?.currentSettings.showGroupReactions ?? true }

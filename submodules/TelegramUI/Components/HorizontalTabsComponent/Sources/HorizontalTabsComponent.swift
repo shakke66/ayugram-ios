@@ -179,14 +179,16 @@ public final class HorizontalTabsComponent: Component {
         public let id: AnyHashable
         public let content: Content
         public let badge: Badge?
+        public let actionRevision: Int
         public let action: () -> Void
         public let contextAction: ((ContextExtractedContentContainingView, ContextGesture?) -> Void)?
         public let deleteAction: (() -> Void)?
         
-        public init(id: AnyHashable, content: Content, badge: Badge?, action: @escaping () -> Void, contextAction: ((ContextExtractedContentContainingView, ContextGesture?) -> Void)? = nil, deleteAction: (() -> Void)? = nil) {
+        public init(id: AnyHashable, content: Content, badge: Badge?, actionRevision: Int = 0, action: @escaping () -> Void, contextAction: ((ContextExtractedContentContainingView, ContextGesture?) -> Void)? = nil, deleteAction: (() -> Void)? = nil) {
             self.id = id
             self.content = content
             self.badge = badge
+            self.actionRevision = actionRevision
             self.action = action
             self.contextAction = contextAction
             self.deleteAction = deleteAction
@@ -200,6 +202,9 @@ public final class HorizontalTabsComponent: Component {
                 return false
             }
             if lhs.badge != rhs.badge {
+                return false
+            }
+            if lhs.actionRevision != rhs.actionRevision {
                 return false
             }
             if (lhs.contextAction == nil) != (rhs.contextAction == nil) {
@@ -303,6 +308,7 @@ public final class HorizontalTabsComponent: Component {
         
         private var ignoreScrolling: Bool = false
         private var tabSwitchFraction: CGFloat = 0.0
+        private var tabSwitchTargetId: HorizontalTabsComponent.Tab.Id?
         private var isDraggingTabs: Bool = false
         private var temporaryLiftTimer: Foundation.Timer?
         private var didTapOnAnItem: Bool = false
@@ -548,8 +554,12 @@ public final class HorizontalTabsComponent: Component {
             }
         }
         
-        public func updateTabSwitchFraction(fraction: CGFloat, isDragging: Bool, transition: ComponentTransition) {
+        public func updateTabSwitchFraction(fraction: CGFloat, targetTab: HorizontalTabsComponent.Tab.Id? = nil, isDragging: Bool, transition: ComponentTransition) {
             self.tabSwitchFraction = -fraction
+            self.tabSwitchTargetId = targetTab
+            if fraction.isZero {
+                self.tabSwitchTargetId = nil
+            }
             self.isDraggingTabs = isDragging
             self.state?.updated(transition: transition, isLocal: true)
             
@@ -615,6 +625,7 @@ public final class HorizontalTabsComponent: Component {
             
             if self.component?.selectedTab != component.selectedTab {
                 self.tabSwitchFraction = 0.0
+                self.tabSwitchTargetId = nil
                 if !self.isDraggingTabs {
                     self.temporaryLiftTimer?.invalidate()
                     self.temporaryLiftTimer = nil
@@ -816,7 +827,9 @@ public final class HorizontalTabsComponent: Component {
                             
                             var pendingItemFrame: CGRect?
                             if self.tabSwitchFraction != 0.0 {
-                                if self.tabSwitchFraction > 0.0 && i != component.tabs.count - 1 {
+                                if let targetTab = self.tabSwitchTargetId, targetTab != selectedTab, let targetItemView = self.itemViews[targetTab] {
+                                    pendingItemFrame = targetItemView.selectionFrame
+                                } else if self.tabSwitchFraction > 0.0 && i != component.tabs.count - 1 {
                                     if let nextItemView = self.itemViews[component.tabs[i + 1].id] {
                                         pendingItemFrame = nextItemView.selectionFrame
                                     }

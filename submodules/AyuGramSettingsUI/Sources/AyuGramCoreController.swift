@@ -18,7 +18,6 @@ private final class AyuGramCoreArguments {
     let toggleSuppressStoryReads: (Bool) -> Void
     let toggleSuppressOnlineStatus: (Bool) -> Void
     let toggleSuppressTypingAndUploads: (Bool) -> Void
-    let toggleUseScheduledMessages: (Bool) -> Void
     let setSendWithoutSoundMode: (Int32) -> Void
     let toggleSaveDeletedMessages: (Bool) -> Void
     let toggleSaveEditHistory: (Bool) -> Void
@@ -34,7 +33,6 @@ private final class AyuGramCoreArguments {
         toggleSuppressStoryReads: @escaping (Bool) -> Void,
         toggleSuppressOnlineStatus: @escaping (Bool) -> Void,
         toggleSuppressTypingAndUploads: @escaping (Bool) -> Void,
-        toggleUseScheduledMessages: @escaping (Bool) -> Void,
         setSendWithoutSoundMode: @escaping (Int32) -> Void,
         toggleSaveDeletedMessages: @escaping (Bool) -> Void,
         toggleSaveEditHistory: @escaping (Bool) -> Void,
@@ -49,7 +47,6 @@ private final class AyuGramCoreArguments {
         self.toggleSuppressStoryReads = toggleSuppressStoryReads
         self.toggleSuppressOnlineStatus = toggleSuppressOnlineStatus
         self.toggleSuppressTypingAndUploads = toggleSuppressTypingAndUploads
-        self.toggleUseScheduledMessages = toggleUseScheduledMessages
         self.setSendWithoutSoundMode = setSendWithoutSoundMode
         self.toggleSaveDeletedMessages = toggleSaveDeletedMessages
         self.toggleSaveEditHistory = toggleSaveEditHistory
@@ -77,8 +74,6 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
     case ghostComponentTypingAndUploads(PresentationTheme, Bool)
     case suggestGhostForStories(PresentationTheme, Bool)
     case suggestGhostForStoriesInfo(PresentationTheme)
-    case useScheduledMessages(PresentationTheme, Bool)
-    case useScheduledMessagesInfo(PresentationTheme)
     case sendWithoutSoundMode(PresentationTheme, String, Int32)
     case sendWithoutSoundInfo(PresentationTheme)
     case spyModeHeader(PresentationTheme)
@@ -93,7 +88,7 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
         switch self {
         case .ghostModeHeader, .ghostModeToggle, .ghostComponentReadReceipts, .ghostComponentStoryReads, .ghostComponentOnlineStatus, .ghostComponentTypingAndUploads, .suggestGhostForStories, .suggestGhostForStoriesInfo:
             return AyuGramCoreSection.ghostMode.rawValue
-        case .useScheduledMessages, .useScheduledMessagesInfo, .sendWithoutSoundMode, .sendWithoutSoundInfo:
+        case .sendWithoutSoundMode, .sendWithoutSoundInfo:
             return AyuGramCoreSection.sending.rawValue
         case .spyModeHeader, .saveDeletedMessages, .saveEditHistory, .saveForBots:
             return AyuGramCoreSection.spyMode.rawValue
@@ -112,8 +107,6 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
         case .ghostComponentTypingAndUploads: return 5
         case .suggestGhostForStories: return 10
         case .suggestGhostForStoriesInfo: return 11
-        case .useScheduledMessages: return 12
-        case .useScheduledMessagesInfo: return 13
         case .sendWithoutSoundMode: return 14
         case .sendWithoutSoundInfo: return 15
         case .spyModeHeader: return 16
@@ -139,8 +132,6 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
         case let (.ghostComponentTypingAndUploads(_, lhsValue), .ghostComponentTypingAndUploads(_, rhsValue)):
             return lhsValue == rhsValue
         case let (.suggestGhostForStories(_, lhsValue), .suggestGhostForStories(_, rhsValue)):
-            return lhsValue == rhsValue
-        case let (.useScheduledMessages(_, lhsValue), .useScheduledMessages(_, rhsValue)):
             return lhsValue == rhsValue
         case let (.sendWithoutSoundMode(_, lhsLabel, lhsValue), .sendWithoutSoundMode(_, rhsLabel, rhsValue)):
             return lhsLabel == rhsLabel && lhsValue == rhsValue
@@ -195,12 +186,6 @@ private enum AyuGramCoreEntry: ItemListNodeEntry {
             })
         case .suggestGhostForStoriesInfo:
             return ItemListTextItem(presentationData: presentationData, text: .plain(strings[.ghostStoryPromptInfo]), sectionId: self.section)
-        case let .useScheduledMessages(_, value):
-            return ItemListSwitchItem(presentationData: presentationData, title: strings[.ghostSchedule], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { value in
-                arguments.toggleUseScheduledMessages(value)
-            })
-        case .useScheduledMessagesInfo:
-            return ItemListTextItem(presentationData: presentationData, text: .plain(strings[.ghostScheduleInfo]), sectionId: self.section)
         case let .sendWithoutSoundMode(_, label, value):
             return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.ghostSilent], label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.setSendWithoutSoundMode((value + 1) % 3)
@@ -249,8 +234,6 @@ private func ayuGramCoreEntries(settings: AyuGramSettings, presentationData: Pre
     entries.append(.suggestGhostForStories(presentationData.theme, settings.suggestGhostForStories))
     entries.append(.suggestGhostForStoriesInfo(presentationData.theme))
 
-    entries.append(.useScheduledMessages(presentationData.theme, settings.useScheduledMessages))
-    entries.append(.useScheduledMessagesInfo(presentationData.theme))
     let sendWithoutSoundLabels = [
         strings[.commonNever],
         strings[.commonInGhost],
@@ -310,13 +293,6 @@ public func ayuGramCoreController(context: AccountContext) -> ViewController {
                 return settings
             }).startStandalone()
         },
-        toggleUseScheduledMessages: { value in
-            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
-                var settings = settings
-                settings.setScheduledMessages(value)
-                return settings
-            }).startStandalone()
-        },
         setSendWithoutSoundMode: { value in
             let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
@@ -346,11 +322,21 @@ public func ayuGramCoreController(context: AccountContext) -> ViewController {
             }).startStandalone()
         },
         toggleLocalPremium: { value in
-            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
+            let settingsUpdate = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in
                 var settings = settings
                 settings.localTelegramPremium = value
                 return settings
-            }).startStandalone()
+            })
+            let cleanup: Signal<Never, NoError>
+            if value {
+                cleanup = .complete()
+            } else {
+                cleanup = grvmClearLocalPremiumSelfState(
+                    postbox: context.account.postbox,
+                    accountPeerId: context.account.peerId
+                )
+            }
+            let _ = (settingsUpdate |> ignoreValues |> then(cleanup)).startStandalone()
         },
         toggleDisableAds: { value in
             let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager, { settings in

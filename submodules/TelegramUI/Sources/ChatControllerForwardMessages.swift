@@ -115,32 +115,30 @@ extension ChatControllerImpl {
             }
             controller.multiplePeersSelected = { [weak self, weak controller] peers, peerMap, messageText, mode, forwardOptions, _ in
                 if let localCopy, preparedLocalCopy == nil {
+                    guard let controller else {
+                        return
+                    }
                     guard !preparingLocalCopy else {
                         return
                     }
                     preparingLocalCopy = true
                     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                    let progressController = OverlayStatusController(
-                        theme: presentationData.theme,
-                        type: .loading(cancelled: nil)
-                    )
-                    controller?.present(progressController, in: .window(.root))
-                    let _ = (localCopy
-                    |> deliverOnMainQueue).startStandalone(next: { [weak controller] payload in
+                    let preparationDisposable = MetaDisposable()
+                    var receivedPayload = false
+                    var terminal = false
+                    var progressController: OverlayStatusController!
+                    let completePreparation: () -> Bool = {
+                        guard !terminal else {
+                            return false
+                        }
+                        terminal = true
                         progressController.dismiss()
+                        progressController = nil
                         preparingLocalCopy = false
-                        preparedLocalCopy = payload
-                        controller?.multiplePeersSelected?(
-                            peers,
-                            peerMap,
-                            messageText,
-                            mode,
-                            forwardOptions,
-                            nil
-                        )
-                    }, error: { [weak controller] error in
-                        progressController.dismiss()
-                        preparingLocalCopy = false
+                        preparationDisposable.dispose()
+                        return true
+                    }
+                    let displayLocalCopyError: (GRVMPreservedMediaEnqueueError) -> Void = { [weak controller] error in
                         switch error {
                         case .unsupported:
                             controller?.present(UndoOverlayController(
@@ -169,6 +167,46 @@ extension ChatControllerImpl {
                                 action: { _ in false }
                             ), in: .current)
                         }
+                    }
+                    progressController = OverlayStatusController(
+                        theme: presentationData.theme,
+                        type: .loading(cancelled: {
+                            _ = completePreparation()
+                        })
+                    )
+                    controller.present(progressController, in: .current)
+                    preparationDisposable.set((localCopy
+                    |> timeout(30.0, queue: Queue.mainQueue(), alternate: .fail(.unavailable))
+                    |> deliverOnMainQueue).startStandalone(next: { [weak controller] payload in
+                        guard !terminal else {
+                            return
+                        }
+                        receivedPayload = true
+                        preparedLocalCopy = payload
+                        guard completePreparation() else {
+                            return
+                        }
+                        controller?.multiplePeersSelected?(
+                            peers,
+                            peerMap,
+                            messageText,
+                            mode,
+                            forwardOptions,
+                            nil
+                        )
+                    }, error: { error in
+                        guard completePreparation() else {
+                            return
+                        }
+                        displayLocalCopyError(error)
+                    }, completed: {
+                        guard !receivedPayload else {
+                            return
+                        }
+                        guard completePreparation() else {
+                            return
+                        }
+                        displayLocalCopyError(.unavailable)
                     })
                     return
                 }

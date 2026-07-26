@@ -6501,13 +6501,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     }
                 }
                 
-                let appearance = AyuGramHooks.chatAppearance(
-                    accountPeerId: strongSelf.context.account.peerId
-                ).appearance
                 if let forcedWallpaper = strongSelf.forcedWallpaper {
                     presentationData = presentationData.withUpdated(chatWallpaper: forcedWallpaper)
-                } else if appearance.disableCustomBackgrounds {
-                    presentationData = presentationData.withUpdated(chatWallpaper: presentationData.theme.chat.defaultWallpaper)
                 } else if let chatWallpaper {
                     presentationData = presentationData.withUpdated(chatWallpaper: chatWallpaper)
                 }
@@ -8462,22 +8457,43 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             items.append(contentsOf: self.grvmFilteredVisibilityContextMenuItems(peerId: message.id.peerId))
         }
 
-        var authors: [(peerId: PeerId, label: String)] = []
+        func resolveAuthorPeer(_ peerId: PeerId) -> Peer? {
+            if let peer = message.peers[peerId] {
+                return peer
+            } else if message.author?.id == peerId {
+                return message.author
+            } else if message.forwardInfo?.author?.id == peerId {
+                return message.forwardInfo?.author
+            } else if message.forwardInfo?.source?.id == peerId {
+                return message.forwardInfo?.source
+            } else {
+                return nil
+            }
+        }
+
+        var authors: [(peerId: PeerId, peer: Peer?, label: String)] = []
         func appendAuthor(_ peerId: PeerId?, label: String) {
             guard let peerId,
-                  peerId != self.context.account.peerId,
-                  !authors.contains(where: { $0.peerId == peerId }) else {
+                  peerId != self.context.account.peerId else {
                 return
             }
-            authors.append((peerId, label))
+            authors.append((peerId, resolveAuthorPeer(peerId), label))
         }
         appendAuthor(message.author?.id, label: strings[.shadowAuthor])
         appendAuthor(message.forwardInfo?.author?.id, label: strings[.shadowForwardedAuthor])
-        appendAuthor(message.sourceAuthorInfo?.originalAuthor, label: strings[.shadowForwardedAuthor])
+        appendAuthor(message.sourceAuthorInfo?.originalAuthor, label: strings[.shadowOriginalAuthor])
         for author in authors where includeOtherItems {
             let isBanned = shadowBanPeerIds.contains(author.peerId)
             let action = isBanned ? strings[.shadowUnban] : strings[.shadowTitle]
-            let title = authors.count == 1 ? action : strings.format(.shadowActionWithRole, action, author.label)
+            let publicId = grvmFormatPeerId(author.peerId, format: .telegram)
+            let targetTitle: String
+            if let peer = author.peer {
+                let displayTitle = EnginePeer(peer).compactDisplayTitle
+                targetTitle = displayTitle.isEmpty ? publicId : "\(displayTitle) (\(publicId))"
+            } else {
+                targetTitle = publicId
+            }
+            let title = strings.format(.shadowActionWithRole, action, author.label, targetTitle)
             items.append(.action(ContextMenuActionItem(text: title, icon: { theme in
                 return generateTintedImage(
                     image: UIImage(bundleImageName: "Chat/Context Menu/Restrict"),
@@ -8552,7 +8568,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         )
     }
 
-    private func grvmApplyTopReadIndex(mode: GRVMReadMode) {
+    func grvmApplyTopReadIndex(mode: GRVMReadMode) {
         let chatLocation = self.chatLocation
         let contextHolder = self.chatLocationContextHolder
         let _ = (self.context.account.postbox.transaction { transaction -> MessageIndex? in
@@ -8985,19 +9001,6 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             var isScheduledMessages = false
             if case .scheduledMessages = self.presentationInterfaceState.subject {
                 isScheduledMessages = true
-            }
-
-            if !commit && !isScheduledMessages && AyuGramHooks.shouldUseScheduledMessages?(self.context.account.peerId) == true {
-                let _ = (self.context.sharedContext.accountManager.sharedData(keys: [SharedDataKeys.proxySettings])
-                |> take(1)
-                |> deliverOnMainQueue).startStandalone(next: { sharedData in
-                    let proxySettings = sharedData.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self) ?? .defaultSettings
-                    let proxyEnabled = proxySettings.effectiveActiveServer != nil
-                    let delay = grvmGhostScheduleDelay(messages: messages, proxyEnabled: proxyEnabled)
-                    let scheduleTime = Int32(clamping: Int64(Date().timeIntervalSince1970) + Int64(delay))
-                    self.sendMessages(self.transformEnqueueMessages(messages, silentPosting: false, scheduleTime: scheduleTime, repeatPeriod: nil, postpone: postpone), commit: true)
-                })
-                return
             }
 
             if commit || !isScheduledMessages {

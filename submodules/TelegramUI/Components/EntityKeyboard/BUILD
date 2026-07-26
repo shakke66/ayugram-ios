@@ -19,6 +19,7 @@ swift_library(
         "//submodules/Components/BundleIconComponent:BundleIconComponent",
         "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//submodules/TelegramCore:TelegramCore",
+        "//submodules/AyuGramLib:AyuGramLib",
         "//submodules/Postbox:Postbox",
         "//submodules/AnimatedStickerNode:AnimatedStickerNode",
         "//submodules/TelegramAnimatedStickerNode:TelegramAnimatedStickerNode",

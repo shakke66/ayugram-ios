@@ -2498,17 +2498,34 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
         let chatAppearance: Signal<GRVMAppearanceSettings, NoError> = chatAppearanceValues
         |> distinctUntilChanged(isEqual: { lhs, rhs in
             return lhs.codeFontName == rhs.codeFontName
+                && lhs.avatarCorners == rhs.avatarCorners
                 && lhs.removeMessageBubbleTail == rhs.removeMessageBubbleTail
+        })
+        let reactionDisplay: Signal<(channel: Bool, group: Bool, privateChats: Bool), NoError> = settingsSignal
+        |> map { settings -> (channel: Bool, group: Bool, privateChats: Bool) in
+            let chats = settings.grvmChatAppearanceSettings.chats
+            return (
+                channel: chats.showChannelReactions,
+                group: chats.showGroupReactions,
+                privateChats: chats.showPrivateReactions
+            )
+        }
+        |> distinctUntilChanged(isEqual: { lhs, rhs in
+            return lhs.channel == rhs.channel
+                && lhs.group == rhs.group
+                && lhs.privateChats == rhs.privateChats
         })
         
         var didSetPresentationData = false
         var previousChatAppearance: GRVMAppearanceSettings?
+        var previousReactionDisplay: (channel: Bool, group: Bool, privateChats: Bool)?
         self.presentationDataDisposable = (combineLatest(queue: .mainQueue(),
             updated |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_beginPresentationDataManagement_updated"),
             appConfiguration |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_beginPresentationDataManagement_appConfiguration"),
-            chatAppearance
+            chatAppearance,
+            reactionDisplay
         )
-        |> deliverOnMainQueue).startStrict(next: { [weak self] presentationData, appConfiguration, chatAppearance in
+        |> deliverOnMainQueue).startStrict(next: { [weak self] presentationData, appConfiguration, chatAppearance, reactionDisplay in
             if let strongSelf = self {
                 let previousTheme = strongSelf.currentPresentationData.theme
                 let previousStrings = strongSelf.currentPresentationData.strings
@@ -2517,9 +2534,10 @@ public final class ChatHistoryListNodeImpl: ListViewImpl, ChatHistoryNode, ChatH
                 
                 let animatedEmojiConfig = ChatHistoryAnimatedEmojiConfiguration.with(appConfiguration: appConfiguration)
                 
-                if !didSetPresentationData || previousTheme !== presentationData.theme || previousStrings !== presentationData.strings || previousWallpaper != presentationData.chatWallpaper || previousAnimatedEmojiScale != animatedEmojiConfig.scale || previousChatAppearance?.codeFontName != chatAppearance.codeFontName || previousChatAppearance?.removeMessageBubbleTail != chatAppearance.removeMessageBubbleTail {
+                if !didSetPresentationData || previousTheme !== presentationData.theme || previousStrings !== presentationData.strings || previousWallpaper != presentationData.chatWallpaper || previousAnimatedEmojiScale != animatedEmojiConfig.scale || previousChatAppearance?.codeFontName != chatAppearance.codeFontName || previousChatAppearance?.avatarCorners != chatAppearance.avatarCorners || previousChatAppearance?.removeMessageBubbleTail != chatAppearance.removeMessageBubbleTail || previousReactionDisplay?.channel != reactionDisplay.channel || previousReactionDisplay?.group != reactionDisplay.group || previousReactionDisplay?.privateChats != reactionDisplay.privateChats {
                     didSetPresentationData = true
                     previousChatAppearance = chatAppearance
+                    previousReactionDisplay = reactionDisplay
                     
                     let themeData = ChatPresentationThemeData(theme: presentationData.theme, wallpaper: presentationData.chatWallpaper)
                     let chatPresentationData = ChatPresentationData(theme: themeData, fontSize: presentationData.chatFontSize, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat, nameDisplayOrder: presentationData.nameDisplayOrder, disableAnimations: true, largeEmoji: presentationData.largeEmoji, chatBubbleCorners: presentationData.chatBubbleCorners, animatedEmojiScale: animatedEmojiConfig.scale, accountPeerId: strongSelf.context.account.peerId, chatAppearance: chatAppearance)
