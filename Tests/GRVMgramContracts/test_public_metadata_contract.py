@@ -157,7 +157,7 @@ class PublicMetadataContractTests(unittest.TestCase):
             re.DOTALL,
         )
         self.assertEqual(
-            ["telegram", "tg", "tonsite"],
+            ["telegram", "tg", "tonsite", "grvmgram"],
             [
                 value
                 for array in scheme_arrays
