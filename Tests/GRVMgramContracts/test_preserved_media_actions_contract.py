@@ -4486,6 +4486,7 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             "guard let controller else",
             "MetaDisposable()",
             "var terminal = false",
+            "var progressController: ViewController?",
             "guard !terminal else",
             "terminal = true",
             "preparationDisposable.set(",
@@ -4493,15 +4494,22 @@ class ReplayLocalForwardUIContractTests(SourceContractTestCase):
             "|> timeout(",
             "alternate: .fail(.unavailable)",
             ".loading(cancelled: {",
-            "progressController.dismiss()",
+            "progressController?.dismiss()",
             "preparingLocalCopy = false",
+            "let currentProgressController = OverlayStatusController(",
+            "progressController = currentProgressController",
         )
         self.assertNotContains(preparation, ".loading(cancelled: nil)")
-        self.assertContains(preparation, "controller.present(progressController, in: .current)")
+        self.assertNotContains(preparation, "var progressController: OverlayStatusController!")
+        self.assertContains(preparation, "controller.present(currentProgressController, in: .current)")
+        self.assertRegex(
+            preparation,
+            r"displayLocalCopyError\(\.unavailable\)\s*\}\)\)\s*return",
+        )
         self.assertOrdered(
             preparation,
             "guard let controller else",
-            "controller.present(progressController, in: .current)",
+            "controller.present(currentProgressController, in: .current)",
         )
         self.assertNotContains(preparation, "controller?.present(progressController, in: .window(.root))")
 

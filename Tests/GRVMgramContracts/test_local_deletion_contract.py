@@ -420,7 +420,7 @@ class LocalDeletionContractTests(unittest.TestCase):
         self.assertIn("deleteFromServer: !isArchivedDeletion", action)
         self.assertNotIn("GRVMMessageKey(", action)
 
-    def test_live_local_purge_waits_for_confirmed_server_deletion(self) -> None:
+    def test_live_local_purge_runs_after_interactive_deletion_signal(self) -> None:
         source = CONTEXT_MENUS.read_text(encoding="utf-8")
         purge = swift_block(source, "private func grvmPurgeDeletedMessage(")
 
@@ -428,10 +428,15 @@ class LocalDeletionContractTests(unittest.TestCase):
         self.assertIn("deleteMessagesInteractively(", purge)
         self.assertIn("type: .forEveryone", purge)
         self.assertIn("AyuGramFeatures.purgeDeletedMessage", purge)
-        self.assertIn("|> then(purge)", purge)
+        self.assertIn(
+            "|> mapToSignal { _ -> Signal<[MessageId], GRVMClearDeletedError> in",
+            purge,
+        )
+        self.assertIn("return purge", purge)
+        self.assertNotIn("|> then(purge)", purge)
         self.assertLess(
             purge.index("deleteMessagesInteractively("),
-            purge.index("|> then(purge)"),
+            purge.index("|> mapToSignal"),
         )
 
     def test_local_purge_action_is_typed_and_localized(self) -> None:

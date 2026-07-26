@@ -620,7 +620,7 @@ class GRVMNotifyNativeSourceContractTests(unittest.TestCase):
             "return canonical == value ? data : nil",
             "encodedToken.count <= 4_096",
             "token.count <= 512",
-            "items.values.allSatisfy { $0.count == 1 }",
+            "items.values.allSatisfy({ $0.count == 1 })",
             'returnComponents.host == "shakke66.github.io"',
             'returnComponents.path == "/GRVM-Notify/setup/"',
             "Int32(exactly: messageId)",

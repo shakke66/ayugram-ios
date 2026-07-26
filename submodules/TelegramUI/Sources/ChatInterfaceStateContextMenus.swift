@@ -344,7 +344,9 @@ private func grvmPurgeDeletedMessage(
                             type: .forEveryone
                         )
                         |> castError(GRVMClearDeletedError.self))
-                        |> then(purge)
+                        |> mapToSignal { _ -> Signal<[MessageId], GRVMClearDeletedError> in
+                            return purge
+                        }
                     } else {
                         operation = purge
                     }

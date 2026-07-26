@@ -126,13 +126,13 @@ extension ChatControllerImpl {
                     let preparationDisposable = MetaDisposable()
                     var receivedPayload = false
                     var terminal = false
-                    var progressController: OverlayStatusController!
+                    var progressController: ViewController?
                     let completePreparation: () -> Bool = {
                         guard !terminal else {
                             return false
                         }
                         terminal = true
-                        progressController.dismiss()
+                        progressController?.dismiss()
                         progressController = nil
                         preparingLocalCopy = false
                         preparationDisposable.dispose()
@@ -168,13 +168,14 @@ extension ChatControllerImpl {
                             ), in: .current)
                         }
                     }
-                    progressController = OverlayStatusController(
+                    let currentProgressController = OverlayStatusController(
                         theme: presentationData.theme,
                         type: .loading(cancelled: {
                             _ = completePreparation()
                         })
                     )
-                    controller.present(progressController, in: .current)
+                    progressController = currentProgressController
+                    controller.present(currentProgressController, in: .current)
                     preparationDisposable.set((localCopy
                     |> timeout(30.0, queue: Queue.mainQueue(), alternate: .fail(.unavailable))
                     |> deliverOnMainQueue).startStandalone(next: { [weak controller] payload in
@@ -207,7 +208,7 @@ extension ChatControllerImpl {
                             return
                         }
                         displayLocalCopyError(.unavailable)
-                    })
+                    }))
                     return
                 }
                 let peerIds = peers.map { $0.id }

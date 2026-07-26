@@ -19,7 +19,7 @@ enum GRVMNotifyDeepLink: Equatable {
               components.path.isEmpty,
               components.fragment == nil,
               let items = self.queryItems(from: components),
-              items.values.allSatisfy { $0.count == 1 } else {
+              items.values.allSatisfy({ $0.count == 1 }) else {
             return nil
         }
 
