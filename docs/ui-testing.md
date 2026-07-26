@@ -11,6 +11,18 @@ xcodebuild test \
 
 Pick any available simulator. List them with `xcrun simctl list devices available iPhone`.
 
+## GRVM Notify focused release contracts
+
+Из корня native repository запустите только два связанных Python-контракта:
+
+```powershell
+python -m unittest Tests.GRVMgramContracts.test_grvm_notify_native_contract Tests.GRVMgramContracts.test_grvm_notify_release_contract -v
+```
+
+Release contract всегда проверяет native Swift и build workflow. Если рядом существует checkout `../GRVM-Notify`, он также читает production TypeScript и сверяет общий URL schema, single-account registration и cold Service Worker privacy boundary. В native-only CI отсутствие sibling checkout даёт один явный Web skip; native assertions продолжают выполняться.
+
+Эти source/model contracts не являются device PASS и не доказывают установку IPA, Web Push delivery, automatic custom-scheme open или closed-PWA preview. После развёртывания IPA/PWA на физическом устройстве с iOS/iPadOS 16.4+ заполните [журнал GRVM Notify](grvm-notify-device-qa.md), а в этом checklist оставьте только пять native regression cards из [third-build targeted QA](grvmgram-third-build-qa-checklist.md). До фактического прогона поля `Статус` и `Наблюдение` остаются пустыми.
+
 ## Test Environment
 
 Tests launch the app with the `--ui-test` argument. When the app detects this flag:
