@@ -75,11 +75,11 @@ enum GRVMNotifyDeepLink: Equatable {
               let returnURL = URL(string: returnURLItem.value),
               let returnComponents = URLComponents(url: returnURL, resolvingAgainstBaseURL: false),
               returnComponents.scheme == "https",
-              returnComponents.host == "grvm-notify.pages.dev",
+              returnComponents.host == "shakke66.github.io",
               returnComponents.port == nil,
               returnComponents.user == nil,
               returnComponents.password == nil,
-              returnComponents.path == "/setup/",
+              returnComponents.path == "/GRVM-Notify/setup/",
               returnComponents.query == nil,
               returnComponents.fragment == nil else {
             return nil

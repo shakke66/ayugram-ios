@@ -20,7 +20,8 @@ INFO_PLIST_PATHS = (
 )
 BUILD_PATH = ROOT / "Telegram/BUILD"
 FORK_CONFIG_PATH = ROOT / "Telegram/Telegram-iOS/Config-Fork.xcconfig"
-SETTINGS_CONTROLLER_PATH = ROOT / "submodules/TelegramUI/Sources/GRVMNotifySettingsController.swift"
+SETTINGS_CONTROLLER_PATH = ROOT / "submodules/AyuGramSettingsUI/Sources/GRVMNotifySettingsController.swift"
+OLD_SETTINGS_CONTROLLER_PATH = ROOT / "submodules/TelegramUI/Sources/GRVMNotifySettingsController.swift"
 MAIN_SETTINGS_PATH = ROOT / "submodules/AyuGramSettingsUI/Sources/AyuGramMainController.swift"
 SETTINGS_ACTIONS_PATH = ROOT / "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift"
 GRVM_STRINGS_PATH = ROOT / "submodules/TelegramPresentationData/Sources/GRVMgramStrings.swift"
@@ -218,8 +219,8 @@ def parse_url(value):
         return_url = urlsplit(items["return_url"][0])
         if (
             return_url.scheme != "https"
-            or return_url.netloc != "grvm-notify.pages.dev"
-            or return_url.path != "/setup/"
+            or return_url.netloc != "shakke66.github.io"
+            or return_url.path != "/GRVM-Notify/setup/"
             or return_url.query
             or return_url.fragment
         ):
@@ -422,13 +423,15 @@ def test_state_requires_pair_and_expires_pending_after_24_hours():
 
 
 def test_authorize_rejects_duplicates_bad_origin_and_oversized_token():
-    assert parse_url("grvmgram://notify-auth?token=AQID&token=BAUG&return_url=https%3A%2F%2Fgrvm-notify.pages.dev%2Fsetup%2F") is None
+    assert parse_url("grvmgram://notify-auth?token=AQID&token=BAUG&return_url=https%3A%2F%2Fshakke66.github.io%2FGRVM-Notify%2Fsetup%2F") is None
     assert parse_url("grvmgram://notify-auth?token=AQID&return_url=https%3A%2F%2Fevil.example%2F") is None
-    assert parse_url("grvmgram://notify-auth?token=" + "A" * 4097 + "&return_url=https%3A%2F%2Fgrvm-notify.pages.dev%2Fsetup%2F") is None
+    assert parse_url("grvmgram://notify-auth?token=AQID&return_url=https%3A%2F%2Fgrvm-notify.pages.dev%2Fsetup%2F") is None
+    assert parse_url("grvmgram://notify-auth?token=AQID&return_url=https%3A%2F%2Fshakke66.github.io%2Fsetup%2F") is None
+    assert parse_url("grvmgram://notify-auth?token=" + "A" * 4097 + "&return_url=https%3A%2F%2Fshakke66.github.io%2FGRVM-Notify%2Fsetup%2F") is None
 
 
 def test_authorize_accepts_canonical_unpadded_base64url_only():
-    return_url = "return_url=https%3A%2F%2Fgrvm-notify.pages.dev%2Fsetup%2F"
+    return_url = "return_url=https%3A%2F%2Fshakke66.github.io%2FGRVM-Notify%2Fsetup%2F"
     parsed = parse_url(f"grvmgram://notify-auth?token=-_8&{return_url}")
     assert parsed is not None
     assert parsed[1] == bytes([251, 255])
@@ -618,11 +621,14 @@ class GRVMNotifyNativeSourceContractTests(unittest.TestCase):
             "encodedToken.count <= 4_096",
             "token.count <= 512",
             "items.values.allSatisfy { $0.count == 1 }",
+            'returnComponents.host == "shakke66.github.io"',
+            'returnComponents.path == "/GRVM-Notify/setup/"',
             "Int32(exactly: messageId)",
         )
         for contract in required_contract:
             with self.subTest(contract=contract):
                 self.assertIn(contract, source)
+        self.assertNotIn('returnComponents.host == "grvm-notify.pages.dev"', source)
 
     def test_coordinator_enforces_readiness_single_flight_and_exact_ownership(self):
         self.assertTrue(COORDINATOR_PATH.exists(), f"Missing coordinator: {COORDINATOR_PATH}")
@@ -790,6 +796,18 @@ class GRVMNotifyNativeSourceContractTests(unittest.TestCase):
         self.assertIn("openGRVMNotify: {", actions)
         self.assertIn("grvmNotifySettingsController(context: self.context)", actions)
 
+    def test_notify_settings_controller_is_owned_by_lower_settings_module(self):
+        self.assertFalse(
+            OLD_SETTINGS_CONTROLLER_PATH.exists(),
+            f"Native settings controller must not remain in TelegramUI: {OLD_SETTINGS_CONTROLLER_PATH}",
+        )
+        self.assertTrue(
+            SETTINGS_CONTROLLER_PATH.exists(),
+            f"Missing native settings controller: {SETTINGS_CONTROLLER_PATH}",
+        )
+        actions = SETTINGS_ACTIONS_PATH.read_text(encoding="utf-8")
+        self.assertRegex(actions, r"(?m)^import AyuGramSettingsUI$")
+
     def test_settings_controller_has_truthful_one_flow_states_and_actions(self):
         self.assertTrue(
             SETTINGS_CONTROLLER_PATH.exists(),
@@ -810,7 +828,7 @@ class GRVMNotifyNativeSourceContractTests(unittest.TestCase):
             "GRVMNotifyStateStore(accountManager: context.sharedContext.accountManager)",
             "stateStore.state()",
             "context.sharedContext.activeAccountContexts",
-            'https://grvm-notify.pages.dev/setup/?grvm_notify=1',
+            'https://shakke66.github.io/GRVM-Notify/setup/?grvm_notify=1',
             "forceExternal: true",
         ):
             with self.subTest(token=token):

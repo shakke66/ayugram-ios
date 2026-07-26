@@ -198,7 +198,7 @@ private func grvmNotifySettingsEntries(
 }
 
 private final class GRVMNotifySettingsModel {
-    private static let setupURL = "https://grvm-notify.pages.dev/setup/?grvm_notify=1"
+    private static let setupURL = "https://shakke66.github.io/GRVM-Notify/setup/?grvm_notify=1"
 
     private let context: AccountContext
     private let stateStore: GRVMNotifyStateStore

@@ -97,6 +97,7 @@ ALLOWED_SETTINGS_UI_LITERALS = {
     "grvmgram-filters-",
     "json",
     "associateLinks",
+    "https://shakke66.github.io/GRVM-Notify/setup/?grvm_notify=1",
 }
 FORBIDDEN_CROSS_UI_LITERALS = {
     "Send sticker?",
