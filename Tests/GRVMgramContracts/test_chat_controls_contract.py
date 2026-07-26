@@ -116,6 +116,7 @@ class ChatControlsContractTests(unittest.TestCase):
         "submodules/TelegramUI/Components/EntityKeyboard/Sources/"
         "EmojiPagerContentSignals.swift"
     )
+    pager_build_path = "submodules/TelegramUI/Components/EntityKeyboard/BUILD"
     bubble_path = (
         "submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/"
         "ChatMessageBubbleItemNode.swift"
@@ -202,6 +203,20 @@ class ChatControlsContractTests(unittest.TestCase):
         ]:
             with self.subTest(legacy=legacy):
                 self.assertNotIn(legacy, keyboard + pager + bubble)
+
+    def test_entity_keyboard_declares_appearance_extension_module(self) -> None:
+        pager = source(self.pager_path)
+        build = source(self.pager_build_path)
+
+        for text, token in [
+            (pager, "import AyuGramFeatures"),
+            (build, '"//submodules/AyuGramFeatures:AyuGramFeatures"'),
+        ]:
+            with self.subTest(token=token):
+                self.assertIn(token, text)
+
+        self.assertIn("import AyuGramLib", pager)
+        self.assertIn('"//submodules/AyuGramLib:AyuGramLib"', build)
 
     def test_membership_helpers_require_real_pack_ids_in_both_namespaces(self) -> None:
         for path in [self.keyboard_path, self.pager_path]:

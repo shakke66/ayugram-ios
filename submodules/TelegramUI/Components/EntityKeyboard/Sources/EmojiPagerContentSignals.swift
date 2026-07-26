@@ -9,6 +9,7 @@ import MultiAnimationRenderer
 import TelegramNotices
 import FlatBuffers
 import FlatSerialization
+import AyuGramFeatures
 import AyuGramLib
 
 private func grvmIsMediaInstalled(
