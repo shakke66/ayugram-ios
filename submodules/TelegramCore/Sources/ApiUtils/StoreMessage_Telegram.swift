@@ -1,4 +1,5 @@
 import Foundation
+import Emoji
 import Postbox
 internal import TelegramApi
 
@@ -740,7 +741,7 @@ func textMediaAndExpirationTimerFromApiMedia(_ media: Api.MessageMedia?, _ peerI
                 case let .textWithEntities(textWithEntitiesData):
                     let (text, entities) = (textWithEntitiesData.text, textWithEntitiesData.entities)
                     questionText = text
-                    questionEntities = messageTextEntitiesFromApiEntities(entities)
+                    questionEntities = messageTextEntitiesFromApiEntities(entities, text: text)
                 }
 
                 var parsedAttachedMedia: Media?
@@ -768,7 +769,7 @@ func textMediaAndExpirationTimerFromApiMedia(_ media: Api.MessageMedia?, _ peerI
                 case let .textWithEntities(textWithEntitiesData):
                     let (text, entities) = (textWithEntitiesData.text, textWithEntitiesData.entities)
                     todoText = text
-                    todoEntities = messageTextEntitiesFromApiEntities(entities)
+                    todoEntities = messageTextEntitiesFromApiEntities(entities, text: text)
                 }
                 var todoCompletions: [TelegramMediaTodo.Completion] = []
                 if let completions {
@@ -997,7 +998,49 @@ func apiMediaAreasFromMediaAreas(_ mediaAreas: [MediaArea], transaction: Transac
 }
 
 
-func messageTextEntitiesFromApiEntities(_ entities: [Api.MessageEntity]) -> [MessageTextEntity] {
+private func grvmLocalPremiumEmojiFileId(_ url: String) -> Int64? {
+    let prefix = "tg://emoji?id="
+    guard url.hasPrefix(prefix) else {
+        return nil
+    }
+    let rawFileId = String(url.dropFirst(prefix.count))
+    guard !rawFileId.isEmpty,
+          rawFileId.unicodeScalars.allSatisfy({ (48 ... 57).contains($0.value) }),
+          let fileId = Int64(rawFileId),
+          fileId > 0 else {
+        return nil
+    }
+    return fileId
+}
+
+private func grvmIsSingleUnicodeEmoji(_ value: String) -> Bool {
+    return value.count == 1 && value.containsEmoji
+}
+
+private func grvmLocalPremiumEmojiEntity(offset: Int32, length: Int32, url: String, text: String?) -> (entity: MessageTextEntity, fileId: Int64)? {
+    guard let text,
+          let fileId = grvmLocalPremiumEmojiFileId(url),
+          offset >= 0,
+          length > 0 else {
+        return nil
+    }
+
+    let nsText = text as NSString
+    let range = NSRange(location: Int(offset), length: Int(length))
+    guard NSMaxRange(range) <= nsText.length else {
+        return nil
+    }
+    let entityText = nsText.substring(with: range)
+    guard grvmIsSingleUnicodeEmoji(entityText) else {
+        return nil
+    }
+    return (
+        MessageTextEntity(range: range.location ..< NSMaxRange(range), type: .CustomEmoji(stickerPack: nil, fileId: fileId)),
+        fileId
+    )
+}
+
+func messageTextEntitiesFromApiEntities(_ entities: [Api.MessageEntity], text: String? = nil) -> [MessageTextEntity] {
     var result: [MessageTextEntity] = []
     for entity in entities {
         switch entity {
@@ -1032,7 +1075,11 @@ func messageTextEntitiesFromApiEntities(_ entities: [Api.MessageEntity]) -> [Mes
             result.append(MessageTextEntity(range: Int(offset) ..< Int(offset + length), type: .Pre(language: language)))
         case let .messageEntityTextUrl(messageEntityTextUrlData):
             let (offset, length, url) = (messageEntityTextUrlData.offset, messageEntityTextUrlData.length, messageEntityTextUrlData.url)
-            result.append(MessageTextEntity(range: Int(offset) ..< Int(offset + length), type: .TextUrl(url: url)))
+            if let converted = grvmLocalPremiumEmojiEntity(offset: offset, length: length, url: url, text: text) {
+                result.append(converted.entity)
+            } else {
+                result.append(MessageTextEntity(range: Int(offset) ..< Int(offset + length), type: .TextUrl(url: url)))
+            }
         case let .messageEntityMentionName(messageEntityMentionNameData):
             let (offset, length, userId) = (messageEntityMentionNameData.offset, messageEntityMentionNameData.length, messageEntityMentionNameData.userId)
             result.append(MessageTextEntity(range: Int(offset) ..< Int(offset + length), type: .TextMention(peerId: PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(userId)))))
@@ -1098,6 +1145,27 @@ func messageTextEntitiesFromApiEntities(_ entities: [Api.MessageEntity]) -> [Mes
         }
     }
     return result
+}
+
+func messageTextEntitiesAndGRVMLocalPremiumFileIdsFromApiEntities(_ entities: [Api.MessageEntity], text: String? = nil) -> (entities: [MessageTextEntity], fileIds: [Int64]) {
+    let result = messageTextEntitiesFromApiEntities(entities, text: text)
+    var grvmLocalPremiumFileIds: [Int64] = []
+    for entity in entities {
+        switch entity {
+        case let .messageEntityTextUrl(messageEntityTextUrlData):
+            let (offset, length, url) = (messageEntityTextUrlData.offset, messageEntityTextUrlData.length, messageEntityTextUrlData.url)
+            if let converted = grvmLocalPremiumEmojiEntity(offset: offset, length: length, url: url, text: text) {
+                grvmLocalPremiumFileIds.append(converted.fileId)
+            }
+        case let .messageEntityCustomEmoji(messageEntityCustomEmojiData):
+            let _ = messageEntityCustomEmojiData
+        case let .messageEntityFormattedDate(messageEntityFormattedDateData):
+            let _ = messageEntityFormattedDateData
+        default:
+            break
+        }
+    }
+    return (result, grvmLocalPremiumFileIds)
 }
 
 extension StoreMessage {
@@ -1387,9 +1455,13 @@ extension StoreMessage {
             
                 var entitiesAttribute: TextEntitiesMessageAttribute?
                 if let entities, !entities.isEmpty {
-                    let attribute = TextEntitiesMessageAttribute(entities: messageTextEntitiesFromApiEntities(entities))
+                    let grvmDecodedEntities = messageTextEntitiesAndGRVMLocalPremiumFileIdsFromApiEntities(entities, text: messageText)
+                    let attribute = TextEntitiesMessageAttribute(entities: messageTextEntitiesFromApiEntities(entities, text: messageText))
                     entitiesAttribute = attribute
                     attributes.append(attribute)
+                    if !grvmDecodedEntities.fileIds.isEmpty {
+                        attributes.append(GRVMLocalPremiumEmojiMessageAttribute(fileIds: grvmDecodedEntities.fileIds))
+                    }
                 } else {
                     var noEntities = false
                     loop: for media in medias {
@@ -1455,7 +1527,7 @@ extension StoreMessage {
                             switch text {
                             case let .textWithEntities(textWithEntitiesData):
                                 let (text, entities) = (textWithEntitiesData.text, textWithEntitiesData.entities)
-                                content = .Loaded(text: text, entities: messageTextEntitiesFromApiEntities(entities), country: country)
+                                content = .Loaded(text: text, entities: messageTextEntitiesFromApiEntities(entities, text: text), country: country)
                             }
                         } else {
                             content = .Pending

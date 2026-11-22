@@ -46,6 +46,7 @@ import PassportUI
 import DeviceAccess
 import LegacyMediaPickerUI
 import TelegramNotices
+import AyuGramSettingsUI
 import SaveToCameraRoll
 import PeerInfoUI
 import ListMessageItem
@@ -199,6 +200,7 @@ enum PeerInfoSettingsSection {
     case stars
     case ton
     case wallet
+    case ayuGramSettings
 }
 
 enum PeerInfoReportType {
@@ -7542,6 +7544,13 @@ public final class PeerInfoScreenImpl: ViewController, PeerInfoScreen, KeyShortc
                 
                 context.engine.peers.updateSavedMessagesViewAsTopics(value: false)
             })))
+
+            items.append(contentsOf: grvmArchiveContextMenuItems(
+                context: context,
+                sourceController: sourceController,
+                peerId: context.account.peerId,
+                threadId: nil
+            ))
             
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
             let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)

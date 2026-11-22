@@ -23,6 +23,7 @@ swift_library(
         "//submodules/SSignalKit/SwiftSignalKit",
         "//submodules/AppBundle",
         "//submodules/TelegramCore",
+        "//submodules/AyuGramLib:AyuGramLib",
         "//submodules/Postbox",
         "//submodules/ShareController",
         "//submodules/UndoUI",

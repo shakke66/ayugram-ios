@@ -3,7 +3,7 @@ import Postbox
 internal import TelegramApi
 import SwiftSignalKit
 
-func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messageId: MessageId) -> Signal<Void, NoError> {
+func _internal_markMessageContentAsConsumedInteractively(accountPeerId: PeerId, postbox: Postbox, messageId: MessageId, force: Bool = false) -> Signal<Void, NoError> {
     return postbox.transaction { transaction -> Void in
         if let message = transaction.getMessage(messageId), message.flags.contains(.Incoming) {
             var updateMessage = false
@@ -14,7 +14,11 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
                     if !attribute.consumed {
                         updatedAttributes[i] = ConsumableContentMessageAttribute(consumed: true)
                         updateMessage = true
-                        
+
+                        if AyuGramHooks.shouldSuppressContentRead?(accountPeerId) == true && !force {
+                            break
+                        }
+
                         if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
                             if let state = transaction.getPeerChatState(message.id.peerId) as? SecretChatState {
                                 var layer: SecretChatLayer?
@@ -38,7 +42,7 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
                                 }
                             }
                         } else {
-                            addSynchronizeConsumeMessageContentsOperation(transaction: transaction, messageIds: [message.id])
+                            addSynchronizeConsumeMessageContentsOperation(transaction: transaction, messageIds: [message.id], force: force)
                         }
                     }
                 } else if let attribute = updatedAttributes[i] as? ConsumablePersonalMentionMessageAttribute, !attribute.consumed {
@@ -173,12 +177,13 @@ func _internal_markReactionsOrPollVotesAsSeenInteractively(postbox: Postbox, mes
     }
 }
 
-func markMessageContentAsConsumedRemotely(transaction: Transaction, messageId: MessageId, consumeDate: Int32?) {
+func markMessageContentAsConsumedRemotely(accountPeerId: PeerId, transaction: Transaction, messageId: MessageId, consumeDate: Int32?) {
     if let message = transaction.getMessage(messageId) {
         var updateMessage = false
         var updatedAttributes = message.attributes
         var updatedMedia = message.media
         var updatedTags = message.tags
+        let hasPreservedConsumableMedia = message.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute })
         
         for i in 0 ..< updatedAttributes.count {
             if let attribute = updatedAttributes[i] as? ConsumableContentMessageAttribute {
@@ -207,17 +212,19 @@ func markMessageContentAsConsumedRemotely(transaction: Transaction, messageId: M
                                  
                     if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
                     } else {
-                        if attribute.timeout == viewOnceTimeout || timestamp >= autoremoveExpiryTimestamp(countdownBeginTime: countdownBeginTime, timeout: attribute.timeout) {
-                            for i in 0 ..< updatedMedia.count {
-                                if let _ = updatedMedia[i] as? TelegramMediaImage {
-                                    updatedMedia[i] = TelegramMediaExpiredContent(data: .image)
-                                } else if let file = updatedMedia[i] as? TelegramMediaFile {
-                                    if file.isInstantVideo {
-                                        updatedMedia[i] = TelegramMediaExpiredContent(data: .videoMessage)
-                                    } else if file.isVoice {
-                                        updatedMedia[i] = TelegramMediaExpiredContent(data: .voiceMessage)
-                                    } else {
-                                        updatedMedia[i] = TelegramMediaExpiredContent(data: .file)
+                        if !hasPreservedConsumableMedia {
+                            if attribute.timeout == viewOnceTimeout || timestamp >= autoremoveExpiryTimestamp(countdownBeginTime: countdownBeginTime, timeout: attribute.timeout) {
+                                for i in 0 ..< updatedMedia.count {
+                                    if let _ = updatedMedia[i] as? TelegramMediaImage {
+                                        updatedMedia[i] = TelegramMediaExpiredContent(data: .image)
+                                    } else if let file = updatedMedia[i] as? TelegramMediaFile {
+                                        if file.isInstantVideo {
+                                            updatedMedia[i] = TelegramMediaExpiredContent(data: .videoMessage)
+                                        } else if file.isVoice {
+                                            updatedMedia[i] = TelegramMediaExpiredContent(data: .voiceMessage)
+                                        } else {
+                                            updatedMedia[i] = TelegramMediaExpiredContent(data: .file)
+                                        }
                                     }
                                 }
                             }
@@ -231,17 +238,19 @@ func markMessageContentAsConsumedRemotely(transaction: Transaction, messageId: M
                     
                     if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
                     } else {
-                        for i in 0 ..< updatedMedia.count {
-                            if attribute.timeout == viewOnceTimeout || timestamp >= autoremoveExpiryTimestamp(countdownBeginTime: countdownBeginTime, timeout: attribute.timeout) {
-                                if let _ = updatedMedia[i] as? TelegramMediaImage {
-                                    updatedMedia[i] = TelegramMediaExpiredContent(data: .image)
-                                } else if let file = updatedMedia[i] as? TelegramMediaFile {
-                                    if file.isInstantVideo {
-                                        updatedMedia[i] = TelegramMediaExpiredContent(data: .videoMessage)
-                                    } else if file.isVoice {
-                                        updatedMedia[i] = TelegramMediaExpiredContent(data: .voiceMessage)
-                                    } else {
-                                        updatedMedia[i] = TelegramMediaExpiredContent(data: .file)
+                        if !hasPreservedConsumableMedia {
+                            for i in 0 ..< updatedMedia.count {
+                                if attribute.timeout == viewOnceTimeout || timestamp >= autoremoveExpiryTimestamp(countdownBeginTime: countdownBeginTime, timeout: attribute.timeout) {
+                                    if let _ = updatedMedia[i] as? TelegramMediaImage {
+                                        updatedMedia[i] = TelegramMediaExpiredContent(data: .image)
+                                    } else if let file = updatedMedia[i] as? TelegramMediaFile {
+                                        if file.isInstantVideo {
+                                            updatedMedia[i] = TelegramMediaExpiredContent(data: .videoMessage)
+                                        } else if file.isVoice {
+                                            updatedMedia[i] = TelegramMediaExpiredContent(data: .voiceMessage)
+                                        } else {
+                                            updatedMedia[i] = TelegramMediaExpiredContent(data: .file)
+                                        }
                                     }
                                 }
                             }

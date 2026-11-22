@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import Display
+import Postbox
 import TelegramCore
 import TelegramUIPreferences
 
@@ -24,6 +25,7 @@ public final class ChatPresentationThemeData: Equatable {
 
 public final class ChatPresentationData {
     public let theme: ChatPresentationThemeData
+    public let accountPeerId: PeerId?
     public let fontSize: PresentationFontSize
     public let strings: PresentationStrings
     public let dateTimeFormat: PresentationDateTimeFormat
@@ -33,6 +35,8 @@ public final class ChatPresentationData {
     public let chatBubbleCorners: PresentationChatBubbleCorners
     public let animatedEmojiScale: CGFloat
     public let isPreview: Bool
+    private let sourceChatBubbleCorners: PresentationChatBubbleCorners
+    private let chatAppearance: GRVMAppearanceSettings?
     
     public let messageFont: UIFont
     public let messageEmojiFont: UIFont
@@ -45,14 +49,32 @@ public final class ChatPresentationData {
     /// Built here: layouts read this object from several threads, so it is not lazy.
     public let messageTextFonts: ChatMessageTextFonts?
 
-    public init(theme: ChatPresentationThemeData, fontSize: PresentationFontSize, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameDisplayOrder: PresentationPersonNameOrder, disableAnimations: Bool, largeEmoji: Bool, chatBubbleCorners: PresentationChatBubbleCorners, animatedEmojiScale: CGFloat = 1.0, isPreview: Bool = false) {
+    public init(theme: ChatPresentationThemeData, fontSize: PresentationFontSize, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameDisplayOrder: PresentationPersonNameOrder, disableAnimations: Bool, largeEmoji: Bool, chatBubbleCorners: PresentationChatBubbleCorners, animatedEmojiScale: CGFloat = 1.0, isPreview: Bool = false, accountPeerId: PeerId? = nil, chatAppearance: GRVMAppearanceSettings? = nil) {
         self.theme = theme
+        self.accountPeerId = accountPeerId
         self.fontSize = fontSize
         self.strings = strings
         self.dateTimeFormat = dateTimeFormat
         self.nameDisplayOrder = nameDisplayOrder
         self.disableAnimations = disableAnimations
-        self.chatBubbleCorners = chatBubbleCorners
+        self.sourceChatBubbleCorners = chatBubbleCorners
+        self.chatAppearance = chatAppearance
+        let appearance: GRVMAppearanceSettings
+        if let chatAppearance {
+            appearance = chatAppearance
+        } else if let accountPeerId {
+            appearance = AyuGramHooks.chatAppearance(accountPeerId: accountPeerId).appearance
+        } else {
+            appearance = GRVMChatAppearanceSettings.default.appearance
+        }
+        self.chatBubbleCorners = PresentationChatBubbleCorners(
+            mainRadius: chatBubbleCorners.mainRadius,
+            auxiliaryRadius: chatBubbleCorners.auxiliaryRadius,
+            mergeBubbleCorners: chatBubbleCorners.mergeBubbleCorners,
+            hasTails: chatBubbleCorners.hasTails && !appearance.removeMessageBubbleTail,
+            bubbleMode: chatBubbleCorners.bubbleMode,
+            serifMessageText: chatBubbleCorners.serifMessageText
+        )
         self.largeEmoji = largeEmoji
         self.isPreview = isPreview
         
@@ -62,7 +84,12 @@ public final class ChatPresentationData {
         self.messageBoldFont = Font.bold(baseFontSize)
         self.messageItalicFont = Font.italic(baseFontSize)
         self.messageBoldItalicFont = Font.semiboldItalic(baseFontSize)
-        self.messageFixedFont = Font.monospace(baseFontSize)
+        let fontName = appearance.codeFontName
+        if !fontName.isEmpty {
+            self.messageFixedFont = UIFont(name: fontName, size: baseFontSize) ?? Font.monospace(baseFontSize)
+        } else {
+            self.messageFixedFont = Font.monospace(baseFontSize)
+        }
         self.messageBlockQuoteFont = Font.regular(baseFontSize - 1.0)
         self.messageTextFonts = ChatPresentationData.messageTextFonts(serif: chatBubbleCorners.serifMessageText, baseFontSize: baseFontSize)
 
@@ -102,16 +129,18 @@ public final class ChatPresentationData {
     
     public func withTheme(_ theme: ChatPresentationThemeData) -> ChatPresentationData {
         return ChatPresentationData(
-            theme: self.theme,
+            theme: theme,
             fontSize: self.fontSize,
             strings: self.strings,
             dateTimeFormat: self.dateTimeFormat,
             nameDisplayOrder: self.nameDisplayOrder,
             disableAnimations: self.disableAnimations,
             largeEmoji: self.largeEmoji,
-            chatBubbleCorners: self.chatBubbleCorners,
+            chatBubbleCorners: self.sourceChatBubbleCorners,
             animatedEmojiScale: self.animatedEmojiScale,
-            isPreview: self.isPreview
+            isPreview: self.isPreview,
+            accountPeerId: self.accountPeerId,
+            chatAppearance: self.chatAppearance
         )
     }
 }

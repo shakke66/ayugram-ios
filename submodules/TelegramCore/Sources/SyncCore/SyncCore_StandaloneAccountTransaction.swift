@@ -45,6 +45,16 @@ public let telegramPostboxSeedConfiguration: SeedConfiguration = {
             return nil
         },
         existingMessageTags: MessageTags.all,
+        locallyDeletedMessageTags: [
+            .unseenPersonalMessage,
+            .unseenReaction,
+            .unseenPollVote,
+            .pinned
+        ],
+        locallyDeletedMessageGlobalTags: [
+            .Calls,
+            .MissedCalls
+        ],
         messageTagsWithSummary: [.unseenPersonalMessage, .pinned, .video, .photo, .gif, .music, .voiceOrInstantVideo, .webPage, .file, .unseenReaction, .unseenPollVote],
         messageTagsWithThreadSummary: [.unseenPersonalMessage, .unseenReaction, .unseenPollVote],
         existingGlobalMessageTags: GlobalMessageTags.all,
@@ -122,6 +132,18 @@ public let telegramPostboxSeedConfiguration: SeedConfiguration = {
         mergeMessageAttributes: { previous, updated in
             if previous.isEmpty {
                 return
+            }
+            if let deleted = previous.first(where: { $0 is GRVMDeletedMessageAttribute }),
+               !updated.contains(where: { $0 is GRVMDeletedMessageAttribute }) {
+                updated.append(deleted)
+            }
+            if let editHistory = previous.first(where: { $0 is GRVMEditHistoryMessageAttribute }),
+               !updated.contains(where: { $0 is GRVMEditHistoryMessageAttribute }) {
+                updated.append(editHistory)
+            }
+            if let preservedConsumable = previous.first(where: { $0 is GRVMPreservedConsumableMediaAttribute }),
+               !updated.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) {
+                updated.append(preservedConsumable)
             }
             var audioTranscription: AudioTranscriptionMessageAttribute?
             for attribute in previous {

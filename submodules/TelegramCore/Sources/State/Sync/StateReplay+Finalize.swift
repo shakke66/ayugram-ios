@@ -261,7 +261,7 @@ extension ReplayContext {
             }).map({ $0.1 })
             for file in stickerFiles {
                 if let entry = CodableEntry(RecentMediaItem(file)) {
-                    transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: 20)
+                    transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry), removeTailIfCountExceeds: grvmRecentStickersLimit())
                 }
             }
         }
@@ -357,7 +357,7 @@ extension ReplayContext {
             inner: while true {
                 let keychain = (transaction.getPeerChatState(peerId) as? SecretChatState)?.keychain
                 if processSecretChatIncomingEncryptedOperations(transaction: transaction, peerId: peerId) {
-                    let processResult = processSecretChatIncomingDecryptedOperations(encryptionProvider: encryptionProvider, mediaBox: mediaBox, transaction: transaction, peerId: peerId)
+                    let processResult = processSecretChatIncomingDecryptedOperations(accountPeerId: accountPeerId, encryptionProvider: encryptionProvider, mediaBox: mediaBox, transaction: transaction, peerId: peerId)
                     if !processResult.addedMessages.isEmpty {
                         let currentInclusion = transaction.getPeerChatListInclusion(peerId)
                         if let groupId = currentInclusion.groupId, groupId == Namespaces.PeerGroup.archive, !keepArchivedUnmuted {
@@ -522,7 +522,7 @@ extension ReplayContext {
         for (uniqueId, messageIdValue) in finalState.state.updatedOutgoingUniqueMessageIds {
             if let peerId = removePossiblyDeliveredMessagesUniqueIds[uniqueId] {
                 let messageId = MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: messageIdValue)
-                deleteMessagesInteractively(transaction: transaction, stateManager: nil, postbox: postbox, messageIds: [messageId], type: .forEveryone, deleteAllInGroup: false, removeIfPossiblyDelivered: false)
+                deleteMessagesInteractively(accountPeerId: accountPeerId, transaction: transaction, stateManager: nil, postbox: postbox, messageIds: [messageId], type: .forEveryone, deleteAllInGroup: false, removeIfPossiblyDelivered: false)
             }
         }
     }

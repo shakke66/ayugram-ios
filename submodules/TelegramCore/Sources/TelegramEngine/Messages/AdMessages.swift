@@ -480,6 +480,9 @@ private class AdMessagesHistoryContextImpl {
         if self.isActivated {
             return
         }
+        if AyuGramHooks.shouldDisableAds?(self.account.peerId) == true {
+            return
+        }
         self.isActivated = true
         
         let peerId = self.peerId

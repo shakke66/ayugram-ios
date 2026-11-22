@@ -130,7 +130,7 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
         return true
     }
     
-    if let mediaData = chatMessageGalleryControllerData(context: params.context, chatLocation: params.chatLocation, chatFilterTag: params.chatFilterTag, chatLocationContextHolder: params.chatLocationContextHolder, message: params.message, mediaSubject: params.mediaSubject, navigationController: params.navigationController, standalone: params.standalone, reverseMessageGalleryOrder: params.reverseMessageGalleryOrder, mode: params.mode, source: params.gallerySource, synchronousLoad: false, actionInteraction: params.actionInteraction) {
+    if let mediaData = chatMessageGalleryControllerData(context: params.context, chatLocation: params.chatLocation, chatFilterTag: params.chatFilterTag, chatLocationContextHolder: params.chatLocationContextHolder, message: params.message, mediaSubject: params.mediaSubject, navigationController: params.navigationController, standalone: params.standalone, reverseMessageGalleryOrder: params.reverseMessageGalleryOrder, mode: params.mode, source: params.gallerySource, synchronousLoad: false, actionInteraction: params.actionInteraction, consumeOnOpen: params.consumeOnOpen) {
         switch mediaData {
             case let .url(url):
                 params.openUrl(url)
@@ -293,7 +293,16 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
                 if case let .timecode(time) = params.mode {
                     control = .seek(time)
                 }
-                if (file.isVoice || file.isInstantVideo) && params.message.tags.contains(.voiceOrInstantVideo) {
+                if !params.consumeOnOpen {
+                    location = .recentActions(params.message)
+                    if file.isVoice || file.isInstantVideo {
+                        playerType = .voice
+                    } else if file.isMusic {
+                        playerType = .music
+                    } else {
+                        playerType = .file
+                    }
+                } else if (file.isVoice || file.isInstantVideo) && params.message.tags.contains(.voiceOrInstantVideo) {
                     if let playlistLocation = params.playlistLocation {
                         location = playlistLocation
                     } else if params.standalone {
@@ -321,7 +330,7 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
                     }
                     playerType = (file.isVoice || file.isInstantVideo) ? .voice : .file
                 }
-                params.context.sharedContext.mediaManager.setPlaylist((params.context, PeerMessagesMediaPlaylist(context: params.context, location: location, chatLocationContextHolder: params.chatLocationContextHolder)), type: playerType, control: control)
+                params.context.sharedContext.mediaManager.setPlaylist((params.context, PeerMessagesMediaPlaylist(context: params.context, location: location, chatLocationContextHolder: params.chatLocationContextHolder, consumeViewOnce: params.consumeOnOpen)), type: playerType, control: control)
             
                 if case .voice = playerType {
                     let _ = (params.context.sharedContext.mediaManager.audioSession.didActivateWithZeroVolume() |> map { _ -> Bool in

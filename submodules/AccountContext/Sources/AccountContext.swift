@@ -1952,6 +1952,12 @@ public protocol AccountContext: AnyObject {
     func chatLocationOutgoingReadState(for location: ChatLocation, contextHolder: Atomic<ChatLocationContextHolder?>) -> Signal<EngineMessage.Id?, NoError>
     func chatLocationUnreadCount(for location: ChatLocation, contextHolder: Atomic<ChatLocationContextHolder?>) -> Signal<Int, NoError>
     func applyMaxReadIndex(for location: ChatLocation, contextHolder: Atomic<ChatLocationContextHolder?>, messageIndex: EngineMessage.Index)
+    func grvmApplyMaxReadIndex(
+        for location: ChatLocation,
+        contextHolder: Atomic<ChatLocationContextHolder?>,
+        messageIndex: EngineMessage.Index,
+        mode: GRVMReadMode
+    )
 
     func scheduleGroupCall(peerId: EnginePeer.Id, parentController: ViewController)
     func joinGroupCall(peerId: EnginePeer.Id, invite: String?, requestJoinAsPeerId: ((@escaping (EnginePeer.Id?) -> Void) -> Void)?, activeCall: EngineGroupCallDescription)

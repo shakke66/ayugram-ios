@@ -1981,7 +1981,7 @@ func peerInfoScreenData(
                     if hasStories {
                         availablePanes?.insert(.stories, at: 0)
                     }
-                    if let recommendedChannels, !recommendedChannels.channels.isEmpty {
+                    if let recommendedChannels, !recommendedChannels.channels.isEmpty, AyuGramHooks.shouldDisableSimilarChannels?(context.account.peerId) != true {
                         availablePanes?.append(.similarChannels)
                     }
                     

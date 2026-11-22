@@ -105,6 +105,7 @@ public final class TapLongTapOrDoubleTapGestureRecognizer: UIGestureRecognizer, 
     public var highlight: ((CGPoint?) -> Void)?
     
     public var hapticFeedback: HapticFeedback?
+    public private(set) var grvmModifierPressed: Bool = false
     
     private var highlightPoint: CGPoint?
     
@@ -115,6 +116,7 @@ public final class TapLongTapOrDoubleTapGestureRecognizer: UIGestureRecognizer, 
     }
     
     override public func reset() {
+        self.grvmModifierPressed = false
         self.timer?.invalidate()
         self.timer = nil
         self.touchLocationAndTimestamp = nil
@@ -210,6 +212,11 @@ public final class TapLongTapOrDoubleTapGestureRecognizer: UIGestureRecognizer, 
     
     override public func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         self.lastRecognizedGestureAndLocation = nil
+        if #available(iOS 13.4, *) {
+            self.grvmModifierPressed = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.control)
+        } else {
+            self.grvmModifierPressed = false
+        }
         
         super.touchesBegan(touches, with: event)
         

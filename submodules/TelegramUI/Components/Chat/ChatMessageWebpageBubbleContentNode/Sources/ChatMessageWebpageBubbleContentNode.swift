@@ -575,6 +575,14 @@ public final class ChatMessageWebpageBubbleContentNode: ChatMessageBubbleContent
                         }
                     }
                 }
+
+                if webPageContent != nil, AyuGramHooks.shouldImproveLinkPreviews?(item.context.account.peerId) == true {
+                    let senderForcedInline = (item.message.attributes.first(where: { $0 is WebpagePreviewMessageAttribute }) as? WebpagePreviewMessageAttribute)?.forceLargeMedia == false
+                    if var flags = mediaAndFlags, !flags.1.contains(.stickerPack), !senderForcedInline {
+                        flags.1.remove(.preferMediaInline)
+                        mediaAndFlags = flags
+                    }
+                }
             } else if let adAttribute = item.message.adAttribute {
                 switch adAttribute.messageType {
                 case .sponsored:

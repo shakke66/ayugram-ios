@@ -3757,12 +3757,11 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             }
             
             let premiumConfiguration = PremiumConfiguration.with(appConfiguration: item.context.currentAppConfiguration.with { $0 })
-            var isAccountPeer = false
-            if case let .chatList(index) = item.index, index.messageIndex.id.peerId == item.context.account.peerId {
-                isAccountPeer = true
-            }
+            let hidePremiumStatuses = AyuGramHooks.chatAppearance(
+                accountPeerId: item.context.account.peerId
+            ).appearance.hidePremiumStatuses
             
-            if !isPeerGroup && !isAccountPeer && threadInfo == nil {
+            if !isPeerGroup && threadInfo == nil {
                 if displayAsMessage {
                     switch item.content {
                     case let .peer(peerData):
@@ -3774,6 +3773,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         }
                         
                         if let peer = iconPeer {
+                            let shouldHidePremiumStatus = hidePremiumStatuses && peer.id != item.context.account.peerId
                             if case let .peer(peerData) = item.content, peerData.customMessageListData != nil {
                                 currentCredibilityIconContent = nil
                             } else if case .savedMessagesChats = item.chatListLocation, peer.id == item.context.account.peerId {
@@ -3782,12 +3782,12 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                                 currentCredibilityIconContent = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased())
                             } else if peer.isFake {
                                 currentCredibilityIconContent = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased())
-                            } else if let emojiStatus = peer.emojiStatus {
+                            } else if let emojiStatus = peer.emojiStatus, !shouldHidePremiumStatus {
                                 currentStatusIconContent = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 32.0, height: 32.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(2))
                                 if let color = emojiStatus.color {
                                     currentStatusIconParticleColor = UIColor(rgb: UInt32(bitPattern: color))
                                 }
-                            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled {
+                            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !shouldHidePremiumStatus {
                                 currentCredibilityIconContent = .premium(color: item.presentationData.theme.list.itemAccentColor)
                             }
                             
@@ -3802,6 +3802,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         break
                     }
                 } else if case let .chat(itemPeer) = contentPeer, let peer = itemPeer.chatOrMonoforumMainPeer {
+                    let shouldHidePremiumStatus = hidePremiumStatuses && peer.id != item.context.account.peerId
                     if peer.isSubscription {
                         isSubscription = true
                     }
@@ -3813,12 +3814,12 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         currentCredibilityIconContent = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased())
                     } else if peer.isFake {
                         currentCredibilityIconContent = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased())
-                    } else if let emojiStatus = peer.emojiStatus {
+                    } else if let emojiStatus = peer.emojiStatus, !shouldHidePremiumStatus {
                         currentStatusIconContent = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 32.0, height: 32.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(2))
                         if let color = emojiStatus.color {
                             currentStatusIconParticleColor = UIColor(rgb: UInt32(bitPattern: color))
                         }
-                    } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled {
+                    } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !shouldHidePremiumStatus {
                         currentCredibilityIconContent = .premium(color: item.presentationData.theme.list.itemAccentColor)
                     }
                     
@@ -4201,7 +4202,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                                         ItemListRevealOption(key: RevealOptionKey.ungroup.rawValue, title: item.presentationData.strings.ChatList_Context_Ungroup, icon: ungroupCommunityIcon, color: item.presentationData.theme.list.itemDisclosureActions.destructive.fillColor, iconColor: item.presentationData.theme.list.itemDisclosureActions.destructive.foregroundColor, textColor: item.presentationData.theme.chatList.dateTextColor, isDestructive: true)
                                     ]
                                 } else {
-                                    peerRevealOptions = revealOptions(strings: item.presentationData.strings, theme: item.presentationData.theme, isPinned: isPinned, isMuted: !isAccountPeer ? isMuted : nil, location: item.chatListLocation, peerId: renderedPeer.peerId, accountPeerId: item.context.account.peerId, canDelete: true, isEditing: item.editing, filterData: item.filterData)
+                                    peerRevealOptions = revealOptions(strings: item.presentationData.strings, theme: item.presentationData.theme, isPinned: isPinned, isMuted: renderedPeer.peerId != item.context.account.peerId ? isMuted : nil, location: item.chatListLocation, peerId: renderedPeer.peerId, accountPeerId: item.context.account.peerId, canDelete: true, isEditing: item.editing, filterData: item.filterData)
                                 }
                                 if case let .chat(itemPeer) = contentPeer {
                                     peerLeftRevealOptions = leftRevealOptions(strings: item.presentationData.strings, theme: item.presentationData.theme, isUnread: unreadCount.unread, isEditing: item.editing, isPinned: isPinned, isSavedMessages: itemPeer.peerId == item.context.account.peerId, location: item.chatListLocation, peer: itemPeer.peers[itemPeer.peerId]!, filterData: item.filterData)

@@ -123,12 +123,14 @@ public struct OpenMessageParams {
     public var mediaSubject: GalleryMediaSubject?
     public var progress: Promise<Bool>?
     public var decryptWalletComment: Bool
+    public var consumeOnOpen: Bool
     
-    public init(mode: ChatControllerInteractionOpenMessageMode, mediaSubject: GalleryMediaSubject? = nil, progress: Promise<Bool>? = nil, decryptWalletComment: Bool = false) {
+    public init(mode: ChatControllerInteractionOpenMessageMode, mediaSubject: GalleryMediaSubject? = nil, progress: Promise<Bool>? = nil, decryptWalletComment: Bool = false, consumeOnOpen: Bool = true) {
         self.mode = mode
         self.mediaSubject = mediaSubject
         self.progress = progress
         self.decryptWalletComment = decryptWalletComment
+        self.consumeOnOpen = consumeOnOpen
     }
 }
 
@@ -373,6 +375,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     public var enableFullTranslucency: Bool = true
     public var chatIsRotated: Bool = true
     public var canReadHistory: Bool = false
+    public var grvmForwardLocalCopy: ((Message) -> Void)?
     public var summarizedMessageIds: Set<EngineMessage.Id> = Set()
     public var focusedTextInputIsMedia: Bool = false
     public var focusedPollAddOptionMessageId: EngineMessage.Id?

@@ -184,7 +184,7 @@ final class WebAppWebView: WKWebView {
         }
         
         super.init(frame: CGRect(), configuration: configuration)
-        
+
         self.disablesInteractiveKeyboardGestureRecognizer = true
         
         self.isOpaque = false

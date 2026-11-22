@@ -39,7 +39,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
     private let filter: ChatListNodePeersFilter
     private let forumPeerId: (id: EnginePeer.Id, isMonoforum: Bool)?
     private let hasGlobalSearch: Bool
-    private let forwardedMessageIds: [EngineMessage.Id]
+    private let forwardedMessageIds: [EngineMessage.Id]?
     private let hasTypeHeaders: Bool
     private let requestPeerType: [ReplyMarkupButtonRequestPeerType]?
     private let suggestedPeers: [EnginePeer]
@@ -130,7 +130,7 @@ final class PeerSelectionControllerNode: ASDisplayNode {
         hasChatListSelector: Bool,
         hasContactSelector: Bool,
         hasGlobalSearch: Bool,
-        forwardedMessageIds: [EngineMessage.Id],
+        forwardedMessageIds: [EngineMessage.Id]?,
         hasTypeHeaders: Bool,
         requestPeerType: [ReplyMarkupButtonRequestPeerType]?,
         showPeerTypeRequirements: Bool = true,
@@ -987,18 +987,28 @@ final class PeerSelectionControllerNode: ASDisplayNode {
         } else {
             if let _ = self.textInputPanelNode {
             } else {
-                let forwardAccessoryPanelNode = ForwardAccessoryPanelNode(context: self.context, messageIds: self.forwardedMessageIds, theme: self.presentationData.theme, strings: self.presentationData.strings, fontSize: self.presentationData.chatFontSize, nameDisplayOrder: self.presentationData.nameDisplayOrder, forwardOptionsState: self.presentationInterfaceState.interfaceState.forwardOptionsState, animationCache: nil, animationRenderer: nil)
-                forwardAccessoryPanelNode.interfaceInteraction = self.interfaceInteraction
+                var forwardAccessoryPanelNode: ForwardAccessoryPanelNode?
+                if let forwardedMessageIds = self.forwardedMessageIds {
+                    let forwardAccessoryPanelNodeValue = ForwardAccessoryPanelNode(context: self.context, messageIds: forwardedMessageIds, theme: self.presentationData.theme, strings: self.presentationData.strings, fontSize: self.presentationData.chatFontSize, nameDisplayOrder: self.presentationData.nameDisplayOrder, forwardOptionsState: self.presentationInterfaceState.interfaceState.forwardOptionsState, animationCache: nil, animationRenderer: nil)
+                    forwardAccessoryPanelNodeValue.interfaceInteraction = self.interfaceInteraction
+                    forwardAccessoryPanelNode = forwardAccessoryPanelNodeValue
+                }
                 if self.bottomEdgeEffectView == nil {
                     let textInputEdgeEffectView = EdgeEffectView()
                     self.view.addSubview(textInputEdgeEffectView)
                     self.textInputEdgeEffectView = textInputEdgeEffectView
                 }
-                self.addSubnode(forwardAccessoryPanelNode)
-                self.forwardAccessoryPanelNode = forwardAccessoryPanelNode
+                if let forwardAccessoryPanelNode {
+                    self.addSubnode(forwardAccessoryPanelNode)
+                    self.forwardAccessoryPanelNode = forwardAccessoryPanelNode
+                }
 
                 let textInputBackgroundView = GlassBackgroundView()
-                self.view.insertSubview(textInputBackgroundView, belowSubview: forwardAccessoryPanelNode.view)
+                if let forwardAccessoryPanelNode {
+                    self.view.insertSubview(textInputBackgroundView, belowSubview: forwardAccessoryPanelNode.view)
+                } else {
+                    self.view.addSubview(textInputBackgroundView)
+                }
                 self.textInputBackgroundView = textInputBackgroundView
 
                 let textInputPanelNode = AttachmentTextInputPanelNode(

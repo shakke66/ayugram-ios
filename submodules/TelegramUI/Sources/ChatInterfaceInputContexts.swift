@@ -88,6 +88,7 @@ func inputContextQueriesForChatPresentationIntefaceState(_ chatPresentationInter
 }
 
 func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, controller: ChatControllerImpl) -> ChatTextInputPanelState {
+    let compose = AyuGramHooks.chatAppearance(accountPeerId: context.account.peerId).compose
     var contextPlaceholder: NSAttributedString?
     loop: for (_, result) in chatPresentationInterfaceState.inputQueryResults {
         if case let .contextRequestResult(peer, _) = result, case let .user(botUser) = peer, let botInfo = botUser.botInfo, let inlinePlaceholder = botInfo.inlinePlaceholder {
@@ -147,7 +148,9 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
         if case .scheduledMessages = chatPresentationInterfaceState.subject {
         } else if chatPresentationInterfaceState.renderedPeer?.peerId != context.account.peerId {
             if currentAutoremoveTimeout != nil || chatPresentationInterfaceState.renderedPeer?.peer is TelegramSecretChat {
-                accessoryItems.append(.messageAutoremoveTimeout(currentAutoremoveTimeout))
+                if compose.showTTLButton {
+                    accessoryItems.append(.messageAutoremoveTimeout(currentAutoremoveTimeout))
+                }
             }
         }
     }
@@ -160,7 +163,9 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
             return ChatTextInputPanelState(accessoryItems: [.botInput(isEnabled: true, inputMode: .keyboard)], contextPlaceholder: contextPlaceholder, mediaRecordingState: chatPresentationInterfaceState.inputTextPanelState.mediaRecordingState)
         case .none, .text:
             if let _ = chatPresentationInterfaceState.interfaceState.editMessage {
-                accessoryItems.append(.input(isEnabled: true, inputMode: .emoji))
+                if compose.showEmojiButton {
+                    accessoryItems.append(.input(isEnabled: true, inputMode: .emoji))
+                }
                 
                 return ChatTextInputPanelState(accessoryItems: accessoryItems, contextPlaceholder: contextPlaceholder, mediaRecordingState: chatPresentationInterfaceState.inputTextPanelState.mediaRecordingState)
             } else {
@@ -182,9 +187,13 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                     if case .scheduledMessages = chatPresentationInterfaceState.subject {
                     } else if chatPresentationInterfaceState.renderedPeer?.peerId != context.account.peerId {
                         if let peer = chatPresentationInterfaceState.renderedPeer?.peer as? TelegramSecretChat, chatPresentationInterfaceState.interfaceState.composeInputState.isEmpty {
-                            accessoryItems.append(.messageAutoremoveTimeout(peer.messageAutoremoveTimeout))
+                            if compose.showTTLButton {
+                                accessoryItems.append(.messageAutoremoveTimeout(peer.messageAutoremoveTimeout))
+                            }
                         } else if currentAutoremoveTimeout != nil && chatPresentationInterfaceState.interfaceState.composeInputState.isEmpty {
-                            accessoryItems.append(.messageAutoremoveTimeout(currentAutoremoveTimeout))
+                            if compose.showTTLButton {
+                                accessoryItems.append(.messageAutoremoveTimeout(currentAutoremoveTimeout))
+                            }
                         }
                     }
                 }
@@ -203,7 +212,9 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                         }
                     }
                     if isTextEmpty, showPremiumGift, let peer = chatPresentationInterfaceState.renderedPeer?.peer as? TelegramUser, !peer.isDeleted && peer.botInfo == nil && !peer.flags.contains(.isSupport) { //&& chatPresentationInterfaceState.suggestPremiumGift {
-                        accessoryItems.append(.gift)
+                        if compose.showGiftButton {
+                            accessoryItems.append(.gift)
+                        }
                     }
                 }
                    
@@ -255,14 +266,20 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                 
                 if !canSendTextMessages {
                     if stickersEnabled && !stickersAreEmoji && !hasForward {
-                        accessoryItems.append(.input(isEnabled: true, inputMode: .stickers))
+                        if compose.showEmojiButton {
+                            accessoryItems.append(.input(isEnabled: true, inputMode: .stickers))
+                        }
                     }
                 } else {
                     stickersAreEmoji = stickersAreEmoji || hasForward
                     if stickersEnabled {
-                        accessoryItems.append(.input(isEnabled: true, inputMode: stickersAreEmoji ? .emoji : .stickers))
+                        if compose.showEmojiButton {
+                            accessoryItems.append(.input(isEnabled: true, inputMode: stickersAreEmoji ? .emoji : .stickers))
+                        }
                     } else {
-                        accessoryItems.append(.input(isEnabled: true, inputMode: .emoji))
+                        if compose.showEmojiButton {
+                            accessoryItems.append(.input(isEnabled: true, inputMode: .emoji))
+                        }
                     }
                 }
                 

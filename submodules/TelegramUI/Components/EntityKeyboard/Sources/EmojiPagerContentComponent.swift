@@ -3914,6 +3914,7 @@ public final class EmojiPagerContentComponent: Component {
                                 self.mirrorContentScrollView.layer.addSublayer(tintContentLayer)
                             }
                         }
+                        itemLayer.updateStickerArtworkClipping(isDetailed: component.itemLayoutType == .detailed)
                         
                         var itemFrame = itemLayout.frame(groupIndex: groupItems.groupIndex, itemIndex: index)
                         let baseItemFrame = itemFrame

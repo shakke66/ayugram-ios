@@ -47,6 +47,20 @@ func _internal_removePeerChat(account: Account, transaction: Transaction, mediaB
         }
         return updatedFilters
     })
+    if AyuGramHooks.shouldSaveDeletedMessages?(account.peerId) == true {
+        var messageIds: [MessageId] = []
+        transaction.withAllMessages(peerId: peerId, { message in
+            messageIds.append(message.id)
+            return true
+        })
+        _internal_applyMessageDeletion(
+            accountPeerId: account.peerId,
+            transaction: transaction,
+            mediaBox: mediaBox,
+            ids: messageIds,
+            mode: .server(.localAction)
+        )
+    }
     if peerId.namespace == Namespaces.Peer.SecretChat {
         if let state = transaction.getPeerChatState(peerId) as? SecretChatState, state.embeddedState != .terminated {
             let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: peerId, operation: SecretChatOutgoingOperationContents.terminate(reportSpam: reportChatSpam, requestRemoteHistoryRemoval: deleteGloballyIfPossible), state: state).withUpdatedEmbeddedState(.terminated)
@@ -59,17 +73,17 @@ func _internal_removePeerChat(account: Account, transaction: Transaction, mediaB
                 }
             }
         }
-        _internal_clearHistory(transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
+        _internal_clearHistory(accountPeerId: account.peerId, transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
         transaction.updatePeerChatListInclusion(peerId, inclusion: .notIncluded)
         transaction.removeOrderedItemListItem(collectionId: Namespaces.OrderedItemList.RecentlySearchedPeerIds, itemId: RecentPeerItemId(peerId).rawValue)
     } else {
         cloudChatAddRemoveChatOperation(transaction: transaction, peerId: peerId, reportChatSpam: reportChatSpam, deleteGloballyIfPossible: deleteGloballyIfPossible)
         if peerId.namespace == Namespaces.Peer.CloudUser  {
             transaction.updatePeerChatListInclusion(peerId, inclusion: .notIncluded)
-            _internal_clearHistory(transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
+            _internal_clearHistory(accountPeerId: account.peerId, transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
         } else if peerId.namespace == Namespaces.Peer.CloudGroup {
             transaction.updatePeerChatListInclusion(peerId, inclusion: .notIncluded)
-            _internal_clearHistory(transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
+            _internal_clearHistory(accountPeerId: account.peerId, transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
         } else {
             transaction.updatePeerChatListInclusion(peerId, inclusion: .notIncluded)
         }

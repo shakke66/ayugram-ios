@@ -77,6 +77,24 @@ extension ReplayContext {
             }
         }
 
+        // GRVMgram: a re-delivered message keeps its local edit/deletion state; local Premium peers are refreshed.
+        messages = messages.map { message in
+            guard case let .Id(id) = message.id,
+                  let previous = transaction.getMessage(id) else {
+                return message
+            }
+            return grvmMergedEditedMessage(
+                previous: previous,
+                incoming: message,
+                markHistory: false
+            )
+        }
+
+        grvmUpdateLocalPremiumPeerStates(
+            transaction: transaction,
+            accountPeerId: accountPeerId,
+            messages: messages
+        )
         let _ = transaction.addMessages(messages, location: location)
         if case .UpperHistoryBlock = location {
             for message in messages {
@@ -244,23 +262,29 @@ extension ReplayContext {
     func applyAddScheduledMessages(_ messages: [StoreMessage]) {
         for message in messages {
             if case let .Id(id) = message.id, let _ = transaction.getMessage(id) {
-                transaction.updateMessage(id) { _ -> PostboxUpdateMessage in
-                    return .update(message)
-                }
+                grvmApplyEditedMessage(
+                    accountPeerId: accountPeerId,
+                    transaction: transaction,
+                    id: id,
+                    message: message
+                )
             } else {
-                let _ = transaction.addMessages(messages, location: .Random)
+                let _ = transaction.addMessages([message], location: .Random)
             }
         }
     }
-    
+
     func applyAddQuickReplyMessages(_ messages: [StoreMessage]) {
         for message in messages {
             if case let .Id(id) = message.id, let _ = transaction.getMessage(id) {
-                transaction.updateMessage(id) { _ -> PostboxUpdateMessage in
-                    return .update(message)
-                }
+                grvmApplyEditedMessage(
+                    accountPeerId: accountPeerId,
+                    transaction: transaction,
+                    id: id,
+                    message: message
+                )
             } else {
-                let _ = transaction.addMessages(messages, location: .Random)
+                let _ = transaction.addMessages([message], location: .Random)
             }
         }
     }
@@ -274,38 +298,87 @@ extension ReplayContext {
     }
     
     func applyDeleteMessagesWithGlobalIds(_ ids: [Int32]) {
-        var resourceIds: [MediaResourceId] = []
-        transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
-            addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
-        })
-        if !resourceIds.isEmpty {
-            let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
-        }
+        // GRVMgram: server deletions go through the archive-aware deletion (keeps them when saving is on).
+        let messageIds = transaction.messageIdsForGlobalIds(ids)
+        _internal_applyMessageDeletion(
+            accountPeerId: accountPeerId,
+            transaction: transaction,
+            mediaBox: mediaBox,
+            ids: messageIds,
+            mode: .server(.server)
+        )
         deletedMessageIds.append(contentsOf: ids.map { .global($0) })
     }
-    
+
     func applyDeleteMessages(_ ids: [MessageId]) {
-        _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
-            self.addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
-        })
+        // GRVMgram: server deletions go through the archive-aware deletion (keeps them when saving is on).
+        _internal_applyMessageDeletion(
+            accountPeerId: accountPeerId,
+            transaction: transaction,
+            mediaBox: mediaBox,
+            ids: ids,
+            mode: .server(.server),
+            manualAddMessageThreadStatsDifference: { id, add, remove in
+                self.addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
+            }
+        )
         deletedMessageIds.append(contentsOf: ids.map { .messageId($0) })
     }
-    
+
     func applyUpdateMinAvailableMessage(_ id: MessageId) {
         if let message = transaction.getMessage(id) {
             updatePeerChatInclusionWithMinTimestamp(transaction: transaction, id: id.peerId, minTimestamp: message.timestamp, forceRootGroupIfNotExists: false)
         }
-        var resourceIds: [MediaResourceId] = []
-        transaction.deleteMessagesInRange(peerId: id.peerId, namespace: id.namespace, minId: 1, maxId: id.id, forEachMedia: { media in
-            addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+        // GRVMgram: history cut by the server keeps saved messages when saving is on.
+        let shouldPreserve = AyuGramHooks.shouldSaveDeletedMessages?(accountPeerId) == true
+        var messageIds: [MessageId] = []
+        var hasLocallyDeletedMessage = false
+        transaction.withAllMessages(peerId: id.peerId, namespace: id.namespace, { message in
+            if message.id.id >= 1 && message.id.id <= id.id {
+                messageIds.append(message.id)
+                hasLocallyDeletedMessage = hasLocallyDeletedMessage || isLocallyDeletedMessage(message.attributes)
+            }
+            return true
         })
-        if !resourceIds.isEmpty {
-            let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+        if shouldPreserve || hasLocallyDeletedMessage {
+            _internal_applyMessageDeletion(
+                accountPeerId: accountPeerId,
+                transaction: transaction,
+                mediaBox: mediaBox,
+                ids: messageIds,
+                mode: .server(.minimumAvailable)
+            )
+        } else {
+            var resourceIds: [MediaResourceId] = []
+            transaction.deleteMessagesInRange(peerId: id.peerId, namespace: id.namespace, minId: 1, maxId: id.id, forEachMedia: { media in
+                addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+            })
+            if !resourceIds.isEmpty {
+                let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+            }
         }
     }
     
     func applyEditMessage(_ id: MessageId, _ message: StoreMessage) {
+        // GRVMgram: keep the previous revision in the edit history and carry the local edit/deletion state over.
+        let shouldMarkHistory = grvmPreserveEditRevisionIfNeeded(
+            accountPeerId: accountPeerId,
+            transaction: transaction,
+            id: id,
+            incoming: message
+        )
+        let mergedIncomingAttributes: [MessageAttribute]?
+        if let previousMessage = transaction.getMessage(id) {
+            mergedIncomingAttributes = grvmMergedEditStateAttributes(
+                previous: previousMessage.attributes,
+                incoming: message.attributes,
+                markHistory: shouldMarkHistory
+            )
+        } else {
+            mergedIncomingAttributes = nil
+        }
         var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?
+        var replayedGRVMLocalPremiumMessage: StoreMessage?
         transaction.updateMessage(id, update: { previousMessage in
             let peers: [PeerId:Peer] = previousMessage.peers.reduce([:], { current, value in
                 var current = current
@@ -317,8 +390,23 @@ extension ReplayContext {
                 generatedEvent = reactionGeneratedEvent(previousMessage.reactionsAttribute, message.reactionsAttribute, message: message, transaction: transaction)
             }
 
-            return .update(mergedServerMessageUpdate(previous: previousMessage, updated: message))
+            let incoming = mergedIncomingAttributes.map { message.withUpdatedAttributes($0) } ?? message
+            var grvmUpdatedMessage = mergedServerMessageUpdate(previous: previousMessage, updated: incoming)
+            // GRVMgram: a preserved one-time media stays playable after the server expires it.
+            if let preservedConsumable = previousMessage.attributes.first(where: { $0 is GRVMPreservedConsumableMediaAttribute }) as? GRVMPreservedConsumableMediaAttribute,
+               message.media.contains(where: { $0 is TelegramMediaExpiredContent }) {
+                grvmUpdatedMessage = grvmUpdatedMessage.withUpdatedMedia(preservedConsumable.media)
+            }
+            replayedGRVMLocalPremiumMessage = grvmUpdatedMessage
+            return .update(grvmUpdatedMessage)
         })
+        if let replayedGRVMLocalPremiumMessage {
+            grvmUpdateLocalPremiumPeerStates(
+                transaction: transaction,
+                accountPeerId: accountPeerId,
+                messages: [replayedGRVMLocalPremiumMessage]
+            )
+        }
         // A fetch in flight may be bringing the message with its old content, over the edited one or, with none stored
         // here, instead of it; it stores this edit in its place (Postbox's record of recent edits,
         // `fetchedMessagesWithRecentEdits`; owner decision 2026-10-25).

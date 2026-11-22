@@ -707,7 +707,7 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
                         yesterdayFormatString: { value in
                             return PresentationStrings.FormattedString(string: presentationData.strings.Chat_MessageSeenTimestamp_YesterdayAt(value).string, ranges: [])
                         }
-                    )).string
+                    ), withSeconds: true).string
                     text = dateText
                 }
                 
@@ -889,7 +889,7 @@ public final class ReactionListContextMenuContent: ContextControllerItemsContent
             self.deleteReaction = deleteReaction
             
             self.listContext = context.engine.messages.messageReactionList(message: message, readStats: readStats, reaction: reaction)
-            self.state = ItemsState(listState: EngineMessageReactionListContext.State(message: message, readStats: readStats, reaction: reaction), readStats: readStats)
+            self.state = ItemsState(listState: EngineMessageReactionListContext.State(accountPeerId: context.account.peerId, message: message, readStats: readStats, reaction: reaction), readStats: readStats)
             
             self.scrollNode = ASScrollNode()
             self.separatorNode = ASDisplayNode()

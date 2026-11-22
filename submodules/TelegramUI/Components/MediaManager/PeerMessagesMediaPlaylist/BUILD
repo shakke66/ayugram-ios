@@ -14,6 +14,7 @@ swift_library(
         "//submodules/ComponentFlow",
         "//submodules/SSignalKit/SwiftSignalKit",
         "//submodules/TelegramCore",
+        "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//submodules/TelegramUIPreferences",
         "//submodules/AccountContext",
         "//submodules/MusicAlbumArtResources",

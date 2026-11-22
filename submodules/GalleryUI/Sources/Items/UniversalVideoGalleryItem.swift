@@ -1526,7 +1526,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                 videoNode.removeFromSupernode()
             }
             
-            if isAnimated || disablePlayerControls {
+            if disablePlayerControls {
                 self.footerContentNode.scrubberView = nil
             }
             
@@ -1790,13 +1790,13 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                                 }
                                 if let content = item.content as? NativeVideoContent, !isStreaming {
                                     initialBuffering = false
-                                    if !content.enableSound {
+                                    if !content.enableSound && !isAnimated {
                                         isPaused = false
                                     }
                                 }
                             default:
                                 if let content = item.content as? NativeVideoContent, !content.streamVideo.enabled {
-                                    if !content.enableSound {
+                                    if !content.enableSound && !isAnimated {
                                         isPaused = false
                                     }
                                 } else if strongSelf.actionAtEnd == .stop {
@@ -1864,7 +1864,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                     }
                     
                     let footerContent: ChatItemGalleryFooterContent
-                    if isAnimated || disablePlayerControls {
+                    if disablePlayerControls {
                         footerContent = .info
                     } else if isPaused && !strongSelf.ignorePauseStatus && strongSelf.isCentral == true {
                         if hasStarted || strongSelf.didPause {

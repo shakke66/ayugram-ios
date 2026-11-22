@@ -41,6 +41,9 @@ import AdsInfoScreen
 import AdsReportScreen
 import WalletContext
 import WalletSendScreen
+import AyuGramLib
+import AyuGramSettingsUI
+import AyuGramFeatures
  
 private struct MessageContextMenuData {
     let starStatus: Bool?
@@ -50,6 +53,443 @@ private struct MessageContextMenuData {
     let canSelect: Bool
     let resourceStatus: EngineMediaResource.FetchStatus?
     let messageActions: ChatAvailableMessageActions
+}
+
+enum GRVMContextMenuPlacement: Equatable {
+    case hidden
+    case topLevel
+    case more
+}
+
+final class GRVMContextMenuMoreActions {
+    var items: [ContextMenuItem] = []
+}
+
+private struct GRVMContextStatsRoute {
+    let placement: GRVMContextMenuPlacement
+    let includeReadReports: Bool
+    let includeReactions: Bool
+}
+
+private func grvmContextStatsRoutes(
+    viewsPlacement: GRVMContextMenuPlacement,
+    reactionsPlacement: GRVMContextMenuPlacement,
+    hasReadReports: Bool,
+    reactionCount: Int
+) -> [GRVMContextStatsRoute] {
+    var result: [GRVMContextStatsRoute] = []
+    let placements: [GRVMContextMenuPlacement] = [.topLevel, .more]
+    for placement in placements {
+        let includeReadReports = hasReadReports && viewsPlacement == placement
+        let includeReactions = reactionCount != 0 && reactionsPlacement == placement
+        if includeReadReports || includeReactions {
+            result.append(GRVMContextStatsRoute(
+                placement: placement,
+                includeReadReports: includeReadReports,
+                includeReactions: includeReactions
+            ))
+        }
+    }
+    return result
+}
+
+private func grvmFilteredReadStats(
+    _ stats: MessageReadStats?,
+    includeReadReports: Bool,
+    includeReactions: Bool
+) -> MessageReadStats? {
+    guard let stats else {
+        return nil
+    }
+    return MessageReadStats(
+        reactionCount: includeReactions ? stats.reactionCount : 0,
+        peers: includeReadReports ? stats.peers : [],
+        readTimestamps: includeReadReports ? stats.readTimestamps : [:]
+    )
+}
+
+func grvmContextMenuPlacement(
+    _ visibility: GRVMContextMenuVisibility,
+    modifierPressed: Bool
+) -> GRVMContextMenuPlacement {
+    switch visibility {
+    case .hidden:
+        return .hidden
+    case .visible:
+        return .topLevel
+    case .visibleWithModifier:
+        return modifierPressed ? .topLevel : .more
+    }
+}
+
+private func grvmLocalHideMessage(context: AccountContext, messageId: MessageId) {
+    let _ = context.account.postbox.transaction { transaction -> Void in
+        guard let message = transaction.getMessage(messageId) else {
+            return
+        }
+        guard !isLocallyDeletedMessage(message.attributes) else {
+            return
+        }
+        _internal_applyMessageDeletion(
+            accountPeerId: context.account.peerId,
+            transaction: transaction,
+            mediaBox: context.account.postbox.mediaBox,
+            ids: [messageId],
+            mode: .server(.localAction)
+        )
+    }.startStandalone()
+}
+
+private func grvmCanOfferReadMessage(in state: ChatPresentationInterfaceState) -> Bool {
+    switch state.chatLocation {
+    case .peer, .replyThread:
+        break
+    case .customChatContents:
+        return false
+    }
+
+    if let subject = state.subject {
+        switch subject {
+        case .scheduledMessages, .customChatContents:
+            return false
+        default:
+            break
+        }
+    }
+    return true
+}
+
+private func grvmMessageAuthors(message: Message) -> [Peer] {
+    var seen = Set<PeerId>()
+    var result: [Peer] = []
+    if let author = message.author, seen.insert(author.id).inserted {
+        result.append(author)
+    }
+    if let author = message.forwardInfo?.author, seen.insert(author.id).inserted {
+        result.append(author)
+    }
+    return result
+}
+
+private func grvmCanBurnMessage(messages: [Message]) -> Bool {
+    guard messages.count == 1 else {
+        return false
+    }
+    let message = messages[0]
+    guard message.id.namespace == Namespaces.Message.Cloud,
+          message.id.peerId.namespace == Namespaces.Peer.CloudUser
+            || message.id.peerId.namespace == Namespaces.Peer.CloudGroup
+            || message.id.peerId.namespace == Namespaces.Peer.CloudChannel,
+          message.flags.contains(.Incoming),
+          message.media.contains(where: { $0 is TelegramMediaImage || $0 is TelegramMediaFile }),
+          message.minAutoremoveOrClearTimeout != nil,
+          let attribute = message.attributes.first(where: {
+              $0 is ConsumableContentMessageAttribute
+          }) as? ConsumableContentMessageAttribute,
+          !attribute.consumed else {
+        return false
+    }
+    return true
+}
+
+private func grvmBurnMessage(
+    context: AccountContext,
+    message: Message,
+    controllerInteraction: ChatControllerInteraction
+) {
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    let strings = GRVMgramStrings(presentationData.strings)
+    let alert = textAlertController(
+        context: context,
+        title: strings[.burnTitle],
+        text: strings[.burnText],
+        actions: [
+            TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+            TextAlertAction(type: .destructiveAction, title: strings[.burnAction], action: {
+                let consume = {
+                    let _ = context.engine.messages.markMessageContentAsConsumedInteractively(
+                        messageId: message.id,
+                        force: true
+                    ).startStandalone()
+                }
+                guard AyuGramHooks.shouldPreserveOneTimeMedia?(context.account.peerId) == true else {
+                    consume()
+                    return
+                }
+                let preparation = AyuGramHooks.prepareConsumableMedia?(
+                    context.account.peerId,
+                    message
+                ) ?? .single(false)
+                let handlePreparationResult: (Bool) -> Void = { prepared in
+                    guard prepared else {
+                        controllerInteraction.displayUndo(.info(
+                            title: nil,
+                            text: strings[.burnError],
+                            timeout: nil,
+                            customUndoText: nil
+                        ))
+                        return
+                    }
+                    consume()
+                }
+                var receivedPreparationResult = false
+                let _ = (preparation
+                |> take(1)
+                |> deliverOnMainQueue).startStandalone(next: { prepared in
+                    receivedPreparationResult = true
+                    handlePreparationResult(prepared)
+                }, completed: {
+                    guard !receivedPreparationResult else {
+                        return
+                    }
+                    handlePreparationResult(false)
+                })
+            })
+        ]
+    )
+    controllerInteraction.presentController(alert, nil)
+}
+
+private func grvmLocalPurgeErrorText(
+    _ error: GRVMClearDeletedError,
+    strings: GRVMgramStrings
+) -> String {
+    switch error {
+    case .archiveUnavailable:
+        return strings[.deletedClearArchiveUnavailable]
+    case let .mediaRemovalFailed(count):
+        return strings.format(.deletedClearMediaRemovalFailed, Int32(count))
+    case .databaseFinalizationFailed:
+        return strings[.deletedClearDatabaseFinalizationFailed]
+    }
+}
+
+func grvmContextMoreActionsItem(
+    contextMoreActions: [ContextMenuItem],
+    reactionPanelItems: ContextController.Items?,
+    strings: PresentationStrings
+) -> ContextMenuItem? {
+    guard !contextMoreActions.isEmpty || reactionPanelItems != nil else {
+        return nil
+    }
+    return .action(ContextMenuActionItem(
+        text: "GRVMgram Actions",
+        icon: { theme in
+            return generateTintedImage(
+                image: UIImage(bundleImageName: "Chat/Context Menu/More"),
+                color: theme.contextMenu.primaryColor
+            )
+        },
+        action: { c, _ in
+            var submenuItems: [ContextMenuItem] = [
+                .action(ContextMenuActionItem(
+                    text: strings.Common_Back,
+                    icon: { theme in
+                        return generateTintedImage(
+                            image: UIImage(bundleImageName: "Chat/Context Menu/Back"),
+                            color: theme.contextMenu.primaryColor
+                        )
+                    },
+                    iconSource: nil,
+                    iconPosition: .left,
+                    action: { c, _ in
+                        c?.popItems()
+                    }
+                ))
+            ]
+            if !contextMoreActions.isEmpty {
+                submenuItems.append(.separator)
+                submenuItems.append(contentsOf: contextMoreActions)
+            }
+            var submenu = reactionPanelItems ?? ContextController.Items(content: .list(submenuItems))
+            submenu.content = .list(submenuItems)
+            c?.pushItems(items: .single(submenu))
+        }
+    ))
+}
+
+private func grvmPurgeDeletedMessage(
+    context: AccountContext,
+    message: Message,
+    deleteFromServer: Bool,
+    controllerInteraction: ChatControllerInteraction
+) {
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    let strings = GRVMgramStrings(presentationData.strings)
+    guard let purgeDeletedMessage = AyuGramFeatures.purgeDeletedMessage else {
+        controllerInteraction.displayUndo(.info(
+            title: strings[.deletedRemoveErrorTitle],
+            text: strings[.deletedClearArchiveUnavailable],
+            timeout: nil,
+            customUndoText: nil
+        ))
+        return
+    }
+
+    let alert = textAlertController(
+        context: context,
+        title: deleteFromServer ? strings[.deletedPurgeLiveTitle] : strings[.deletedRemoveTitle],
+        text: deleteFromServer ? strings[.deletedPurgeLiveText] : strings[.deletedRemoveText],
+        actions: [
+            TextAlertAction(
+                type: .genericAction,
+                title: presentationData.strings.Common_Cancel,
+                action: {}
+            ),
+            TextAlertAction(
+                type: .destructiveAction,
+                title: strings[.deletedRemoveAction],
+                action: {
+                    let purge = purgeDeletedMessage(context.account.peerId, message)
+                    let operation: Signal<[MessageId], GRVMClearDeletedError>
+                    if deleteFromServer {
+                        operation = (context.engine.messages.deleteMessagesInteractively(
+                            messageIds: [message.id],
+                            type: .forEveryone
+                        )
+                        |> castError(GRVMClearDeletedError.self))
+                        |> mapToSignal { _ -> Signal<[MessageId], GRVMClearDeletedError> in
+                            return purge
+                        }
+                    } else {
+                        operation = purge
+                    }
+                    let _ = (operation
+                    |> deliverOnMainQueue).startStandalone(error: { error in
+                        controllerInteraction.displayUndo(.info(
+                            title: strings[.deletedRemoveErrorTitle],
+                            text: grvmLocalPurgeErrorText(error, strings: strings),
+                            timeout: nil,
+                            customUndoText: nil
+                        ))
+                    })
+                }
+            )
+        ]
+    )
+    controllerInteraction.presentController(alert, nil)
+}
+
+private func grvmCanReplayMessage(
+    accountPeerId: PeerId,
+    messages: [Message]
+) -> Signal<Bool, NoError> {
+    guard messages.count == 1 else {
+        return .single(false)
+    }
+    let message = messages[0]
+    guard message.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) else {
+        return .single(false)
+    }
+    let consumed = message.attributes.contains(where: { value in
+        guard let attribute = value as? ConsumableContentMessageAttribute else {
+            return false
+        }
+        return attribute.consumed
+    })
+    let expired = message.media.contains(where: { $0 is TelegramMediaExpiredContent })
+    guard consumed || expired || isLocallyDeletedMessage(message.attributes) else {
+        return .single(false)
+    }
+    return AyuGramHooks.restoreConsumableMedia?(accountPeerId, message) ?? .single(false)
+}
+
+private func grvmReplayMessage(
+    context: AccountContext,
+    message: Message,
+    controllerInteraction: ChatControllerInteraction
+) {
+    guard message.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute }) else {
+        return
+    }
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    let strings = GRVMgramStrings(presentationData.strings)
+    let displayUndo = {
+        Queue.mainQueue().async {
+            controllerInteraction.displayUndo(.info(
+                title: nil,
+                text: strings[.replayRestoreFailed],
+                timeout: nil,
+                customUndoText: nil
+            ))
+        }
+    }
+    let restoreSignal = AyuGramHooks.restoreConsumableMedia?(
+        context.account.peerId,
+        message
+    ) ?? .single(false)
+    let _ = (restoreSignal
+    |> deliverOnMainQueue).startStandalone(next: { restored in
+        guard restored else {
+            displayUndo()
+            return
+        }
+        let _ = (context.account.postbox.transaction { transaction -> Message? in
+            guard let freshMessage = transaction.getMessage(message.id) else {
+                displayUndo()
+                return nil
+            }
+            guard freshMessage.stableId == message.stableId,
+                  freshMessage.attributes.contains(where: {
+                      $0 is GRVMPreservedConsumableMediaAttribute
+                  }) else {
+                displayUndo()
+                return nil
+            }
+            return freshMessage
+        }
+        |> deliverOnMainQueue).startStandalone(next: { freshMessage in
+            guard let freshMessage else {
+                displayUndo()
+                return
+            }
+            let openParams = OpenMessageParams(mode: .default, consumeOnOpen: false)
+            _ = controllerInteraction.openMessage(freshMessage, openParams)
+        })
+    })
+}
+
+private func grvmCanForwardLocalCopy(
+    context: AccountContext,
+    messages: [Message],
+    copyProtectionEnabled: Bool
+) -> Signal<Bool, NoError> {
+    guard messages.count == 1 else {
+        return .single(false)
+    }
+    let message = messages[0]
+    let candidate = isLocallyDeletedMessage(message.attributes)
+        || message.minAutoremoveOrClearTimeout != nil
+        || copyProtectionEnabled
+        || message.isCopyProtected()
+    guard candidate else {
+        return .single(false)
+    }
+    let marker = message.attributes.first(where: {
+        $0 is GRVMPreservedConsumableMediaAttribute
+    }) as? GRVMPreservedConsumableMediaAttribute
+    let media = marker?.media ?? message.media
+    if media.isEmpty {
+        return .single(!message.text.isEmpty)
+    }
+    guard media.count == 1 else {
+        return .single(false)
+    }
+    let resource: MediaResource
+    if let image = media[0] as? TelegramMediaImage,
+       let representation = largestImageRepresentation(image.representations) {
+        resource = representation.resource
+    } else if let file = media[0] as? TelegramMediaFile {
+        resource = file.resource
+    } else {
+        return .single(false)
+    }
+    if let path = context.account.postbox.mediaBox.completedResourcePath(id: resource.id),
+       let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size]) as? NSNumber,
+       size.int64Value > 0 {
+        return .single(true)
+    }
+    return .single(marker != nil)
 }
 
 func canEditMessage(context: AccountContext, limitsConfiguration: EngineConfiguration.Limits, message: EngineRawMessage) -> Bool {
@@ -490,7 +930,7 @@ private func ephemeralReplacementContextMenuItems(chatPresentationInterfaceState
     }
 }
 
-func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, messages: [EngineRawMessage], controllerInteraction: ChatControllerInteraction?, selectAll: Bool, interfaceInteraction: ChatPanelInterfaceInteraction?, readStats: MessageReadStats? = nil, messageNode: ChatMessageItemView? = nil) -> Signal<ContextController.Items, NoError> {
+func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, messages: [EngineRawMessage], controllerInteraction: ChatControllerInteraction?, selectAll: Bool, interfaceInteraction: ChatPanelInterfaceInteraction?, readStats: MessageReadStats? = nil, messageNode: ChatMessageItemView? = nil, modifierPressed: Bool = false, grvmMoreActions: GRVMContextMenuMoreActions? = nil) -> Signal<ContextController.Items, NoError> {
     guard let interfaceInteraction = interfaceInteraction, let controllerInteraction = controllerInteraction else {
         return .single(ContextController.Items(content: .list([])))
     }
@@ -959,9 +1399,20 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         return (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer)
     }
     
-    return dataSignal
+    let replayAvailableSignal = grvmCanReplayMessage(
+        accountPeerId: context.account.peerId,
+        messages: messages
+    )
+    let localCopyAvailableSignal = grvmCanForwardLocalCopy(
+        context: context,
+        messages: messages,
+        copyProtectionEnabled: chatPresentationInterfaceState.copyProtectionEnabled
+    )
+
+    return combineLatest(dataSignal, replayAvailableSignal, localCopyAvailableSignal)
     |> deliverOnMainQueue
-    |> map { [context] data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer -> ContextController.Items in
+    |> map { [context] combinedData, replayAvailable, localCopyAvailable -> ContextController.Items in
+        let (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer) = combinedData
         let isPremium = accountPeer?.isPremium ?? false
 
         var actions: [ContextMenuItem] = []
@@ -991,6 +1442,84 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     }
                 })
             })))
+        }
+
+        var contextMoreActions: [ContextMenuItem] = []
+        let contextMenuSettings = AyuGramHooks.chatAppearance(accountPeerId: context.account.peerId).contextMenu
+        let grvmStrings = GRVMgramStrings(chatPresentationInterfaceState.strings)
+
+        if messages.count == 1 {
+            let message = messages[0]
+            if grvmCanBurnMessage(messages: messages) {
+                actions.append(.action(ContextMenuActionItem(
+                    text: grvmStrings[.menuBurn],
+                    textColor: .destructive,
+                    icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.actionSheet.destructiveActionTextColor)
+                    },
+                    action: { c, _ in
+                        c?.dismiss(result: .dismissWithoutContent, completion: {
+                            grvmBurnMessage(
+                                context: context,
+                                message: message,
+                                controllerInteraction: controllerInteraction
+                            )
+                        })
+                    }
+                )))
+            }
+            if replayAvailable {
+                actions.append(.action(ContextMenuActionItem(
+                    text: grvmStrings[.menuReplay],
+                    icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Resend"), color: theme.actionSheet.primaryTextColor)
+                    },
+                    action: { c, _ in
+                        c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                        grvmReplayMessage(
+                            context: context,
+                            message: message,
+                            controllerInteraction: controllerInteraction
+                        )
+                    }
+                )))
+            }
+            if localCopyAvailable {
+                actions.append(.action(ContextMenuActionItem(
+                    text: grvmStrings[.menuForwardLocalCopy],
+                    icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.actionSheet.primaryTextColor)
+                    },
+                    action: { c, _ in
+                        c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                        controllerInteraction.grvmForwardLocalCopy?(message)
+                    }
+                )))
+            }
+        }
+
+        if messages.count == 1,
+           message.flags.contains(.Incoming),
+           message.id.namespace == Namespaces.Message.Cloud,
+           AyuGramHooks.shouldSuppressReadReceipts?(context.account.peerId) == true,
+           grvmCanOfferReadMessage(in: chatPresentationInterfaceState),
+           message.id.peerId != context.account.peerId,
+           message.id.peerId.namespace != Namespaces.Peer.SecretChat
+        {
+            // The route is restricted to .peer and .replyThread histories; .scheduledMessages and .customChatContents stay hidden.
+            actions.append(.action(ContextMenuActionItem(
+                text: grvmStrings[.menuReadMessage],
+                icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Read"), color: theme.actionSheet.primaryTextColor)
+                },
+                action: { _, f in
+                    f(.default)
+                    guard let chatController = interfaceInteraction.chatController() as? ChatControllerImpl else {
+                        return
+                    }
+                    chatController.grvmApplyTopReadIndex(mode: .localOnly)
+                }
+            )))
         }
 
         var isPinnedMessages = false
@@ -2187,16 +2716,23 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             canViewStats = canViewReadStats(message: message, participantCount: infoSummaryData.participantCount, isMessageRead: isMessageRead, isPremium: isPremium, appConfig: appConfig)
         }
         
-        var reactionCount = 0
-        for reaction in mergedMessageReactionsAndPeers(accountPeerId: context.account.peerId, accountPeer: nil, message: message).reactions {
-            reactionCount += Int(reaction.count)
+        let viewsPlacement = grvmContextMenuPlacement(contextMenuSettings.views, modifierPressed: modifierPressed)
+        let reactionsPlacement: GRVMContextMenuPlacement = .topLevel
+        if case .hidden = viewsPlacement {
+            canViewStats = false
         }
-        if let reactionsAttribute = message.reactionsAttribute {
-            if !reactionsAttribute.canViewList {
-                reactionCount = 0
+        var reactionCount = 0
+        if reactionsPlacement != .hidden {
+            for reaction in mergedMessageReactionsAndPeers(accountPeerId: context.account.peerId, accountPeer: nil, message: message).reactions {
+                reactionCount += Int(reaction.count)
+            }
+            if let reactionsAttribute = message.reactionsAttribute {
+                if !reactionsAttribute.canViewList {
+                    reactionCount = 0
+                }
             }
         }
-        
+
         let isEdited = message.attributes.contains(where: { attribute in
             if let attribute = attribute as? EditedMessageAttribute, !attribute.isHidden, attribute.date != 0 {
                 return true
@@ -2205,9 +2741,9 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         })
 
         if canViewAuthor {
-            actions.insert(.custom(ChatMessageAuthorContextItem(context: context, message: message, action: { c, f, peer in
+            actions.insert(.custom(ChatMessageAuthorContextItem(context: context, message: message, action: { c, f, authorPeer in
                 c.dismiss(completion: {
-                    controllerInteraction.openPeer(peer, .default, nil, .default)
+                    controllerInteraction.openPeer(authorPeer, .default, nil, .default)
                 })
             }), false), at: 0)
         }
@@ -2235,35 +2771,52 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 reactionCount = 0
             }
 
-            if hasReadReports || reactionCount != 0 {
-                if !actions.isEmpty {
-                    actions.insert(.separator, at: 0)
-                }
-                
-                var readStats = readStats
-                if !(hasReadReports || reactionCount != 0) {
-                    readStats = MessageReadStats(reactionCount: 0, peers: [], readTimestamps: [:])
-                }
-
-                actions.insert(.custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: hasReadReports, info: nil, stats: readStats, action: { c, f, stats, customReactionEmojiPacks, firstCustomEmojiReaction in
-                    if message.id.peerId.namespace == Namespaces.Peer.CloudUser {
+            let statsRoutes = grvmContextStatsRoutes(
+                viewsPlacement: viewsPlacement,
+                reactionsPlacement: reactionsPlacement,
+                hasReadReports: hasReadReports,
+                reactionCount: reactionCount
+            )
+            if statsRoutes.contains(where: { $0.placement == .topLevel }), !actions.isEmpty {
+                actions.insert(.separator, at: 0)
+            }
+            for route in statsRoutes {
+                let routeReactionCount = route.includeReactions ? reactionCount : 0
+                let routeMessage = route.includeReactions ? message : message.withUpdatedAttributes(
+                    message.attributes.filter { !($0 is ReactionsMessageAttribute) }
+                )
+                let routeStats = grvmFilteredReadStats(
+                    readStats,
+                    includeReadReports: route.includeReadReports,
+                    includeReactions: route.includeReactions
+                )
+                let statsItem: ContextMenuItem = .custom(ChatReadReportContextItem(
+                    context: context,
+                    message: routeMessage,
+                    hasReadReports: route.includeReadReports,
+                    includeReadReports: route.includeReadReports,
+                    includeReactions: route.includeReactions,
+                    info: nil,
+                    stats: routeStats,
+                    action: { c, f, stats, customReactionEmojiPacks, firstCustomEmojiReaction in
+                    if route.includeReadReports, message.id.peerId.namespace == Namespaces.Peer.CloudUser {
                         if let stats, stats.peers.isEmpty {
                             c.dismiss(completion: {
                                 let controller = context.sharedContext.makePremiumPrivacyControllerController(context: context, subject: .readTime, peerId: peer.id)
                                 controllerInteraction.navigationController()?.pushViewController(controller)
                             })
                         }
-                    } else if reactionCount == 0, let stats = stats, stats.peers.count == 1, !"".isEmpty {
+                    } else if routeReactionCount == 0, let stats = stats, stats.peers.count == 1, !"".isEmpty {
                         c.dismiss(completion: {
                             controllerInteraction.openPeer(stats.peers[0], .default, nil, .default)
                         })
-                    } else if (stats != nil && !stats!.peers.isEmpty) || reactionCount != 0 {
+                    } else if (stats != nil && !stats!.peers.isEmpty) || routeReactionCount != 0 {
                         var tip: ContextController.Tip?
                         
                         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
                         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
                         
-                        if !premiumConfiguration.isPremiumDisabled {
+                        if route.includeReactions, !premiumConfiguration.isPremiumDisabled {
                             if customReactionEmojiPacks.count == 1, let firstCustomEmojiReaction = firstCustomEmojiReaction {
                                 tip = .animatedEmoji(
                                     text: presentationData.strings.ChatContextMenu_ReactionEmojiSetSingle(customReactionEmojiPacks[0].title).string,
@@ -2287,17 +2840,22 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                         }
                         
                         var displayReadTimestamps = false
-                        if let stats, !stats.readTimestamps.isEmpty {
+                        if route.includeReadReports, let stats, !stats.readTimestamps.isEmpty {
                             displayReadTimestamps = true
                         }
-                        let tempState = EngineMessageReactionListContext.State(message: EngineMessage(message), readStats: stats, reaction: nil)
+                        let tempState: EngineMessageReactionListContext.State
+                        if route.includeReactions {
+                            tempState = EngineMessageReactionListContext.State(accountPeerId: context.account.peerId, message: EngineMessage(message), readStats: stats, reaction: nil)
+                        } else {
+                            tempState = EngineMessageReactionListContext.State(accountPeerId: context.account.peerId, message: EngineMessage(routeMessage), readStats: stats, reaction: nil)
+                        }
                         var allItemsHaveTimestamp = true
                         for item in tempState.items {
                             if item.timestamp == nil {
                                 allItemsHaveTimestamp = false
                             }
                         }
-                        if allItemsHaveTimestamp {
+                        if route.includeReadReports, allItemsHaveTimestamp {
                             displayReadTimestamps = true
                         }
                         
@@ -2318,18 +2876,18 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                         c.pushItems(items: .single(ContextController.Items(content: .custom(ReactionListContextMenuContent(
                             context: context,
                             displayReadTimestamps: displayReadTimestamps,
-                            availableReactions: availableReactions,
+                            availableReactions: route.includeReactions ? availableReactions : nil,
                             animationCache: controllerInteraction.presentationContext.animationCache,
                             animationRenderer: controllerInteraction.presentationContext.animationRenderer,
-                            message: EngineMessage(message),
+                            message: EngineMessage(routeMessage),
                             reaction: nil,
                             readStats: stats,
                             back: { [weak c] in
                                 c?.popItems()
                             },
-                            openPeer: { [weak c] peer, hasReaction in
+                            openPeer: { [weak c] reactionPeer, hasReaction in
                                 c?.dismiss(completion: {
-                                    controllerInteraction.openPeer(peer, .default, MessageReference(message), hasReaction ? .reaction : .default)
+                                    controllerInteraction.openPeer(reactionPeer, .default, MessageReference(message), hasReaction ? .reaction : .default)
                                 })
                             },
                             deleteReaction: deleteReaction
@@ -2337,7 +2895,15 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     } else {
                         f(.default)
                     }
-                }), false), at: 0)
+                }), false)
+                switch route.placement {
+                case .hidden:
+                    break
+                case .topLevel:
+                    actions.insert(statsItem, at: 0)
+                case .more:
+                    contextMoreActions.append(statsItem)
+                }
             }
         }
         
@@ -2354,7 +2920,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             if !actions.isEmpty {
                 actions.insert(.separator, at: 0)
             }
-            actions.insert(.custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: false, info: .edited, usesInfoRowMetrics: showsBubblelessInfoRows, stats: MessageReadStats(reactionCount: 0, peers: [], readTimestamps: [:]), action: nil), false), at: 0)
+            actions.insert(.custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: false, includeReadReports: false, includeReactions: false, info: .edited, usesInfoRowMetrics: showsBubblelessInfoRows, stats: MessageReadStats(reactionCount: 0, peers: [], readTimestamps: [:]), action: nil), false), at: 0)
         }
         
         if showsBubblelessInfoRows {
@@ -2368,9 +2934,9 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             let infoRows: [ContextMenuItem] = chatMessageBubblelessMenuInfoRows(hasAuthor: authorTitle != nil, editedRowShowsSentTime: editedRowShowsSentTime).map { row in
                 switch row {
                 case .sent:
-                    return .custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: false, info: .sent, usesInfoRowMetrics: true, stats: noStats, action: nil), false)
+                    return .custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: false, includeReadReports: false, includeReactions: false, info: .sent, usesInfoRowMetrics: true, stats: noStats, action: nil), false)
                 case .author:
-                    return .custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: false, info: .author(authorTitle ?? ""), usesInfoRowMetrics: true, stats: noStats, action: nil), false)
+                    return .custom(ChatReadReportContextItem(context: context, message: message, hasReadReports: false, includeReadReports: false, includeReactions: false, info: .author(authorTitle ?? ""), usesInfoRowMetrics: true, stats: noStats, action: nil), false)
                 }
             }
             if let first = actions.first, case let .custom(firstItem, _) = first, firstItem is ChatReadReportContextItem {
@@ -2378,6 +2944,168 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 actions.insert(.separator, at: 0)
             }
             actions.insert(contentsOf: infoRows, at: editedRowShowsSentTime ? 1 : 0)
+        }
+
+
+        func grvmRouteContextMenuItem(_ item: ContextMenuItem, visibility: GRVMContextMenuVisibility) {
+            switch grvmContextMenuPlacement(visibility, modifierPressed: modifierPressed) {
+            case .hidden:
+                break
+            case .topLevel:
+                actions.insert(item, at: 0)
+            case .more:
+                contextMoreActions.append(item)
+            }
+        }
+
+        func grvmRepeatContextMenuItem() -> ContextMenuItem {
+            return .action(ContextMenuActionItem(
+                text: "Repeat",
+                icon: { theme in
+                    return generateTintedImage(
+                        image: UIImage(bundleImageName: "Chat/Context Menu/Resend"),
+                        color: theme.contextMenu.primaryColor
+                    )
+                },
+                action: { c, _ in
+                    c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                    let _ = (enqueueGRVMRepeatedMessage(account: context.account, messageId: message.id)
+                    |> deliverOnMainQueue).startStandalone(next: { success in
+                        if !success {
+                            controllerInteraction.displayUndo(.info(
+                                title: nil,
+                                text: "This message cannot be repeated.",
+                                timeout: nil,
+                                customUndoText: nil
+                            ))
+                        }
+                    })
+                }
+            ))
+        }
+
+        if messages.count == 1 {
+            let isArchivedDeletion = message.attributes.contains(where: {
+                $0 is GRVMDeletedMessageAttribute
+            })
+            if !isReplyThreadHead, isArchivedDeletion || data.messageActions.options.contains(.deleteGlobally) {
+                actions.insert(.action(ContextMenuActionItem(
+                    text: grvmStrings[.menuDeleteLocal],
+                    textColor: .destructive,
+                    icon: { theme in
+                        return generateTintedImage(
+                            image: UIImage(bundleImageName: "Chat/Context Menu/Delete"),
+                            color: theme.actionSheet.destructiveActionTextColor
+                        )
+                    },
+                    action: { c, _ in
+                        c?.dismiss(result: .dismissWithoutContent, completion: {
+                            grvmPurgeDeletedMessage(
+                                context: context,
+                                message: message,
+                                deleteFromServer: !isArchivedDeletion,
+                                controllerInteraction: controllerInteraction
+                            )
+                        })
+                    }
+                )), at: 0)
+            }
+
+            if !isReplyThreadHead, !isLocallyDeletedMessage(message.attributes) {
+                grvmRouteContextMenuItem(.action(ContextMenuActionItem(
+                    text: "Hide Locally",
+                    icon: { theme in
+                        return generateTintedImage(
+                            image: UIImage(bundleImageName: "Chat/Context Menu/Clear"),
+                            color: theme.contextMenu.primaryColor
+                        )
+                    },
+                    action: { c, _ in
+                        c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                        grvmLocalHideMessage(context: context, messageId: message.id)
+                    }
+                )), visibility: contextMenuSettings.hide)
+            }
+
+            for peer in grvmMessageAuthors(message: message) {
+                grvmRouteContextMenuItem(.action(ContextMenuActionItem(
+                    text: "User Messages: \(peer.debugDisplayTitle)",
+                    icon: { theme in
+                        return generateTintedImage(
+                            image: UIImage(bundleImageName: "Chat/Context Menu/Search"),
+                            color: theme.contextMenu.primaryColor
+                        )
+                    },
+                    action: { c, _ in
+                        c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                        interfaceInteraction.beginMessageSearch(.member(peer), "")
+                    }
+                )), visibility: contextMenuSettings.userMessages)
+            }
+
+            grvmRouteContextMenuItem(.action(ContextMenuActionItem(
+                text: "Details",
+                icon: { theme in
+                    return generateTintedImage(
+                        image: UIImage(bundleImageName: "Chat/Context Menu/Info"),
+                        color: theme.contextMenu.primaryColor
+                    )
+                },
+                action: { c, _ in
+                    c?.dismiss(result: .dismissWithoutContent, completion: nil)
+                    controllerInteraction.navigationController()?.pushViewController(
+                        grvmMessageDetailsController(context: context, message: message)
+                    )
+                }
+            )), visibility: contextMenuSettings.details)
+
+            let isCopyProtected = chatPresentationInterfaceState.copyProtectionEnabled || message.isCopyProtected()
+            if canSendMessagesToChat(chatPresentationInterfaceState), !isCopyProtected {
+                grvmRouteContextMenuItem(grvmRepeatContextMenuItem(), visibility: contextMenuSettings.repeatMessage)
+            }
+
+            if let chatController = interfaceInteraction.chatController() as? ChatControllerImpl,
+               let addFilterItem = chatController.grvmMessageFilterContextMenuItems(
+                    message: message,
+                    shadowBanPeerIds: [],
+                    includeAddFilter: true,
+                    includeOtherItems: false
+               ).first {
+                grvmRouteContextMenuItem(addFilterItem, visibility: contextMenuSettings.addFilter)
+            }
+        }
+
+        if let grvmMoreActions {
+            grvmMoreActions.items = contextMoreActions
+        } else if let moreItem = grvmContextMoreActionsItem(
+            contextMoreActions: contextMoreActions,
+            reactionPanelItems: nil,
+            strings: chatPresentationInterfaceState.strings
+        ) {
+            actions.insert(moreItem, at: 0)
+        }
+
+        if messages.count == 1,
+           (message.attributes.contains(where: { $0 is GRVMEditHistoryMessageAttribute })
+                || AyuGramHooks.hasEditHistory?(context.account.peerId, message.id) == true) {
+            if !actions.isEmpty {
+                actions.insert(.separator, at: 0)
+            }
+            actions.insert(.action(ContextMenuActionItem(
+                text: grvmStrings[.menuHistory],
+                icon: { theme in
+                    generateTintedImage(
+                        image: UIImage(bundleImageName: "Chat/Context Menu/History"),
+                        color: theme.contextMenu.primaryColor
+                    )
+                },
+                action: { _, dismiss in
+                    dismiss(.default)
+                    controllerInteraction.navigationController()?.pushViewController(
+                        grvmMessageHistoryController(context: context, messageId: message.id)
+                    )
+                }
+            )), at: 0)
         }
         
         if !actions.isEmpty, case .separator = actions[0] {
@@ -3361,15 +4089,19 @@ final class ChatReadReportContextItem: ContextMenuCustomItem {
     /// The compact row (private chats' metrics): the bubble-free info rows, and the "Edited" row among them. Groups and
     /// channels otherwise keep master's.
     fileprivate let usesInfoRowMetrics: Bool
+    fileprivate let includeReadReports: Bool
+    fileprivate let includeReactions: Bool
     fileprivate let stats: MessageReadStats?
     fileprivate let action: ((ContextControllerProtocol, @escaping (ContextMenuActionResult) -> Void, MessageReadStats?, [StickerPackCollectionInfo], TelegramMediaFile?) -> Void)?
 
-    init(context: AccountContext, message: EngineRawMessage, hasReadReports: Bool, info: Info?, usesInfoRowMetrics: Bool = false, stats: MessageReadStats?, action: ((ContextControllerProtocol, @escaping (ContextMenuActionResult) -> Void, MessageReadStats?, [StickerPackCollectionInfo], TelegramMediaFile?) -> Void)?) {
+    init(context: AccountContext, message: EngineRawMessage, hasReadReports: Bool, includeReadReports: Bool, includeReactions: Bool, info: Info?, usesInfoRowMetrics: Bool = false, stats: MessageReadStats?, action: ((ContextControllerProtocol, @escaping (ContextMenuActionResult) -> Void, MessageReadStats?, [StickerPackCollectionInfo], TelegramMediaFile?) -> Void)?) {
         self.context = context
         self.message = message
         self.hasReadReports = hasReadReports
         self.info = info
         self.usesInfoRowMetrics = usesInfoRowMetrics
+        self.includeReadReports = includeReadReports
+        self.includeReactions = includeReactions
         self.stats = stats
         self.action = action
     }
@@ -3415,7 +4147,11 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
         self.presentationData = presentationData
         self.getController = getController
         self.actionSelected = actionSelected
-        self.currentStats = item.stats
+        self.currentStats = grvmFilteredReadStats(
+            item.stats,
+            includeReadReports: item.includeReadReports,
+            includeReactions: item.includeReactions
+        )
 
         let textFont = Font.regular(presentationData.listsFontSize.baseDisplaySize)
 
@@ -3484,12 +4220,21 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
         
         var reactionCount = 0
         var customEmojiFiles = Set<Int64>()
-        for reaction in mergedMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: nil, message: self.item.message).reactions {
-            reactionCount += Int(reaction.count)
-            
-            if case let .custom(fileId) = reaction.value {
-                customEmojiFiles.insert(fileId)
+        if self.item.includeReactions {
+            for reaction in mergedMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: nil, message: self.item.message).reactions {
+                reactionCount += Int(reaction.count)
+
+                if case let .custom(fileId) = reaction.value {
+                    customEmojiFiles.insert(fileId)
+                }
             }
+        }
+        if self.currentStats == nil, !self.item.includeReadReports {
+            self.currentStats = MessageReadStats(
+                reactionCount: self.item.includeReactions ? reactionCount : 0,
+                peers: [],
+                readTimestamps: [:]
+            )
         }
         
         var isBubblelessInfoRow = false
@@ -3551,25 +4296,27 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
 
         if let currentStats = self.currentStats {
             if self.item.message.id.peerId.namespace == Namespaces.Peer.CloudUser {
-                self.buttonNode.isUserInteractionEnabled = item.action != nil && currentStats.peers.isEmpty
+                self.buttonNode.isUserInteractionEnabled = item.action != nil && item.includeReadReports && currentStats.peers.isEmpty
             } else {
-                self.buttonNode.isUserInteractionEnabled = item.action != nil && (!currentStats.peers.isEmpty || reactionCount != 0)
+                self.buttonNode.isUserInteractionEnabled = item.action != nil && ((item.includeReadReports && !currentStats.peers.isEmpty) || (item.includeReactions && reactionCount != 0))
             }
         } else {
-            self.buttonNode.isUserInteractionEnabled = item.action != nil && reactionCount != 0
+            self.buttonNode.isUserInteractionEnabled = item.action != nil && item.includeReactions && reactionCount != 0
 
-            self.disposable = (item.context.engine.messages.messageReadStats(id: item.message.id)
-            |> deliverOnMainQueue).startStrict(next: { [weak self] value in
-                guard let strongSelf = self else {
-                    return
-                }
-                if let value = value {
-                    strongSelf.updateStats(stats: value, transition: .animated(duration: 0.2, curve: .easeInOut))
-                }
-            })
+            if self.item.includeReadReports {
+                self.disposable = (item.context.engine.messages.messageReadStats(id: item.message.id)
+                |> deliverOnMainQueue).startStrict(next: { [weak self] value in
+                    guard let strongSelf = self else {
+                        return
+                    }
+                    if let value = value {
+                        strongSelf.updateStats(stats: value, transition: .animated(duration: 0.2, curve: .easeInOut))
+                    }
+                })
+            }
         }
         
-        if self.item.info == nil {
+        if self.item.info == nil, self.item.includeReactions {
             item.context.account.viewTracker.updateReactionsForMessageIds(messageIds: [item.message.id], force: true)
         }
     }
@@ -3634,10 +4381,17 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
     }
     
     func updateStats(stats: MessageReadStats, transition: ContainedViewLayoutTransition) {
+        guard let stats = grvmFilteredReadStats(
+            stats,
+            includeReadReports: self.item.includeReadReports,
+            includeReactions: self.item.includeReactions
+        ) else {
+            return
+        }
         if self.item.message.id.peerId.namespace == Namespaces.Peer.CloudUser {
-            self.buttonNode.isUserInteractionEnabled = self.item.action != nil && stats.peers.isEmpty
+            self.buttonNode.isUserInteractionEnabled = self.item.action != nil && self.item.includeReadReports && stats.peers.isEmpty
         } else {
-            self.buttonNode.isUserInteractionEnabled = self.item.action != nil && (!stats.peers.isEmpty || stats.reactionCount != 0)
+            self.buttonNode.isUserInteractionEnabled = self.item.action != nil && ((self.item.includeReadReports && !stats.peers.isEmpty) || (self.item.includeReactions && stats.reactionCount != 0))
         }
 
         guard let (calculatedWidth, size) = self.validLayout else {
@@ -3670,8 +4424,10 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
         let textFont = Font.regular(self.presentationData.listsFontSize.baseDisplaySize)
         
         var reactionCount = 0
-        for reaction in mergedMessageReactionsAndPeers(accountPeerId: self.item.context.account.peerId, accountPeer: nil, message: self.item.message).reactions {
-            reactionCount += Int(reaction.count)
+        if self.item.includeReactions {
+            for reaction in mergedMessageReactionsAndPeers(accountPeerId: self.item.context.account.peerId, accountPeer: nil, message: self.item.message).reactions {
+                reactionCount += Int(reaction.count)
+            }
         }
         
         var showReadBadge = false
@@ -3937,9 +4693,14 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
         guard let controller = self.getController() else {
             return
         }
+        let stats = grvmFilteredReadStats(
+            self.currentStats,
+            includeReadReports: self.item.includeReadReports,
+            includeReactions: self.item.includeReactions
+        )
         self.item.action?(controller, { [weak self] result in
             self?.actionSelected(result)
-        }, self.currentStats, self.customEmojiPacks, self.firstCustomEmojiReaction)
+        }, stats, self.item.includeReactions ? self.customEmojiPacks : [], self.item.includeReactions ? self.firstCustomEmojiReaction : nil)
     }
 
     var isActionEnabled: Bool {
@@ -3950,17 +4711,23 @@ private final class ChatReadReportContextItemNode: ASDisplayNode, ContextMenuCus
             return false
         }
         if self.item.message.id.peerId.namespace == Namespaces.Peer.CloudUser {
-            if let stats = self.currentStats, stats.peers.isEmpty {
+            if self.item.includeReadReports, let stats = self.currentStats, stats.peers.isEmpty {
+                return true
             } else {
                 return false
             }
         }
         var reactionCount = 0
-        for reaction in mergedMessageReactionsAndPeers(accountPeerId: self.item.context.account.peerId, accountPeer: nil, message: self.item.message).reactions {
-            reactionCount += Int(reaction.count)
+        if self.item.includeReactions {
+            for reaction in mergedMessageReactionsAndPeers(accountPeerId: self.item.context.account.peerId, accountPeer: nil, message: self.item.message).reactions {
+                reactionCount += Int(reaction.count)
+            }
         }
-        if reactionCount >= 0 {
+        if self.item.includeReactions, reactionCount > 0 {
             return true
+        }
+        guard self.item.includeReadReports else {
+            return false
         }
         guard let currentStats = self.currentStats else {
             return false

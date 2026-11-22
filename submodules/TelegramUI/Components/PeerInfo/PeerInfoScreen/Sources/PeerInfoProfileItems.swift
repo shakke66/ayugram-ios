@@ -16,6 +16,9 @@ import WebUI
 import AvatarNode
 import PeerNameColorItem
 import BoostLevelIconComponent
+import ContextUI
+import AyuGramLib
+import AyuGramSettingsUI
 
 private let enabledPublicBioEntities: EnabledEntityTypes = [.allUrl, .mention, .hashtag]
 private let enabledPrivateBioEntities: EnabledEntityTypes = [.internalUrl, .mention, .hashtag]
@@ -36,6 +39,10 @@ private func peerVerificationDescriptionEntities(_ verification: PeerVerificatio
         }
     }
     return result
+}
+
+private enum GRVMPeerInfoItemId: Hashable {
+    case archives
 }
 
 enum InfoSection: Int, CaseIterable {
@@ -70,12 +77,43 @@ func infoItems(
     guard let data = data else {
         return []
     }
+    let grvmStrings = GRVMgramStrings(presentationData.strings)
     
     var currentPeerInfoSection: InfoSection = .peerInfo
         
     var items: [InfoSection: [PeerInfoScreenItem]] = [:]
     for section in InfoSection.allCases {
         items[section] = []
+    }
+
+    func insertGRVMArchiveRow(anchorIds: [AnyHashable], peerId: PeerId) {
+        var sectionItems = items[.peerInfo] ?? []
+        let archiveItemId = AnyHashable(GRVMPeerInfoItemId.archives)
+        guard !sectionItems.contains(where: { $0.id == archiveItemId }) else {
+            return
+        }
+        let anchorIndex = anchorIds.compactMap { anchorId in
+            sectionItems.firstIndex(where: { $0.id == anchorId })
+        }.first
+        let insertionIndex = anchorIndex.map { $0 + 1 } ?? sectionItems.count
+        sectionItems.insert(PeerInfoScreenLabeledValueItem(
+            id: archiveItemId,
+            label: "",
+            text: grvmStrings[.chatMenuTitle],
+            textColor: .primary,
+            action: { _, _ in
+                let controller = grvmDeletedMessagesController(
+                    context: context,
+                    peerId: peerId,
+                    threadId: chatLocation.threadId
+                )
+                interaction.getController()?.push(controller)
+            },
+            requestLayout: { animated in
+                interaction.requestLayout(animated)
+            }
+        ), at: insertionIndex)
+        items[.peerInfo] = sectionItems
     }
     
     let bioContextAction: (ASDisplayNode, ContextGesture?, CGPoint?) -> Void = { node, gesture, _ in
@@ -96,6 +134,63 @@ func infoItems(
     let birthdayContextAction: (ASDisplayNode, ContextGesture?, CGPoint?) -> Void = { node, gesture, _ in
         interaction.openBirthdayContextMenu(node, gesture)
     }
+
+    let makePeerIdItem: (AnyHashable, PeerId) -> PeerInfoScreenLabeledValueItem = { itemId, peerId in
+        let displayFormat: GRVMPeerIdFormat
+        switch AyuGramHooks.peerIdDisplayMode?(context.account.peerId) ?? 1 {
+        case 2:
+            displayFormat = .botAPI
+        default:
+            displayFormat = .telegram
+        }
+        let idString = grvmFormatPeerId(peerId, format: displayFormat)
+
+        let openContextMenu: (ASDisplayNode, ContextGesture?) -> Void = { sourceNode, gesture in
+            guard let controller = interaction.getController() else {
+                return
+            }
+            let source: ContextContentSource
+            if let sourceNode = sourceNode as? ContextExtractedContentContainingNode {
+                source = .extracted(PeerInfoContextExtractedContentSource(sourceNode: sourceNode))
+            } else {
+                source = .reference(PeerInfoContextReferenceContentSource(controller: controller, sourceNode: sourceNode))
+            }
+            let copyAction: (GRVMPeerIdFormat) -> Void = { format in
+                UIPasteboard.general.string = grvmFormatPeerId(peerId, format: format)
+            }
+            let items: [ContextMenuItem] = [
+                .action(ContextMenuActionItem(text: grvmStrings[.peerCopyTelegramId], icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.contextMenu.primaryColor)
+                }, action: { controller, _ in
+                    controller?.dismiss {
+                        copyAction(.telegram)
+                    }
+                })),
+                .action(ContextMenuActionItem(text: grvmStrings[.peerCopyBotApiId], icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Copy"), color: theme.contextMenu.primaryColor)
+                }, action: { controller, _ in
+                    controller?.dismiss {
+                        copyAction(.botAPI)
+                    }
+                }))
+            ]
+            let contextController = makeContextController(
+                presentationData: presentationData,
+                source: source,
+                items: .single(ContextController.Items(content: .list(items))),
+                gesture: gesture
+            )
+            controller.present(contextController, in: .window(.root))
+        }
+
+        return PeerInfoScreenLabeledValueItem(id: itemId, label: "ID", text: idString, textColor: .primary, action: { _, _ in
+            UIPasteboard.general.string = idString
+        }, contextAction: { sourceNode, gesture, _ in
+            openContextMenu(sourceNode, gesture)
+        }, requestLayout: { animated in
+            interaction.requestLayout(animated)
+        })
+    }
     
     if case let .user(user) = data.peer {
         let ItemCallList = 1000
@@ -107,6 +202,7 @@ func infoItems(
         let ItemAbout = 3003
         let ItemNote = 3004
         let ItemAppFooter = 3005
+        let ItemDialogId = 3006
         let ItemAffiliate = 4000
         let ItemAffiliateInfo = 4001
         let ItemBusinessHours = 5000
@@ -226,7 +322,11 @@ func infoItems(
                 )
             )
         }
-        
+
+        if AyuGramHooks.shouldShowDialogID?(context.account.peerId) == true {
+            items[currentPeerInfoSection]!.append(makePeerIdItem(ItemDialogId, user.id))
+        }
+
         if let cachedData = data.cachedData as? CachedUserData {
             if let birthday = cachedData.birthday {
                 let isBirthdayToday = hasBirthdayToday(birthday: birthday)
@@ -603,6 +703,7 @@ func infoItems(
                 }
             }
         }
+        insertGRVMArchiveRow(anchorIds: [ItemAbout, ItemDialogId], peerId: user.id)
     } else if case let .channel(channel) = data.peer {
         let ItemUsername = 1
         let ItemUsernameInfo = 2
@@ -616,6 +717,8 @@ func infoItems(
         let ItemEdit = 10
         let ItemPeerPersonalChannel = 11
         let ItemCommunity = 12
+        let ItemDialogId = 13
+        let ItemPeerDate = 14
         
         if let _ = data.threadData {
             let mainUsername: String
@@ -714,6 +817,20 @@ func infoItems(
                     )
                 )
             }
+            if AyuGramHooks.shouldShowDialogID?(context.account.peerId) == true {
+                items[currentPeerInfoSection]!.append(makePeerIdItem(ItemDialogId, channel.id))
+            }
+
+            var peerDate: (label: String, timestamp: Int32)?
+            if channel.creationDate > 0 {
+                peerDate = (grvmStrings[.peerCreated], channel.creationDate)
+            }
+            if let peerDate {
+                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemPeerDate, label: peerDate.label, text: stringForFullDate(timestamp: peerDate.timestamp, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat), textColor: .primary, action: nil, requestLayout: { animated in
+                    interaction.requestLayout(animated)
+                }))
+            }
+
             if let cachedData = data.cachedData as? CachedChannelData {
                 let aboutText: String?
                 if channel.isFake {
@@ -875,7 +992,20 @@ func infoItems(
                 }
             }
         }
+        insertGRVMArchiveRow(anchorIds: [ItemAbout, ItemDialogId], peerId: channel.id)
     } else if case let .legacyGroup(group) = data.peer {
+        let ItemDialogId = 1
+        let ItemCreationDate = 2
+
+        if AyuGramHooks.shouldShowDialogID?(context.account.peerId) == true {
+            items[currentPeerInfoSection]!.append(makePeerIdItem(ItemDialogId, group.id))
+        }
+        if group.creationDate > 0 {
+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemCreationDate, label: grvmStrings[.peerCreated], text: stringForFullDate(timestamp: group.creationDate, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat), textColor: .primary, action: nil, requestLayout: { animated in
+                interaction.requestLayout(animated)
+            }))
+        }
+
         if let cachedData = data.cachedData as? CachedGroupData {
             let aboutText: String?
             if group.isFake {
@@ -896,6 +1026,7 @@ func infoItems(
                 }))
             }
         }
+        insertGRVMArchiveRow(anchorIds: [0, ItemDialogId], peerId: group.id)
     }
     
     if let peer = data.peer, let members = data.members, case let .shortList(_, memberList) = members {

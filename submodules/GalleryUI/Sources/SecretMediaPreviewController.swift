@@ -148,6 +148,7 @@ private final class SecretMediaPreviewControllerNode: GalleryControllerNode {
 public final class SecretMediaPreviewController: ViewController {
     private let context: AccountContext
     private let messageId: MessageId
+    private let consumeOnOpen: Bool
     
     private let _ready = Promise<Bool>()
     override public var ready: Promise<Bool> {
@@ -156,7 +157,6 @@ public final class SecretMediaPreviewController: ViewController {
     private var didSetReady = false
     
     private let disposable = MetaDisposable()
-    private let markMessageAsConsumedDisposable = MetaDisposable()
     
     private var controllerNode: SecretMediaPreviewControllerNode {
         return self.displayNode as! SecretMediaPreviewControllerNode
@@ -181,9 +181,10 @@ public final class SecretMediaPreviewController: ViewController {
     
     private weak var tooltipController: TooltipScreen?
     
-    public init(context: AccountContext, messageId: MessageId) {
+    public init(context: AccountContext, messageId: MessageId, consumeOnOpen: Bool = true) {
         self.context = context
         self.messageId = messageId
+        self.consumeOnOpen = consumeOnOpen
         self.presentationData = context.sharedContext.currentPresentationData.with { $0 }
         
         super.init(navigationBarPresentationData: NavigationBarPresentationData(theme: GalleryController.darkNavigationTheme, strings: NavigationBarStrings(presentationStrings: self.presentationData.strings)))
@@ -227,7 +228,6 @@ public final class SecretMediaPreviewController: ViewController {
     
     deinit {
         self.disposable.dispose()
-        self.markMessageAsConsumedDisposable.dispose()
         if let hiddenMediaManagerIndex = self.hiddenMediaManagerIndex {
             self.context.sharedContext.mediaManager.galleryHiddenMediaManager.removeSource(hiddenMediaManagerIndex)
         }
@@ -549,7 +549,49 @@ public final class SecretMediaPreviewController: ViewController {
                     self?.didSetReady = true
                 }
                 self._ready.set(ready |> map { true })
-                self.markMessageAsConsumedDisposable.set(self.context.engine.messages.markMessageContentAsConsumedInteractively(messageId: message.id).start())
+                if self.consumeOnOpen {
+                    let preservationEnabled = AyuGramHooks.shouldPreserveOneTimeMedia?(
+                        self.context.account.peerId
+                    ) == true
+                    let preparation: Signal<Bool, NoError>
+                    if preservationEnabled {
+                        preparation = AyuGramHooks.prepareConsumableMedia?(
+                            self.context.account.peerId,
+                            message
+                        ) ?? .single(false)
+                    } else {
+                        preparation = .single(true)
+                    }
+                    let context = self.context
+                    let consume: () -> Void = {
+                        let _ = context.engine.messages.markMessageContentAsConsumedInteractively(
+                            messageId: message.id
+                        ).startStandalone()
+                    }
+                    guard preservationEnabled else {
+                        consume()
+                        return
+                    }
+                    let handlePreparationResult: (Bool) -> Void = { prepared in
+                        guard prepared else {
+                            self.displayPreservationError()
+                            return
+                        }
+                        consume()
+                    }
+                    var receivedPreparationResult = false
+                    let _ = (preparation
+                    |> take(1)
+                    |> deliverOnMainQueue).startStandalone(next: { prepared in
+                        receivedPreparationResult = true
+                        handlePreparationResult(prepared)
+                    }, completed: {
+                        guard !receivedPreparationResult else {
+                            return
+                        }
+                        handlePreparationResult(false)
+                    })
+                }
             } else {
                 var beginTimeAndTimeout: (Double, Double, Bool)?
                 var videoDuration: Double?
@@ -604,6 +646,35 @@ public final class SecretMediaPreviewController: ViewController {
             self.tooltipController = nil
             tooltipController.dismiss()
         }
+    }
+
+    private func displayPreservationError() {
+        self.dismissAllTooltips()
+
+        let sourceView = self.controllerNode.view
+        let absoluteFrame = sourceView.convert(sourceView.bounds, to: nil)
+        let location = CGRect(origin: CGPoint(x: absoluteFrame.midX, y: absoluteFrame.midY), size: CGSize())
+        let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+        let strings = GRVMgramStrings(presentationData.strings)
+        let tooltipController = TooltipScreen(
+            account: self.context.account,
+            sharedContext: self.context.sharedContext,
+            text: .plain(text: strings[.deletedMediaUnavailable]),
+            balancedTextLayout: true,
+            constrainWidth: 240.0,
+            style: .customBlur(UIColor(rgb: 0x18181a), 0.0),
+            arrowStyle: .small,
+            icon: nil,
+            location: .point(location, .top),
+            displayDuration: .default,
+            inset: 8.0,
+            cornerRadius: 8.0,
+            shouldDismissOnTouch: { _, _ in
+                return .dismiss(consume: false)
+            }
+        )
+        self.tooltipController = tooltipController
+        self.present(tooltipController, in: .window(.root))
     }
     
     private func presentViewOnceTooltip() {

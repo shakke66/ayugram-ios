@@ -78,7 +78,7 @@ open class SwitchNode: ASDisplayNode {
         (self.view as! UISwitch).onTintColor = self.contentColor
         
         (self.view as! UISwitch).setOn(self._isOn, animated: false)
-        
+
         (self.view as! UISwitch).addTarget(self, action: #selector(switchValueChanged(_:)), for: .valueChanged)
     }
     

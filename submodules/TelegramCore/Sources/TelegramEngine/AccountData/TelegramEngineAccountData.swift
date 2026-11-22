@@ -187,7 +187,58 @@ public extension TelegramEngine {
                 return .emojiStatus(.init(flags: flags, documentId: file.fileId.id, until: expirationDate))
             } ?? .emojiStatusEmpty
             let emojiStatus = file.map { PeerEmojiStatus(content: .emoji(fileId: $0.fileId.id), expirationDate: expirationDate) }
-            return _internal_setAccountEmojiStatus(account: self.account, apiEmojiStatus: apiEmojiStatus, emojiStatus: emojiStatus, files: file.map { [$0] } ?? [], recentFile: file)
+            let account = self.account
+            let peerId = account.peerId
+            return account.postbox.transaction { transaction -> Bool in
+                guard let peer = transaction.getPeer(peerId) as? TelegramUser else {
+                    return false
+                }
+                let currentState = grvmStoredLocalPremiumPeerState(
+                    transaction: transaction,
+                    accountPeerId: peerId,
+                    peerId: peerId
+                )
+                let useLocalPremiumStatus = AyuGramHooks.isLocalPremiumEnabled?(peerId) == true
+                    && !peer.flags.contains(.isPremium)
+                    && (peer.emojiStatus == nil || currentState?.fileId == peer.emojiStatus?.fileId)
+
+                if useLocalPremiumStatus, let file {
+                    if let entry = CodableEntry(RecentMediaItem(file)) {
+                        let itemEntry = OrderedItemListEntry(id: RecentMediaItemId(file.fileId).rawValue, contents: entry)
+                        transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStatusEmoji, item: itemEntry, removeTailIfCountExceeds: 32)
+                    }
+                    transaction.storeMediaIfNotPresent(media: file)
+                    let updatedAt = Int32(Date().timeIntervalSince1970)
+                    grvmSetLocalPremiumPeerState(
+                        transaction: transaction,
+                        accountPeerId: peerId,
+                        peerId: peerId,
+                        fileId: file.fileId.id,
+                        updatedAt: updatedAt,
+                        expiresAt: expirationDate ?? Int32.max
+                    )
+                } else {
+                    grvmRemoveLocalPremiumPeerState(
+                        transaction: transaction,
+                        accountPeerId: peerId,
+                        peerId: peerId
+                    )
+                }
+
+                if useLocalPremiumStatus {
+                    updatePeersCustom(transaction: transaction, peers: [peer.withUpdatedEmojiStatus(emojiStatus)], update: { _, updated in
+                        updated
+                    })
+                }
+                return useLocalPremiumStatus
+            }
+            |> castError(SetEmojiStatusError.self)
+            |> mapToSignal { useLocalPremiumStatus -> Signal<Never, SetEmojiStatusError> in
+                if useLocalPremiumStatus {
+                    return .complete()
+                }
+                return _internal_setAccountEmojiStatus(account: account, apiEmojiStatus: apiEmojiStatus, emojiStatus: emojiStatus, files: file.map { [$0] } ?? [], recentFile: file)
+            }
         }
 
         public func setEmojiStatus(file: TelegramMediaFile?, expirationDate: Int32?) -> Signal<Never, NoError> {

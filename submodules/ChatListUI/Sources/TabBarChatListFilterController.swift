@@ -94,14 +94,17 @@ public func chatListFilterItems(context: AccountContext) -> Signal<(Int, [(ChatL
             keys.append(.basicPeer(peerId))
         }
         
-        return context.account.postbox.combinedView(keys: keys)
-        |> filter { view -> Bool in
+        return combineLatest(
+            context.account.postbox.combinedView(keys: keys),
+            AyuGramHooks.filteredUnreadStateUpdates?(context.account.peerId) ?? .single(0)
+        )
+        |> filter { view, _ -> Bool in
             // In the transaction that stores a folder user's new secret chat, the totals can already count it while
             // these keys do not observe it yet. The stage above restarts this one with them; this value would be wrong.
             let associatedPeerIds = (view.views[associatedPeerIdsKey] as? EngineRawAssociatedPeerIdsView)?.associatedPeerIds ?? [:]
             return associatedPeerIds == secretChats.associatedPeerIds
         }
-        |> map { view -> (Int, [(ChatListFilter, Int, Bool)]) in
+        |> map { view, _ -> (Int, [(ChatListFilter, Int, Bool)]) in
             guard let unreadCounts = view.views[unreadKey] as? EngineRawUnreadMessageCountsView else {
                 return (0, [])
             }
@@ -122,11 +125,19 @@ public func chatListFilterItems(context: AccountContext) -> Signal<(Int, [(ChatL
             for entry in unreadCounts.entries {
                 switch entry {
                 case let .total(_, state):
-                    totalStates[.root] = state
+                    totalStates[.root] = AyuGramHooks.adjustedTotalUnreadState?(
+                        context.account.peerId,
+                        .root,
+                        state
+                    ) ?? state
                 case let .totalInGroup(groupId, state):
-                    totalStates[groupId] = state
+                    totalStates[groupId] = AyuGramHooks.adjustedTotalUnreadState?(
+                        context.account.peerId,
+                        groupId,
+                        state
+                    ) ?? state
                 case let .peer(peerId, state):
-                    if let state = state, state.isUnread {
+                    if let state = state, (AyuGramHooks.adjustedUnreadPeerReadState?(context.account.peerId, peerId, state) ?? state).isUnread {
                         if let peerView = view.views[.basicPeer(peerId)] as? EngineRawBasicPeerView, let peer = peerView.peer {
                             // A secret chat carries neither contact status nor notification settings
                             // of its own; both live on the associated cloud user. ChatListIndexTable

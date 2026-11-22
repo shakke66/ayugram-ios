@@ -1791,6 +1791,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             self.isUpdating = false
         }
         
+        let compose = AyuGramHooks.chatAppearance(accountPeerId: interfaceState.accountPeerId).compose
         let isFirstTime = self.validLayout == nil
         
         let isAgentLayout = self.resolveIsAgentLayout(interfaceState)
@@ -1918,17 +1919,19 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
         }
         
+        let showAttachmentButton = displayMediaButton && compose.showAttachButton
         let attachmentButtonAlpha: CGFloat
-        if displayMediaButton {
+        if showAttachmentButton {
             attachmentButtonAlpha = isMediaEnabled ? 1.0 : 0.4
         } else {
             attachmentButtonAlpha = 0.0
         }
         
         transition.updateAlpha(layer: self.attachmentButtonBackground.layer, alpha: attachmentButtonAlpha)
-        self.attachmentButton.isEnabled = isMediaEnabled && !isRecording
+        self.attachmentButton.isEnabled = showAttachmentButton && isMediaEnabled && !isRecording
+        self.attachmentButton.isUserInteractionEnabled = showAttachmentButton
         self.attachmentButton.accessibilityTraits = (!isSlowmodeActive || isMediaEnabled) ? [.button] : [.button, .notEnabled]
-        self.attachmentButtonDisabledNode.isHidden = !isSlowmodeActive || isMediaEnabled
+        self.attachmentButtonDisabledNode.isHidden = !showAttachmentButton || !isSlowmodeActive || isMediaEnabled
         
         let canBypassRestrictions = canBypassRestrictions(chatPresentationInterfaceState: interfaceState)
         
@@ -2681,7 +2684,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         
         // The layout below reserves the send slot and scales the send button in on exactly this condition.
         let sendButtonIsLaidOut = inputHasText || hasMediaDraft || hasForward || isEditingMedia
-        self.updateActionButtons(hasText: inputHasText, sendButtonIsLaidOut: sendButtonIsLaidOut, transition: transition)
+        self.updateActionButtons(hasText: inputHasText, sendButtonIsLaidOut: sendButtonIsLaidOut, transition: transition, compose: compose)
         
         var mediaActionButtonsSize = CGSize(width: 40.0, height: 40.0)
         var sendActionButtonsSize = CGSize(width: 40.0, height: 40.0)
@@ -2816,7 +2819,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         transition.updateTransformScale(node: self.menuButton, scale: showMenuButton ? 1.0 : 0.001)
         transition.updateAlpha(node: self.menuButton, alpha: showMenuButton ? 1.0 : 0.0)
         
-        self.menuButton.isUserInteractionEnabled = hasMenuButton
+        self.menuButton.isUserInteractionEnabled = showMenuButton
         
         var textFieldInsets = self.textFieldInsets(metrics: metrics, bottomInset: bottomInset)
         if additionalSideInsets.right > 0.0 {
@@ -3817,7 +3820,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
 
         // AI button in the TOP 40x40 slot of the capsule (fades in with the 3-line rule).
-        if self.isAIEnabled {
+        if self.isAIEnabled && compose.showAiEditorButton {
             let aiButton: (button: HighlightTrackingButton, icon: UIImageView)
             if let current = self.attachmentAIButton {
                 aiButton = current
@@ -4882,7 +4885,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.updateTextHeight(animated: animated)
     }
     
-    private func updateActionButtons(hasText: Bool, sendButtonIsLaidOut: Bool, transition: ContainedViewLayoutTransition) {
+    private func updateActionButtons(hasText: Bool, sendButtonIsLaidOut: Bool, transition: ContainedViewLayoutTransition, compose: GRVMComposeSettings) {
         let alphaTransition: ContainedViewLayoutTransition = transition.isAnimated ? .animated(duration: 0.2, curve: .easeInOut) : .immediate
         let blurTransitionIn: ComponentTransition = transition.isAnimated ? .easeInOut(duration: 0.18) : .immediate
         let blurTransitionOut: ComponentTransition = transition.isAnimated ? .easeInOut(duration: 0.18) : .immediate
@@ -5043,7 +5046,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             ComponentTransition(transition).setScale(view: self.mediaActionButtons.stopButtonIcon, scale: 1.0)
             ComponentTransition(transition).setScale(view: self.mediaActionButtons.micButton, scale: 0.001)
             ComponentTransition(transition).setScale(view: self.mediaActionButtons.micButtonTintMaskView, scale: 0.001)
-        } else if hideMicButton || (mediaInputIsActive && !hideExpandMediaInput) {
+        } else if hideMicButton || (mediaInputIsActive && !hideExpandMediaInput) || !compose.showVoiceButton {
             ComponentTransition(alphaTransition).setAlpha(view: self.mediaActionButtons.stopButtonIcon, alpha: 0.0)
             ComponentTransition(transition).setScale(view: self.mediaActionButtons.stopButtonIcon, scale: 0.001)
             ComponentTransition(transition).setScale(view: self.mediaActionButtons.micButton, scale: 1.0)

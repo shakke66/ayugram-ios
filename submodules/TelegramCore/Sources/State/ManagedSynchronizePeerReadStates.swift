@@ -90,8 +90,58 @@ private final class SynchronizePeerReadStatesContextImpl {
                         signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: self.stateManager, peerId: peerId, push: false, validate: true)
                         |> ignoreValues
                     case let .Push(_, thenSync):
-                        signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: stateManager, peerId: peerId, push: true, validate: thenSync)
-                        |> ignoreValues
+                        if AyuGramHooks.shouldSuppressReadReceipts?(self.stateManager.accountPeerId) == true {
+                            signal = self.postbox.transaction { transaction -> Void in
+                                transaction.confirmSynchronizedIncomingReadState(peerId)
+                            }
+                            |> castError(PeerReadStateValidationError.self)
+                            |> ignoreValues
+                        } else {
+                            signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: self.stateManager, peerId: peerId, push: true, validate: thenSync)
+                            |> ignoreValues
+                        }
+                    case let .ForcePush(state: pushState, thenSync: thenSync, tokenId: tokenId):
+                        var maxIncomingReadId: MessageId.Id?
+                        if let pushState = pushState,
+                           let cloudState = pushState.states.first(where: { namespace, _ in
+                               return namespace == Namespaces.Message.Cloud
+                           })?.1 {
+                            switch cloudState {
+                            case let .idBased(incomingReadId, _, _, _, _):
+                                maxIncomingReadId = incomingReadId
+                            case let .indexBased(incomingReadIndex, _, _, _):
+                                if incomingReadIndex.id.namespace == Namespaces.Message.Cloud {
+                                    maxIncomingReadId = incomingReadIndex.id.id
+                                }
+                            }
+                        }
+
+                        let forceServerRead = GRVMReadReceiptBypass.shared.consumeIfMatching(
+                            tokenId: tokenId,
+                            accountPeerId: self.stateManager.accountPeerId,
+                            peerId: peerId,
+                            maxIncomingReadId: maxIncomingReadId,
+                            state: pushState
+                        )
+                        if forceServerRead, let pushState = pushState {
+                            signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: self.stateManager, peerId: peerId, exactPushState: pushState, validate: thenSync)
+                            |> ignoreValues
+                        } else if AyuGramHooks.shouldSuppressReadReceipts?(self.stateManager.accountPeerId) == true {
+                            // Ghost mode: don't push the read state to the server, but confirm the
+                            // operation locally. A bare `.complete()` finishes synchronously and,
+                            // since the operation stays pending in the postbox view, the completed
+                            // handler re-enters update() inline on the same queue forever — stack
+                            // overflow (crash cluster B, builds 2735). The transaction both consumes
+                            // the operation and makes completion asynchronous.
+                            signal = self.postbox.transaction { transaction -> Void in
+                                transaction.confirmSynchronizedIncomingReadState(peerId)
+                            }
+                            |> castError(PeerReadStateValidationError.self)
+                            |> ignoreValues
+                        } else {
+                            signal = synchronizePeerReadState(network: self.network, postbox: self.postbox, stateManager: self.stateManager, peerId: peerId, push: true, validate: thenSync)
+                            |> ignoreValues
+                        }
                     }
                     operationDisposable.set((signal
                     |> deliverOn(self.queue)).start(error: { [weak self, weak activeOperation] _ in

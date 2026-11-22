@@ -162,6 +162,21 @@ public final class EmojiKeyboardItemLayer: MultiAnimationRenderTarget {
     public var onContentsUpdate: () -> Void = {}
     public var onLoop: () -> Void = {}
 
+    func updateStickerArtworkClipping(isDetailed: Bool) {
+        let cornerRadius: CGFloat = isDetailed ? 5.0 : 0.0
+        let masksToBounds = isDetailed
+        self.cornerRadius = cornerRadius
+        self.masksToBounds = masksToBounds
+        if let underlyingContentLayer = self.underlyingContentLayer {
+            underlyingContentLayer.cornerRadius = cornerRadius
+            underlyingContentLayer.masksToBounds = masksToBounds
+        }
+        if let tintContentLayer = self.tintContentLayer {
+            tintContentLayer.cornerRadius = cornerRadius
+            tintContentLayer.masksToBounds = masksToBounds
+        }
+    }
+
     public init(
         item: EmojiPagerContentComponent.Item,
         context: AccountContext,

@@ -86,7 +86,7 @@ public final class PeerSelectionControllerParams {
     public let pretendPresentedInModal: Bool
     public let multipleSelection: Bool
     public let multipleSelectionLimit: Int32?
-    public let forwardedMessageIds: [EngineMessage.Id]
+    public let forwardedMessageIds: [EngineMessage.Id]?
     public let hasTypeHeaders: Bool
     public let selectForumThreads: Bool
     public let hasCreation: Bool
@@ -112,7 +112,7 @@ public final class PeerSelectionControllerParams {
         pretendPresentedInModal: Bool = false,
         multipleSelection: Bool = false,
         multipleSelectionLimit: Int32? = nil,
-        forwardedMessageIds: [EngineMessage.Id] = [],
+        forwardedMessageIds: [EngineMessage.Id]? = [],
         hasTypeHeaders: Bool = false,
         selectForumThreads: Bool = false,
         hasCreation: Bool = false,

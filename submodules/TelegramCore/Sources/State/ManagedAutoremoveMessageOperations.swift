@@ -37,7 +37,7 @@ private final class ManagedAutoremoveMessageOperationsHelper {
     }
 }
 
-func managedAutoremoveMessageOperations(network: Network, postbox: Postbox, isRemove: Bool) -> Signal<Void, NoError> {
+func managedAutoremoveMessageOperations(accountPeerId: PeerId, network: Network, postbox: Postbox, isRemove: Bool) -> Signal<Void, NoError> {
     return Signal { _ in
         let helper = Atomic(value: ManagedAutoremoveMessageOperationsHelper())
         
@@ -83,9 +83,32 @@ func managedAutoremoveMessageOperations(network: Network, postbox: Postbox, isRe
 
                     if let message = transaction.getMessage(entry.messageId) {
                         if message.id.peerId.namespace == Namespaces.Peer.SecretChat || isRemove {
-                            _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [entry.messageId])
+                            _internal_applyMessageDeletion(
+                                accountPeerId: accountPeerId,
+                                transaction: transaction,
+                                mediaBox: postbox.mediaBox,
+                                ids: [entry.messageId],
+                                mode: .server(.ttl)
+                            )
                         } else {
+                            let hasPreservedConsumableMedia = message.attributes.contains(where: { $0 is GRVMPreservedConsumableMediaAttribute })
+                            if hasPreservedConsumableMedia {
                             transaction.updateMessage(message.id, update: { currentMessage in
+                                var storeForwardInfo: StoreMessageForwardInfo?
+                                if let forwardInfo = currentMessage.forwardInfo {
+                                    storeForwardInfo = StoreMessageForwardInfo(authorId: forwardInfo.author?.id, sourceId: forwardInfo.source?.id, sourceMessageId: forwardInfo.sourceMessageId, date: forwardInfo.date, authorSignature: forwardInfo.authorSignature, psaType: forwardInfo.psaType, flags: forwardInfo.flags)
+                                }
+                                var updatedAttributes = currentMessage.attributes
+                                for i in 0 ..< updatedAttributes.count {
+                                    if let _ = updatedAttributes[i] as? AutoclearTimeoutMessageAttribute {
+                                        updatedAttributes.remove(at: i)
+                                        break
+                                    }
+                                }
+                                return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: updatedAttributes, media: currentMessage.media))
+                            })
+                            } else {
+                                transaction.updateMessage(message.id, update: { currentMessage in
                                 var storeForwardInfo: StoreMessageForwardInfo?
                                 if let forwardInfo = currentMessage.forwardInfo {
                                     storeForwardInfo = StoreMessageForwardInfo(authorId: forwardInfo.author?.id, sourceId: forwardInfo.source?.id, sourceMessageId: forwardInfo.sourceMessageId, date: forwardInfo.date, authorSignature: forwardInfo.authorSignature, psaType: forwardInfo.psaType, flags: forwardInfo.flags)
@@ -112,7 +135,8 @@ func managedAutoremoveMessageOperations(network: Network, postbox: Postbox, isRe
                                     }
                                 }
                                 return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: updatedAttributes, media: updatedMedia))
-                            })
+                                })
+                            }
                         }
                     } else {
                         transaction.clearTimestampBasedAttribute(id: entry.messageId, tag: tag)

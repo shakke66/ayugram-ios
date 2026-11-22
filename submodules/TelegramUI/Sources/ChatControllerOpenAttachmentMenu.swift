@@ -1590,6 +1590,9 @@ extension ChatControllerImpl {
                 self.interfaceInteraction?.openBoostToUnrestrict()
             }
         }
+        controller.sendAsSticker = { [weak self] image in
+            self?.enqueueStickerImage(image, isMemoji: false)
+        }
         let mediaPickerContext = controller.mediaPickerContext
         controller.opensChatCameraWithHolder = true
         controller.openCamera = { [weak self] cameraView in

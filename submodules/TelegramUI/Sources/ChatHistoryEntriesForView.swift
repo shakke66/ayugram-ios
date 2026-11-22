@@ -181,7 +181,12 @@ func chatHistoryEntriesForView(
         if pendingRemovedMessages.contains(message.id) {
             continue
         }
-        
+
+        if AyuGramHooks.isShowingFilteredMessages?(context.account.peerId, message.id.peerId) != true
+            && AyuGramHooks.isMessageHiddenByFilter?(context.account.peerId, message) == true {
+            continue loop
+        }
+
         if case let .replyThread(replyThreadMessage) = location, replyThreadMessage.isForumPost {
             if isUndisplayedForumTopicRoot(message, location: location, additionalData: view.additionalData) {
                 continue loop

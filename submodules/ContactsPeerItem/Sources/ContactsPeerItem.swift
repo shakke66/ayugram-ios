@@ -880,6 +880,9 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
             }
             
             let premiumConfiguration = PremiumConfiguration.with(appConfiguration: item.context.currentAppConfiguration.with { $0 })
+            let hidePremiumStatuses = AyuGramHooks.chatAppearance(
+                accountPeerId: item.context.account.peerId
+            ).appearance.hidePremiumStatuses
             
             var credibilityStatusIcon: EmojiStatusComponent.Content?
             var verifiedIcon: EmojiStatusComponent.Content?
@@ -888,17 +891,18 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
             
             switch item.peer {
             case let .peer(peer, _):
-                if let peer = peer, (peer.id != item.context.account.peerId || item.peerMode == .memberList || item.aliasHandling == .standard) {
+                if let peer = peer {
+                    let shouldHidePremiumStatus = hidePremiumStatuses && peer.id != item.context.account.peerId
                     if peer.isScam {
                         credibilityStatusIcon = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased())
                     } else if peer.isFake {
                         credibilityStatusIcon = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased())
-                    } else if let emojiStatus = peer.emojiStatus, !item.isAd {
+                    } else if let emojiStatus = peer.emojiStatus, !item.isAd && !shouldHidePremiumStatus {
                         emojiStatusIcon = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 20.0, height: 20.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(2))
                         if let color = emojiStatus.color {
                             emojiStatusParticleColor = UIColor(rgb: UInt32(bitPattern: color))
                         }
-                    } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled {
+                    } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !shouldHidePremiumStatus {
                         credibilityStatusIcon = .premium(color: item.presentationData.theme.list.itemAccentColor)
                     }
                     

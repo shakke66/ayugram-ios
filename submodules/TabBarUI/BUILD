@@ -16,6 +16,8 @@ swift_library(
         "//submodules/AnimatedStickerNode",
         "//submodules/TelegramAnimatedStickerNode",
         "//submodules/TelegramPresentationData",
+        "//submodules/TelegramCore:TelegramCore",
+        "//submodules/Postbox:Postbox",
         "//submodules/ComponentFlow",
         "//submodules/Components/ComponentDisplayAdapters",
         "//submodules/TelegramUI/Components/TabBarComponent",

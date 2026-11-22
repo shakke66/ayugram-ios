@@ -279,6 +279,11 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
     items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 4, label: .text(languageName.isEmpty ? presentationData.strings.Localization_LanguageName : languageName), text: presentationData.strings.Settings_AppLanguage, icon: PresentationResourcesSettings.language, action: {
         interaction.openSettings(.language)
     }))
+
+    let grvmStrings = GRVMgramStrings(presentationData.strings)
+    items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 7, text: grvmStrings[.settingsTitle], icon: PresentationResourcesSettings.appearance, action: {
+        interaction.openSettings(.ayuGramSettings)
+    }))
     
     let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
     let isPremiumDisabled = premiumConfiguration.isPremiumDisabled

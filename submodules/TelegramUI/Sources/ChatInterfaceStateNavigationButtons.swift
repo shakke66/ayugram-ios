@@ -8,6 +8,43 @@ import AccountContext
 import ChatPresentationInterfaceState
 import ChatNavigationButton
 
+struct GRVMQuickAdminNavigationAvailability: Equatable {
+    let recentActions: Bool
+    let admins: Bool
+
+    static let unavailable = GRVMQuickAdminNavigationAvailability(recentActions: false, admins: false)
+}
+
+func grvmQuickAdminNavigationAvailability(_ presentationInterfaceState: ChatPresentationInterfaceState) -> GRVMQuickAdminNavigationAvailability {
+    let quickAdminShortcuts = AyuGramHooks.chatAppearance(accountPeerId: presentationInterfaceState.accountPeerId).chats.quickAdminShortcuts
+    guard quickAdminShortcuts,
+          presentationInterfaceState.interfaceState.selectionState == nil,
+          case .standard(.default) = presentationInterfaceState.mode,
+          case .peer = presentationInterfaceState.chatLocation else {
+        return .unavailable
+    }
+
+    if let subject = presentationInterfaceState.subject {
+        switch subject {
+        case .scheduledMessages, .pinnedMessages, .messageOptions, .customChatContents:
+            return .unavailable
+        default:
+            break
+        }
+    }
+
+    guard let channel = presentationInterfaceState.renderedPeer?.peer as? TelegramChannel else {
+        return .unavailable
+    }
+    let isAdmin = channel.adminRights != nil || channel.flags.contains(.isCreator)
+    switch channel.info {
+    case .group:
+        return GRVMQuickAdminNavigationAvailability(recentActions: isAdmin, admins: true)
+    case .broadcast:
+        return GRVMQuickAdminNavigationAvailability(recentActions: isAdmin, admins: isAdmin)
+    }
+}
+
 func leftNavigationButtonForChatInterfaceState(_ presentationInterfaceState: ChatPresentationInterfaceState, subject: ChatControllerSubject?, strings: PresentationStrings, currentButton: ChatNavigationButton?, target: Any?, selector: Selector?) -> ChatNavigationButton? {
     if let _ = presentationInterfaceState.interfaceState.selectionState {
         if case .messageOptions = presentationInterfaceState.subject {

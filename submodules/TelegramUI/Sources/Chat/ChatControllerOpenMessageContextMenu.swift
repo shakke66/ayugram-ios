@@ -18,6 +18,28 @@ import TopMessageReactions
 import TelegramNotices
 import PresentationDataUtils
 import ChatPresentationInterfaceState
+import AyuGramLib
+import AyuGramFeatures
+
+private func grvmReactionPanelItems(
+    from actions: ContextController.Items
+) -> ContextController.Items? {
+    guard !actions.reactionItems.isEmpty else {
+        return nil
+    }
+    return ContextController.Items(
+        content: .list([]),
+        context: actions.context,
+        reactionItems: actions.reactionItems,
+        selectedReactionItems: actions.selectedReactionItems,
+        reactionsTitle: actions.reactionsTitle,
+        reactionsLocked: actions.reactionsLocked,
+        animationCache: actions.animationCache,
+        alwaysAllowPremiumReactions: actions.alwaysAllowPremiumReactions,
+        allPresetReactionsAreAvailable: actions.allPresetReactionsAreAvailable,
+        getEmojiContent: actions.getEmojiContent
+    )
+}
 
 extension ChatControllerImpl {
     func openMessageContextMenu(message: EngineMessage, selectAll: Bool, node: ASDisplayNode, frame: CGRect, anyRecognizer: UIGestureRecognizer?, location: CGPoint?) -> Void {
@@ -30,6 +52,7 @@ extension ChatControllerImpl {
         
         let recognizer: TapLongTapOrDoubleTapGestureRecognizer? = anyRecognizer as? TapLongTapOrDoubleTapGestureRecognizer
         let gesture: ContextGesture? = anyRecognizer as? ContextGesture
+        let modifierPressed = recognizer?.grvmModifierPressed ?? gesture?.grvmModifierPressed ?? false
         if let messages = self.chatDisplayNode.historyNode.messageGroupInCurrentHistoryView(message.id) {
             (self.view.window as? WindowHost)?.cancelInteractiveKeyboardGestures()
             self.chatDisplayNode.cancelInteractiveKeyboardGestures()
@@ -48,14 +71,20 @@ extension ChatControllerImpl {
 
             let canBypassReactionRestrictions = canBypassRestrictions(chatPresentationInterfaceState: self.presentationInterfaceState)
 
+            let grvmMoreActions = GRVMContextMenuMoreActions()
             let _ = combineLatest(queue: .mainQueue(),
                 self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: self.context.account.peerId)),
-                contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: self.presentationInterfaceState, context: self.context, messages: updatedMessages, controllerInteraction: self.controllerInteraction, selectAll: selectAll, interfaceInteraction: self.interfaceInteraction, messageNode: node as? ChatMessageItemView),
+                contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: self.presentationInterfaceState, context: self.context, messages: updatedMessages, controllerInteraction: self.controllerInteraction, selectAll: selectAll, interfaceInteraction: self.interfaceInteraction, messageNode: node as? ChatMessageItemView, modifierPressed: modifierPressed, grvmMoreActions: grvmMoreActions),
                 peerMessageAllowedReactions(context: self.context, message: topMessage, ignoreDefault: canBypassReactionRestrictions),
                 peerMessageSelectedReactions(context: self.context, message: EngineMessage(topMessage)),
                 topMessageReactions(context: self.context, message: topMessage, subPeerId: self.chatLocation.threadId.flatMap(EnginePeer.Id.init), ignoreDefault: canBypassReactionRestrictions),
-                ApplicationSpecificNotice.getChatTextSelectionTips(accountManager: self.context.sharedContext.accountManager)
-            ).startStandalone(next: { [weak self] peer, actions, allowedReactionsAndStars, selectedReactions, topReactions, chatTextSelectionTips in
+                ApplicationSpecificNotice.getChatTextSelectionTips(accountManager: self.context.sharedContext.accountManager),
+                grvmSettings(
+                    accountId: self.context.account.peerId,
+                    accountManager: self.context.sharedContext.accountManager
+                )
+                |> take(1)
+            ).startStandalone(next: { [weak self] peer, actions, allowedReactionsAndStars, selectedReactions, topReactions, chatTextSelectionTips, settings in
                 guard let self else {
                     return
                 }
@@ -70,6 +99,18 @@ extension ChatControllerImpl {
                     }
                 case .custom, .twoLists:
                     break
+                }
+                if case var .list(itemList) = actions.content {
+                    let grvmItems = self.grvmMessageFilterContextMenuItems(
+                        message: message._asMessage(),
+                        shadowBanPeerIds: Set(settings.shadowBanIds.map(PeerId.init)),
+                        includeAddFilter: false
+                    )
+                    if !grvmItems.isEmpty {
+                        itemList.append(.separator)
+                        itemList.append(contentsOf: grvmItems)
+                        actions.content = .list(itemList)
+                    }
                 }
                 
                 if allowedReactions != nil, case let .customChatContents(customChatContents) = self.presentationInterfaceState.subject {
@@ -211,6 +252,28 @@ extension ChatControllerImpl {
                             }
                         }
                     }
+                }
+
+                var reactionPanelItems: ContextController.Items?
+                switch grvmContextMenuPlacement(
+                    settings.grvmChatAppearanceSettings.contextMenu.reactions,
+                    modifierPressed: modifierPressed
+                ) {
+                case .hidden:
+                    actions.reactionItems = []
+                case .topLevel:
+                    break
+                case .more:
+                    reactionPanelItems = grvmReactionPanelItems(from: actions)
+                    actions.reactionItems = []
+                }
+                if let moreItem = grvmContextMoreActionsItem(
+                    contextMoreActions: grvmMoreActions.items,
+                    reactionPanelItems: reactionPanelItems,
+                    strings: self.presentationInterfaceState.strings
+                ), case var .list(itemList) = actions.content {
+                    itemList.insert(moreItem, at: 0)
+                    actions.content = .list(itemList)
                 }
                 
                 self.chatDisplayNode.messageTransitionNode.dismissMessageReactionContexts()
@@ -627,7 +690,8 @@ extension ChatControllerImpl {
                             }
                         }
                         
-                        let _ = updateMessageReactionsInteractively(account: self.context.account, messageIds: [message.id], reactions: mappedUpdatedReactions, isLarge: isLarge, storeAsRecentlyUsed: true).startStandalone()
+                        let _ = (updateMessageReactionsInteractively(account: self.context.account, messageIds: [message.id], reactions: mappedUpdatedReactions, isLarge: isLarge, storeAsRecentlyUsed: true)
+                        |> deliverOnMainQueue).startStandalone()
                     }
                 }
 

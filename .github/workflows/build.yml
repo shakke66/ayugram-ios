@@ -1,4 +1,4 @@
-name: CI
+name: GRVMgram build
 
 on:
   push:
@@ -8,18 +8,58 @@ on:
 
 jobs:
   build:
-    runs-on: macos-13
+    runs-on: macos-26
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: 'recursive'
           fetch-depth: '0'
 
+      - name: Validate GRVMgram sources
+        run: |
+          python3 -m unittest discover -s Tests/GRVMgramValidation -p 'test_*.py' -v
+          python3 build-system/Make/ValidateGRVMgram.py source
+
+      - name: Fetch submodules by exact commit
+        run: |
+          set -e
+          fetch_sub() {
+            local path="$1"; local url="$2"; local sha="$3"
+            echo "=== $path @ $sha ==="
+            rm -rf "$path"
+            git clone --filter=blob:none "$url" "$path"
+            git -C "$path" checkout -q "$sha"
+            git -C "$path" submodule update --init --recursive --depth 1 || true
+          }
+          fetch_sub build-system/bazel-rules/apple_support       https://github.com/bazelbuild/apple_support.git                a99414ad848c3aeb84640934352ecc85d8a937f5
+          fetch_sub build-system/bazel-rules/rules_apple         https://github.com/ali-fareed/rules_apple.git                  1791d916de4083388f22e20248d8b010d23f0d6b
+          fetch_sub build-system/bazel-rules/rules_swift         https://github.com/bazelbuild/rules_swift.git                  9dce728ed1e9168ec8c912fcd3443dad48a286fe
+          fetch_sub build-system/bazel-rules/rules_xcodeproj     https://github.com/MobileNativeFoundation/rules_xcodeproj.git   997f2db058596f91663e54782b79490de87208da
+          fetch_sub build-system/bazel-rules/sourcekit-bazel-bsp https://github.com/spotify/sourcekit-bazel-bsp.git             feea27cfc88eccc58af0cfe5674444e945cfb75f
+          fetch_sub submodules/LottieCpp/lottiecpp               https://github.com/ali-fareed/lottiecpp.git                    4a3144b5d527429f7bbd0f07003cb372bf8939ce
+          fetch_sub submodules/TgVoipWebrtc/tgcalls              https://github.com/TelegramMessenger/tgcalls.git               8099768559edb0efd2d1b300090c18141226e9a8
+          fetch_sub submodules/rlottie/rlottie                   https://github.com/TelegramMessenger/rlottie.git               67f103bc8b625f2a4a9e94f1d8c7bd84c5a08d1d
+          fetch_sub third-party/XcodeGen                         https://github.com/yonaskolb/XcodeGen.git                      53cb43cb66908a28812d7629d03fed94c9827a24
+          fetch_sub third-party/dav1d/dav1d                      https://github.com/ali-fareed/dav1d.git                        330e20672e85f9de1678dccd6957845898ef57a1
+          fetch_sub third-party/libvpx/libvpx                    https://github.com/webmproject/libvpx.git                      e7bfd8b6c230a6824e7fd1efa2378a7322986128
+          fetch_sub third-party/td/td                            https://github.com/tdlib/td.git                                e894536b2f46caad93f997448d2daff9431b19dd
+          fetch_sub third-party/webrtc/webrtc                    https://github.com/ali-fareed/webrtc.git                       d5c77d3588c9353dd48b80430d2ffb41dafef177
+          echo "=== submodule sizes ==="
+          du -sh build-system/bazel-rules/* submodules/rlottie/rlottie third-party/webrtc/webrtc 2>/dev/null || true
+
       - name: Set active Xcode path
         run: |
           XCODE_VERSION=$(cat versions.json | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj["xcode"]);')
-          sudo xcode-select -s /Applications/Xcode_$XCODE_VERSION.app/Contents/Developer
+          echo "Requested Xcode: $XCODE_VERSION"
+          echo "Available Xcodes:"
+          ls /Applications | grep Xcode || true
+          if [ -d "/Applications/Xcode_$XCODE_VERSION.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_$XCODE_VERSION.app/Contents/Developer
+          else
+            echo "Xcode_$XCODE_VERSION not found, using default xcode-select"
+          fi
+          xcodebuild -version
 
       - name: Create canonical source directory
         run: |
@@ -29,8 +69,11 @@ jobs:
           mv /Users/Shared/$(basename $GITHUB_WORKSPACE) /Users/Shared/telegram-ios
 
       - name: Build the App
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
         run: |
-          set -x
+          set -o pipefail
 
           # source code paths are included in the final binary, so we need to make them stable across builds
           SOURCE_DIR=/Users/Shared/telegram-ios
@@ -39,6 +82,14 @@ jobs:
           BAZEL_USER_ROOT="/private/var/tmp/_bazel_containerhost"
 
           cd $SOURCE_DIR
+
+          # Inject Telegram API credentials from GitHub Secrets so the real api_hash
+          # stays out of the public repository (the committed value is a placeholder).
+          if [ -n "$TELEGRAM_API_ID" ] && [ -n "$TELEGRAM_API_HASH" ]; then
+            python3 -c "import json,os; p='build-system/appstore-configuration.json'; c=json.load(open(p)); c['api_id']=os.environ['TELEGRAM_API_ID'].strip(); c['api_hash']=os.environ['TELEGRAM_API_HASH'].strip(); json.dump(c,open(p,'w'),indent=2); print('Injected api_id:', c['api_id'])"
+          else
+            echo "WARNING: TELEGRAM_API_ID/TELEGRAM_API_HASH secrets are not set; building with the placeholder api_id from the config file (login will hang)."
+          fi
 
           BUILD_NUMBER_OFFSET="$(cat build_number_offset)"
 
@@ -50,60 +101,61 @@ jobs:
           echo "APP_VERSION=$(echo $APP_VERSION)" >> $GITHUB_ENV
 
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+
+          # Build and tee the full log so compile errors are captured as an artifact even on failure.
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
+            --overrideXcodeVersion \
+            --overrideBazelVersion \
             build \
             --configurationPath="build-system/appstore-configuration.json" \
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=release_arm64 \
-            --buildNumber="$BUILD_NUMBER"
+            --buildNumber="$BUILD_NUMBER" 2>&1 | tee /Users/Shared/build_log.txt
 
-          # collect ipa
-          OUTPUT_PATH="build/artifacts"
-          rm -rf "$OUTPUT_PATH"
-          mkdir -p "$OUTPUT_PATH"
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa; do
-            cp "$f" $OUTPUT_PATH/
-          done
+      - name: Extract compile errors
+        if: always()
+        run: |
+          echo "===== ERRORS / WARNINGS (filtered) ====="
+          grep -nE "error:|warning:|FAILED|Error:|fatal error" /Users/Shared/build_log.txt | head -200 || echo "no matches / no log"
+          cp /Users/Shared/build_log.txt $GITHUB_WORKSPACE/build_log.txt || true
 
-          # collect dsym
-          mkdir -p build/DSYMs
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/*.dSYM; do
-            cp -R "$f" build/DSYMs/
-          done
-          zip -r "./$OUTPUT_PATH/Telegram.DSYMs.zip" build/DSYMs 1>/dev/null
+      - name: Collect IPA
+        if: success()
+        run: |
+          set -euo pipefail
+          SOURCE_DIR=/Users/Shared/telegram-ios
+          cd "$SOURCE_DIR"
+          IPA="bazel-bin/Telegram/Telegram.ipa"
+          if [ ! -e "$IPA" ]; then
+            IPA="$(ls -1 bazel-out/*/bin/Telegram/Telegram.ipa 2>/dev/null | head -1 || true)"
+          fi
+          if [ -z "$IPA" ] || [ ! -e "$IPA" ]; then
+            echo "ERROR: Telegram.ipa not found. Contents of bazel-bin/Telegram:"
+            ls -la bazel-bin/Telegram/ 2>/dev/null | head -60 || true
+            exit 1
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp -L "$IPA" "$GITHUB_WORKSPACE/artifacts/GRVMgram.ipa"
+          test -s "$GITHUB_WORKSPACE/artifacts/GRVMgram.ipa"
+          ls -lh "$GITHUB_WORKSPACE/artifacts/GRVMgram.ipa"
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate GRVMgram IPA
+        if: success()
+        run: python3 build-system/Make/ValidateGRVMgram.py ipa artifacts/GRVMgram.ipa
+
+      - name: Upload IPA
+        if: success()
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: build-${{ env.BUILD_NUMBER }}
-          release_name: Telegram ${{ env.APP_VERSION }} (${{ env.BUILD_NUMBER }})
-          body: |
-            An unsigned build of Telegram for iOS ${{ env.APP_VERSION }} (${{ env.BUILD_NUMBER }})
-          draft: false
-          prerelease: false
+          name: GRVMgram-ipa
+          path: artifacts/GRVMgram.ipa
+          if-no-files-found: error
 
-      - name: Upload Release IPA
-        id: upload-release-ipa 
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: /Users/Shared/telegram-ios/build/artifacts/Telegram.ipa
-          asset_name: Telegram.ipa
-          asset_content_type: application/zip
-
-      - name: Upload Release DSYM
-        id: upload-release-dsym 
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: /Users/Shared/telegram-ios/build/artifacts/Telegram.DSYMs.zip
-          asset_name: Telegram.DSYMs.zip
-          asset_content_type: application/zip
+          name: build-log
+          path: build_log.txt
+          if-no-files-found: warn

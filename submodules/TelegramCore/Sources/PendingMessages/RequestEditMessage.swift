@@ -112,9 +112,9 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                 pendingMediaContent = content.content
             }
         }
-        return postbox.transaction { transaction -> (Peer?, Message?, SimpleDictionary<PeerId, Peer>) in
+        return postbox.transaction { transaction -> (Peer?, Message?, SimpleDictionary<PeerId, Peer>, GRVMLocalPremiumEmojiTransport) in
             guard let message = transaction.getMessage(messageId) else {
-                return (nil, nil, SimpleDictionary())
+                return (nil, nil, SimpleDictionary(), .disabled)
             }
             
             for (_, file) in inlineStickers {
@@ -130,7 +130,7 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                             if let _ = scheduleInfoAttribute {
                                 break
                             } else {
-                                return (nil, nil, SimpleDictionary())
+                                return (nil, nil, SimpleDictionary(), .disabled)
                             }
                     }
                 }
@@ -145,16 +145,29 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                     }
                 }
             }
-            return (transaction.getPeer(messageId.peerId), message, peers)
+            return (
+                transaction.getPeer(messageId.peerId),
+                message,
+                peers,
+                grvmLocalPremiumEmojiTransport(
+                    transaction: transaction,
+                    accountPeerId: accountPeerId,
+                    peerId: messageId.peerId
+                )
+            )
         }
         |> mapError { _ -> RequestEditMessageInternalError in }
-        |> mapToSignal { peer, message, associatedPeers -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> in
+        |> mapToSignal { peer, message, associatedPeers, grvmEmojiTransport -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> in
             if let peer, let message, let inputPeer = apiInputPeer(peer) {
                 var flags: Int32 = 1 << 11
                 
                 var apiEntities: [Api.MessageEntity]?
                 if let entities {
-                    apiEntities = apiTextAttributeEntities(entities, associatedPeers: associatedPeers)
+                    apiEntities = apiTextAttributeEntities(
+                        entities,
+                        associatedPeers: associatedPeers,
+                        localPremiumEmojiTransport: grvmEmojiTransport
+                    )
                     flags |= Int32(1 << 3)
                 }
                 
@@ -269,121 +282,59 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                                 applyMediaResourceChanges(from: richText, to: toRichText, postbox: postbox, force: true)
                             }
                             
-                            switch result {
-                            case let .updates(updatesData):
-                                let (updates, users, chats) = (updatesData.updates, updatesData.users, updatesData.chats)
-                                for update in updates {
+                            let users = result.users
+                            let chats = result.chats
+                            let peers = AccumulatedPeers(transaction: transaction, chats: chats, users: users)
+                            updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
+                            for update in result.allUpdates {
                                     switch update {
                                     case .updateEditMessage(let data):
                                         let message = data.message
-                                        let peers = AccumulatedPeers(transaction: transaction, chats: chats, users: users)
-                                        updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
 
                                         if let message = StoreMessage(apiMessage: message, accountPeerId: accountPeerId, peerIsForum: peer.isForumOrMonoForum), case let .Id(id) = message.id {
-                                            transaction.updateMessage(id, update: { previousMessage in
-                                                var updatedFlags = message.flags
-                                                var updatedLocalTags = message.localTags
-                                                if previousMessage.localTags.contains(.OutgoingLiveLocation) {
-                                                    updatedLocalTags.insert(.OutgoingLiveLocation)
-                                                }
-                                                if previousMessage.flags.contains(.Incoming) {
-                                                    updatedFlags.insert(.Incoming)
-                                                } else {
-                                                    updatedFlags.remove(.Incoming)
-                                                }
-
-                                                var updatedMedia = message.media
-                                                if let previousPaidContent = previousMessage.media.first(where: { $0 is TelegramMediaPaidContent }) as? TelegramMediaPaidContent, case .full = previousPaidContent.extendedMedia.first {
-                                                    updatedMedia = previousMessage.media
-                                                }
-
-                                                return .update(message.withUpdatedLocalTags(updatedLocalTags).withUpdatedFlags(updatedFlags).withUpdatedMedia(updatedMedia))
-                                            })
+                                            grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
                                         }
                                     case .updateNewMessage(let data):
                                         let message = data.message
-                                        let peers = AccumulatedPeers(transaction: transaction, chats: chats, users: users)
-                                        updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
 
                                         if let message = StoreMessage(apiMessage: message, accountPeerId: accountPeerId, peerIsForum: peer.isForumOrMonoForum), case let .Id(id) = message.id {
-                                            transaction.updateMessage(id, update: { previousMessage in
-                                                var updatedFlags = message.flags
-                                                var updatedLocalTags = message.localTags
-                                                if previousMessage.localTags.contains(.OutgoingLiveLocation) {
-                                                    updatedLocalTags.insert(.OutgoingLiveLocation)
-                                                }
-                                                if previousMessage.flags.contains(.Incoming) {
-                                                    updatedFlags.insert(.Incoming)
-                                                } else {
-                                                    updatedFlags.remove(.Incoming)
-                                                }
-
-                                                var updatedMedia = message.media
-                                                if let previousPaidContent = previousMessage.media.first(where: { $0 is TelegramMediaPaidContent }) as? TelegramMediaPaidContent, case .full = previousPaidContent.extendedMedia.first {
-                                                    updatedMedia = previousMessage.media
-                                                }
-
-                                                return .update(message.withUpdatedLocalTags(updatedLocalTags).withUpdatedFlags(updatedFlags).withUpdatedMedia(updatedMedia))
-                                            })
+                                            grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
                                         }
                                     case .updateEditChannelMessage(let data):
                                         let message = data.message
-                                        let peers = AccumulatedPeers(transaction: transaction, chats: chats, users: users)
-                                        updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
 
                                         if let message = StoreMessage(apiMessage: message, accountPeerId: accountPeerId, peerIsForum: peer.isForumOrMonoForum), case let .Id(id) = message.id {
-                                            transaction.updateMessage(id, update: { previousMessage in
-                                                var updatedFlags = message.flags
-                                                var updatedLocalTags = message.localTags
-                                                if previousMessage.localTags.contains(.OutgoingLiveLocation) {
-                                                    updatedLocalTags.insert(.OutgoingLiveLocation)
-                                                }
-                                                if previousMessage.flags.contains(.Incoming) {
-                                                    updatedFlags.insert(.Incoming)
-                                                } else {
-                                                    updatedFlags.remove(.Incoming)
-                                                }
-
-                                                var updatedMedia = message.media
-                                                if let previousPaidContent = previousMessage.media.first(where: { $0 is TelegramMediaPaidContent }) as? TelegramMediaPaidContent, case .full = previousPaidContent.extendedMedia.first {
-                                                    updatedMedia = previousMessage.media
-                                                }
-
-                                                return .update(message.withUpdatedLocalTags(updatedLocalTags).withUpdatedFlags(updatedFlags).withUpdatedMedia(updatedMedia))
-                                            })
+                                            grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
                                         }
                                     case .updateNewChannelMessage(let data):
                                         let message = data.message
-                                        let peers = AccumulatedPeers(transaction: transaction, chats: chats, users: users)
-                                        updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: peers)
                                         
                                         if let message = StoreMessage(apiMessage: message, accountPeerId: accountPeerId, peerIsForum: peer.isForumOrMonoForum), case let .Id(id) = message.id {
-                                            transaction.updateMessage(id, update: { previousMessage in
-                                                var updatedFlags = message.flags
-                                                var updatedLocalTags = message.localTags
-                                                if previousMessage.localTags.contains(.OutgoingLiveLocation) {
-                                                    updatedLocalTags.insert(.OutgoingLiveLocation)
-                                                }
-                                                if previousMessage.flags.contains(.Incoming) {
-                                                    updatedFlags.insert(.Incoming)
-                                                } else {
-                                                    updatedFlags.remove(.Incoming)
-                                                }
-                                                
-                                                var updatedMedia = message.media
-                                                if let previousPaidContent = previousMessage.media.first(where: { $0 is TelegramMediaPaidContent }) as? TelegramMediaPaidContent, case .full = previousPaidContent.extendedMedia.first {
-                                                    updatedMedia = previousMessage.media
-                                                }
-                                                
-                                                return .update(message.withUpdatedLocalTags(updatedLocalTags).withUpdatedFlags(updatedFlags).withUpdatedMedia(updatedMedia))
-                                            })
+                                            grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
+                                        }
+                                    case .updateNewScheduledMessage(let data):
+                                        let message = data.message
+                                        if let message = StoreMessage(
+                                            apiMessage: message,
+                                            accountPeerId: accountPeerId,
+                                            peerIsForum: peer.isForumOrMonoForum,
+                                            namespace: Namespaces.Message.ScheduledCloud
+                                        ), case let .Id(id) = message.id {
+                                            grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
+                                        }
+                                    case .updateQuickReplyMessage(let data):
+                                        let message = data.message
+                                        if let message = StoreMessage(
+                                            apiMessage: message,
+                                            accountPeerId: accountPeerId,
+                                            peerIsForum: peer.isForumOrMonoForum,
+                                            namespace: Namespaces.Message.QuickReplyCloud
+                                        ), case let .Id(id) = message.id {
+                                            grvmApplyEditedMessage(accountPeerId: accountPeerId, transaction: transaction, id: id, message: message)
                                         }
                                     default:
                                         break
                                     }
-                                }
-                            default:
-                                break
                             }
                             
                             stateManager.addUpdates(result)

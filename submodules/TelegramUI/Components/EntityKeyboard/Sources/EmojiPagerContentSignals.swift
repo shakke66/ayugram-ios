@@ -9,6 +9,26 @@ import MultiAnimationRenderer
 import TelegramNotices
 import FlatBuffers
 import FlatSerialization
+import AyuGramFeatures
+import AyuGramLib
+
+private func grvmIsMediaInstalled(
+    _ file: TelegramMediaFile,
+    namespace: ItemCollectionId.Namespace,
+    installedCollectionIds: Set<ItemCollectionId>
+) -> Bool {
+    for attribute in file.attributes {
+        switch attribute {
+        case let .Sticker(_, packReference, _), let .CustomEmoji(_, _, _, packReference):
+            if case let .id(id, _) = packReference, installedCollectionIds.contains(ItemCollectionId(namespace: namespace, id: id)) {
+                return true
+            }
+        default:
+            break
+        }
+    }
+    return false
+}
 
 public extension EmojiPagerContentComponent {    
     private static func hasPremium(context: AccountContext, chatPeerId: EnginePeer.Id?, premiumIfSavedMessages: Bool) -> Signal<Bool, NoError> {
@@ -68,6 +88,7 @@ public extension EmojiPagerContentComponent {
         hideBackground: Bool = false,
         maskEdge: EmojiPagerContentComponent.MaskEdgeMode = .none
     ) -> Signal<EmojiPagerContentComponent, NoError> {
+        let chats = AyuGramHooks.chatAppearance(accountPeerId: context.account.peerId).chats
         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
         let isPremiumDisabled = premiumConfiguration.isPremiumDisabled
         
@@ -263,15 +284,12 @@ public extension EmojiPagerContentComponent {
                 }
             }
             
-            var installedCollectionIds = Set<ItemCollectionId>()
-            for (id, _, _) in view.collectionInfos {
-                installedCollectionIds.insert(id)
-            }
+            let installedCollectionIds = Set(view.collectionInfos.map { $0.0 })
             
             let dismissedTrendingEmojiPacksSet = Set(dismissedTrendingEmojiPacks ?? [])
             let featuredEmojiPacksSet = Set(featuredEmojiPacks.map(\.info.id.id))
             
-            if dismissedTrendingEmojiPacksSet != featuredEmojiPacksSet && hasTrending {
+            if !chats.showOnlyAddedStickers && dismissedTrendingEmojiPacksSet != featuredEmojiPacksSet && hasTrending {
                 for featuredEmojiPack in featuredEmojiPacks {
                     if installedCollectionIds.contains(featuredEmojiPack.info.id) {
                         continue
@@ -1222,6 +1240,9 @@ public extension EmojiPagerContentComponent {
                     if !areCustomEmojiEnabled, case .file = item.content {
                         continue
                     }
+                    if chats.showOnlyAddedStickers, case let .file(file) = item.content, !grvmIsMediaInstalled(file, namespace: Namespaces.ItemCollection.CloudEmojiPacks, installedCollectionIds: installedCollectionIds) {
+                        continue
+                    }
                     
                     let resultItem: EmojiPagerContentComponent.Item
                     switch item.content {
@@ -1274,7 +1295,7 @@ public extension EmojiPagerContentComponent {
             var skippedCollectionIds = Set<AnyHashable>()
             
             var avatarPeer: EnginePeer?
-            if let peerSpecificPack = peerSpecificPack {
+            if let peerSpecificPack = peerSpecificPack, !chats.showOnlyAddedStickers || installedCollectionIds.contains(peerSpecificPack.info.id) {
                 avatarPeer = peerSpecificPack.peer
                 
                 var processedIds = Set<MediaId>()
@@ -1421,7 +1442,7 @@ public extension EmojiPagerContentComponent {
                     }
                 }
                 
-                if !isStandalone {
+                if !isStandalone && !chats.showOnlyAddedStickers {
                     for featuredEmojiPack in featuredEmojiPacks {
                         if installedCollectionIds.contains(featuredEmojiPack.info.id) {
                             continue
@@ -1640,6 +1661,14 @@ public extension EmojiPagerContentComponent {
         hideBackground: Bool = false,
         maskEdge: EmojiPagerContentComponent.MaskEdgeMode = .none
     ) -> Signal<EmojiPagerContentComponent, NoError> {
+        let chats: Signal<GRVMChatSettings, NoError> = grvmSettings(
+            accountId: context.account.peerId,
+            accountManager: context.sharedContext.accountManager
+        )
+        |> map { settings in
+            return settings.grvmChatAppearanceSettings.chats
+        }
+        |> distinctUntilChanged
         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
         let isPremiumDisabled = premiumConfiguration.isPremiumDisabled
         
@@ -1722,17 +1751,29 @@ public extension EmojiPagerContentComponent {
                 )
             }
         }
+
+        let chatsAndFeaturedStickerPacks = chats
+        |> mapToSignal { chats in
+            let featuredStickerPacks = hasTrending && !chats.showOnlyAddedStickers
+                ? context.account.viewTracker.featuredStickerPacks()
+                : .single([])
+            return featuredStickerPacks
+            |> map { featuredStickerPacks in
+                return (chats, featuredStickerPacks)
+            }
+        }
         
         return combineLatest(
             context.account.postbox.itemCollectionsView(orderedItemListCollectionIds: stickerOrderedItemListCollectionIds, namespaces: stickerNamespaces, aroundIndex: nil, count: 10000000),
             hasPremium(context: context, chatPeerId: chatPeerId, premiumIfSavedMessages: false),
-            hasTrending ? context.account.viewTracker.featuredStickerPacks() : .single([]),
+            chatsAndFeaturedStickerPacks,
             context.engine.data.get(TelegramEngine.EngineData.Item.ItemCache.Item(collectionId: Namespaces.CachedItemCollection.featuredStickersConfiguration, id: ValueBoxKey(length: 0))),
             ApplicationSpecificNotice.dismissedTrendingStickerPacks(accountManager: context.sharedContext.accountManager),
             peerSpecificPack,
             searchCategories
         )
-        |> map { view, hasPremium, featuredStickerPacks, featuredStickersConfiguration, dismissedTrendingStickerPacks, peerSpecificPack, searchCategories -> EmojiPagerContentComponent in
+        |> map { view, hasPremium, chatsAndFeaturedStickerPacks, featuredStickersConfiguration, dismissedTrendingStickerPacks, peerSpecificPack, searchCategories -> EmojiPagerContentComponent in
+            let (chats, featuredStickerPacks) = chatsAndFeaturedStickerPacks
             let hasPremium = forceHasPremium || hasPremium
             struct ItemGroup {
                 var supergroupId: AnyHashable
@@ -1760,10 +1801,7 @@ public extension EmojiPagerContentComponent {
                 }
             }
             
-            var installedCollectionIds = Set<ItemCollectionId>()
-            for (id, _, _) in view.collectionInfos {
-                installedCollectionIds.insert(id)
-            }
+            let installedCollectionIds = Set(view.collectionInfos.map { $0.0 })
             
             let dismissedTrendingStickerPacksSet = Set(dismissedTrendingStickerPacks ?? [])
             let featuredStickerPacksSet = Set(featuredStickerPacks.map(\.info.id.id))
@@ -1890,12 +1928,20 @@ public extension EmojiPagerContentComponent {
             var addedCreateStickerButton = false
             if let recentStickers = recentStickers {
                 let groupId = "recent"
+                let recentLimit = Int(chats.recentStickersCount)
+                var visibleRecentCount = 0
                 for item in recentStickers.items {
                     guard let item = item.contents.get(RecentMediaItem.self) else {
                         continue
                     }
                     if isPremiumDisabled && item.media.isPremiumSticker {
                         continue
+                    }
+                    if chats.showOnlyAddedStickers && !grvmIsMediaInstalled(item.media._parse(), namespace: Namespaces.ItemCollection.CloudStickerPacks, installedCollectionIds: installedCollectionIds) {
+                        continue
+                    }
+                    if visibleRecentCount >= recentLimit {
+                        break
                     }
                     
                     var tintMode: Item.TintMode = .none
@@ -1919,6 +1965,7 @@ public extension EmojiPagerContentComponent {
                         itemGroupIndexById[groupId] = itemGroups.count
                         itemGroups.append(ItemGroup(supergroupId: groupId, id: groupId, title: strings.Stickers_FrequentlyUsed, subtitle: nil, actionButtonTitle: nil, isPremiumLocked: false, isFeatured: false, displayPremiumBadges: false, hasEdit: false, headerItem: nil, items: [resultItem]))
                     }
+                    visibleRecentCount += 1
                 }
                 
                 if hasAdd && !addedCreateStickerButton, let groupIndex = itemGroupIndexById[groupId] {
@@ -1936,7 +1983,7 @@ public extension EmojiPagerContentComponent {
             }
               
             var avatarPeer: EnginePeer?
-            if let peerSpecificPack = peerSpecificPack {
+            if let peerSpecificPack = peerSpecificPack, !chats.showOnlyAddedStickers || installedCollectionIds.contains(peerSpecificPack.info.id) {
                 avatarPeer = peerSpecificPack.peer
                 
                 var processedIds = Set<MediaId>()

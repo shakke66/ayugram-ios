@@ -19,6 +19,18 @@ public protocol StoreOrUpdateMessageAction: AnyObject {
     func addOrUpdate(messages: [StoreMessage], transaction: Transaction)
 }
 
+public struct LocalUnreadMessageScanResult: Equatable {
+    public let knownUnreadCount: Int
+    public let hasHoles: Bool
+    public let isComplete: Bool
+
+    init(knownUnreadCount: Int, hasHoles: Bool, isComplete: Bool) {
+        self.knownUnreadCount = knownUnreadCount
+        self.hasHoles = hasHoles
+        self.isComplete = isComplete
+    }
+}
+
 public final class Transaction {
     private let queue: Queue
     private weak var postbox: PostboxImpl?
@@ -188,6 +200,90 @@ public final class Transaction {
     public func withAllMessages(peerId: PeerId, namespace: MessageId.Namespace? = nil, _ f: (Message) -> Bool) {
         self.postbox?.withAllMessages(peerId: peerId, namespace: namespace, f)
     }
+
+    public func scanLocalUnreadMessages(
+        peerId: PeerId,
+        namespace: MessageId.Namespace,
+        state: PeerReadState,
+        _ f: (Message) -> Void
+    ) -> LocalUnreadMessageScanResult {
+        assert(!self.disposed)
+        guard let postbox = self.postbox else {
+            return LocalUnreadMessageScanResult(knownUnreadCount: 0, hasHoles: false, isComplete: false)
+        }
+        return postbox.scanLocalUnreadMessages(peerId: peerId, namespace: namespace, state: state, f)
+    }
+
+    /// Enumerates the locally available unread messages for one forum/reply
+    /// thread without changing read state. Missing messages and holes keep the
+    /// result conservative so callers can retain the unknown unread portion.
+    public func scanLocalUnreadThreadMessages(
+        peerId: PeerId,
+        threadId: Int64,
+        namespace: MessageId.Namespace,
+        maxIncomingReadId: MessageId.Id,
+        maxKnownMessageId: MessageId.Id,
+        expectedUnreadCount: Int32,
+        _ f: (Message) -> Void
+    ) -> LocalUnreadMessageScanResult {
+        assert(!self.disposed)
+        guard let postbox = self.postbox else {
+            return LocalUnreadMessageScanResult(knownUnreadCount: 0, hasHoles: false, isComplete: false)
+        }
+
+        let topIndex = postbox.messageHistoryThreadsTable.getTop(
+            peerId: peerId,
+            threadId: threadId,
+            namespaces: Set([namespace])
+        )
+        let upperBoundId = max(maxKnownMessageId, topIndex?.id.id ?? maxKnownMessageId)
+        guard maxIncomingReadId < upperBoundId, maxIncomingReadId < Int32.max else {
+            return LocalUnreadMessageScanResult(
+                knownUnreadCount: 0,
+                hasHoles: false,
+                isComplete: max(0, expectedUnreadCount) == 0
+            )
+        }
+
+        let hasHoles = !self.getThreadIndexHoles(
+            peerId: peerId,
+            threadId: threadId,
+            namespace: namespace
+        ).isEmpty
+        let lowerBound = MessageIndex(
+            id: MessageId(peerId: peerId, namespace: namespace, id: maxIncomingReadId),
+            timestamp: 0
+        )
+        let messages = self.getMessagesWithThreadId(
+            peerId: peerId,
+            namespace: namespace,
+            threadId: threadId,
+            from: MessageIndex.upperBound(peerId: peerId, namespace: namespace),
+            includeFrom: false,
+            to: lowerBound,
+            limit: 512
+        )
+
+        var knownUnreadCount = 0
+        for message in messages {
+            guard message.id.id > maxIncomingReadId,
+                  message.id.id <= upperBoundId,
+                  !message.flags.intersection(.IsIncomingMask).isEmpty,
+                  !isLocallyDeletedMessage(message.attributes) else {
+                continue
+            }
+            knownUnreadCount += 1
+            f(message)
+        }
+
+        return LocalUnreadMessageScanResult(
+            knownUnreadCount: knownUnreadCount,
+            hasHoles: hasHoles,
+            isComplete: !hasHoles
+                && messages.count < 512
+                && knownUnreadCount == max(0, Int(expectedUnreadCount))
+        )
+    }
     
     public func clearHistory(_ peerId: PeerId, threadId: Int64?, minTimestamp: Int32?, maxTimestamp: Int32?, namespaces: MessageIdNamespaces, forEachMedia: ((Media) -> Void)?) {
         assert(!self.disposed)
@@ -202,6 +298,11 @@ public final class Transaction {
     public func removeAllMessagesWithGlobalTag(tag: GlobalMessageTags) {
         assert(!self.disposed)
         self.postbox?.removeAllMessagesWithGlobalTag(tag: tag)
+    }
+
+    public func messageIdsWithGlobalTag(_ tag: GlobalMessageTags) -> [MessageId] {
+        assert(!self.disposed)
+        return self.postbox?.messageIdsWithGlobalTag(tag: tag) ?? []
     }
     
     public func removeAllMessagesWithForwardAuthor(_ peerId: PeerId, forwardAuthorId: PeerId, namespace: MessageId.Namespace, forEachMedia: ((Media) -> Void)?) {
@@ -296,6 +397,11 @@ public final class Transaction {
     public func setNeedsIncomingReadStateSynchronization(_ peerId: PeerId) {
         assert(!self.disposed)
         self.postbox?.setNeedsIncomingReadStateSynchronization(peerId)
+    }
+
+    public func forceSynchronizeIncomingReadState(_ peerId: PeerId, state: CombinedPeerReadState, forceTokenId: PeerReadStateSynchronizationForceTokenId) {
+        assert(!self.disposed)
+        self.postbox?.forceSynchronizeIncomingReadState(peerId, state: state, forceTokenId: forceTokenId)
     }
     
     public func confirmSynchronizedIncomingReadState(_ peerId: PeerId) {
@@ -656,6 +762,24 @@ public final class Transaction {
     public func updateMessage(_ id: MessageId, update: (Message) -> PostboxUpdateMessage) {
         assert(!self.disposed)
         self.postbox?.updateMessage(transaction: self, id: id, update: update)
+    }
+
+    public func markMessageAsLocallyDeleted(id: MessageId, attribute: MessageAttribute) -> Bool {
+        assert(!self.disposed)
+        return self.postbox?.markMessageAsLocallyDeleted(
+            transaction: self,
+            id: id,
+            attribute: attribute
+        ) ?? false
+    }
+
+    public func addMessageAttribute(id: MessageId, attribute: MessageAttribute) -> Bool {
+        assert(!self.disposed)
+        return self.postbox?.addMessageAttribute(
+            transaction: self,
+            id: id,
+            attribute: attribute
+        ) ?? false
     }
     
     public func offsetPendingMessagesTimestamps(lowerBound: MessageId, excludeIds: Set<MessageId>, timestamp: Int32) {
@@ -1901,6 +2025,7 @@ final class PostboxImpl {
     private var currentNeedsReindexUnreadCounters: Bool = false
     
     private let statePipe: ValuePipe<PostboxCoding> = ValuePipe()
+    private let localUnreadMessagePeerIdsUpdatesPipe = ValuePipe<Set<PeerId>>()
     private var masterClientId = Promise<Int64>()
     
     private var sessionClientId: Int64 = {
@@ -2448,6 +2573,63 @@ final class PostboxImpl {
             }
         }
     }
+
+    fileprivate func scanLocalUnreadMessages(
+        peerId: PeerId,
+        namespace: MessageId.Namespace,
+        state: PeerReadState,
+        _ f: (Message) -> Void
+    ) -> LocalUnreadMessageScanResult {
+        let indices: [MessageIndex]
+        let hasHoles: Bool
+        var hasInvalidBoundary = false
+
+        switch state {
+        case let .idBased(maxIncomingReadId, _, maxKnownId, _, _):
+            let topLocalMessageId = self.messageHistoryIndexTable.top(peerId, namespace: namespace)?.id.id ?? maxKnownId
+            let upperBoundId = max(maxKnownId, topLocalMessageId)
+            if maxIncomingReadId < upperBoundId, maxIncomingReadId < Int32.max {
+                (indices, hasHoles) = self.messageHistoryIndexTable.incomingMessageIndicesInRange(
+                    peerId,
+                    namespace: namespace,
+                    minId: maxIncomingReadId + 1,
+                    maxId: upperBoundId
+                )
+            } else {
+                indices = []
+                hasHoles = false
+            }
+        case let .indexBased(maxIncomingReadIndex, _, _, _):
+            if maxIncomingReadIndex.id.peerId == peerId {
+                (indices, hasHoles) = self.messageHistoryTable.incomingMessageIndicesAfterIndex(
+                    peerId,
+                    namespace: namespace,
+                    afterIndex: maxIncomingReadIndex
+                )
+            } else {
+                indices = []
+                hasHoles = false
+                hasInvalidBoundary = true
+            }
+        }
+
+        var knownUnreadCount = 0
+        var hasMissingMessage = false
+        for index in indices {
+            guard let message = self.messageHistoryTable.getMessage(index) else {
+                hasMissingMessage = true
+                continue
+            }
+            f(self.renderIntermediateMessage(message))
+            knownUnreadCount += 1
+        }
+
+        return LocalUnreadMessageScanResult(
+            knownUnreadCount: knownUnreadCount,
+            hasHoles: hasHoles,
+            isComplete: !hasInvalidBoundary && !hasMissingMessage && !hasHoles && knownUnreadCount == max(0, Int(state.count))
+        )
+    }
     
     fileprivate func clearHistory(_ peerId: PeerId, threadId: Int64?, minTimestamp: Int32?, maxTimestamp: Int32?, namespaces: MessageIdNamespaces, forEachMedia: ((Media) -> Void)?) {
         if let minTimestamp = minTimestamp, let maxTimestamp = maxTimestamp {
@@ -2467,6 +2649,17 @@ final class PostboxImpl {
     fileprivate func removeAllMessagesWithGlobalTag(tag: GlobalMessageTags) {
         self.messageHistoryTable.removeAllMessagesWithGlobalTag(tag: tag, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations, forEachMedia: { _ in })
     }
+
+    fileprivate func messageIdsWithGlobalTag(tag: GlobalMessageTags) -> [MessageId] {
+        return self.messageHistoryTable.allIndicesWithGlobalTag(tag: tag).compactMap { entry in
+            switch entry {
+            case let .message(index):
+                return index.id
+            case .hole:
+                return nil
+            }
+        }
+    }
     
     fileprivate func removeAllMessagesWithForwardAuthor(_ peerId: PeerId, forwardAuthorId: PeerId, namespace: MessageId.Namespace, forEachMedia: ((Media) -> Void)?) {
         self.messageHistoryTable.removeAllMessagesWithForwardAuthor(peerId: peerId, forwardAuthorId: forwardAuthorId, namespace: namespace, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations, forEachMedia: forEachMedia)
@@ -2479,7 +2672,11 @@ final class PostboxImpl {
     fileprivate func setNeedsIncomingReadStateSynchronization(_ peerId: PeerId) {
         self.synchronizeReadStateTable.set(peerId, operation: .Validate, operations: &self.currentUpdatedSynchronizeReadStateOperations)
     }
-    
+
+    fileprivate func forceSynchronizeIncomingReadState(_ peerId: PeerId, state: CombinedPeerReadState, forceTokenId: PeerReadStateSynchronizationForceTokenId) {
+        self.synchronizeReadStateTable.set(peerId, operation: .ForcePush(state: state, thenSync: true, tokenId: forceTokenId), operations: &self.currentUpdatedSynchronizeReadStateOperations)
+    }
+
     fileprivate func confirmSynchronizedIncomingReadState(_ peerId: PeerId) {
         self.synchronizeReadStateTable.set(peerId, operation: nil, operations: &self.currentUpdatedSynchronizeReadStateOperations)
     }
@@ -2769,7 +2966,7 @@ final class PostboxImpl {
         }
     }
     
-    private func beforeCommit(currentTransaction: Transaction) -> (updatedTransactionStateVersion: Int64?, updatedMasterClientId: Int64?) {
+    private func beforeCommit(currentTransaction: Transaction) -> (updatedTransactionStateVersion: Int64?, updatedMasterClientId: Int64?, localUnreadMessagePeerIds: Set<PeerId>) {
         self.chatListTable.replay(postbox: self, historyOperationsByPeerId: self.currentOperationsByPeerId, updatedPeerChatListEmbeddedStates: self.currentUpdatedPeerChatListEmbeddedStates, updatedPeerCachedData: self.currentUpdatedCachedPeerData, updatedChatListInclusions: self.currentUpdatedChatListInclusions, messageHistoryTable: self.messageHistoryTable, peerChatInterfaceStateTable: self.peerChatInterfaceStateTable, operations: &self.currentChatListOperations)
         
         self.peerChatTopTaggedMessageIdsTable.replay(historyOperationsByPeerId: self.currentOperationsByPeerId)
@@ -2817,6 +3014,18 @@ final class PostboxImpl {
         let updatedMessageThreadPeerIds = self.messageHistoryThreadIndexTable.replay(threadsTable: self.messageHistoryThreadsTable, namespaces: self.seedConfiguration.chatMessagesNamespaces, updatedIds: self.messageHistoryThreadsTable.updatedIds)
         let updatedPeerThreadInfos = Set(self.messageHistoryThreadIndexTable.updatedInfoItems.keys)
         let alteredInitialPeerThreadsSummaries = self.peerThreadsSummaryTable.update(peerIds: updatedMessageThreadPeerIds.union(self.currentUpdatedPeerThreadCombinedStates), indexTable: self.messageHistoryThreadIndexTable, combinedStateTable: self.peerThreadCombinedStateTable, tagsSummaryTable: self.messageHistoryTagsSummaryTable)
+
+        var localUnreadMessagePeerIds = Set(self.currentOperationsByPeerId.keys)
+        localUnreadMessagePeerIds.formUnion(alteredInitialPeerCombinedReadStates.keys)
+        localUnreadMessagePeerIds.formUnion(alteredInitialPeerThreadsSummaries.keys)
+        localUnreadMessagePeerIds.formUnion(updatedMessageThreadPeerIds)
+        localUnreadMessagePeerIds.formUnion(self.currentUpdatedPeerThreadCombinedStates)
+        for key in self.currentPeerHoleOperations.keys {
+            localUnreadMessagePeerIds.insert(key.peerId)
+        }
+        for itemId in updatedPeerThreadInfos {
+            localUnreadMessagePeerIds.insert(itemId.peerId)
+        }
         
         self.chatListIndexTable.commitWithTransaction(
             postbox: self,
@@ -2968,7 +3177,7 @@ final class PostboxImpl {
             table.beforeCommit()
         }
         
-        return (updatedTransactionState, updatedMasterClientId)
+        return (updatedTransactionState, updatedMasterClientId, localUnreadMessagePeerIds)
     }
     
     fileprivate func messageIdsForGlobalIds(_ ids: [Int32]) -> [MessageId] {
@@ -3212,6 +3421,92 @@ final class PostboxImpl {
             }
         }
     }
+
+    fileprivate func markMessageAsLocallyDeleted(transaction: Transaction, id: MessageId, attribute: MessageAttribute) -> Bool {
+        guard let index = self.messageHistoryIndexTable.getIndex(id), let intermediateMessage = self.messageHistoryTable.getMessage(index) else {
+            return false
+        }
+        let currentMessage = self.renderIntermediateMessage(intermediateMessage)
+        let storeForwardInfo: StoreMessageForwardInfo?
+        if let forwardInfo = intermediateMessage.forwardInfo {
+            storeForwardInfo = StoreMessageForwardInfo(authorId: forwardInfo.authorId, sourceId: forwardInfo.sourceId, sourceMessageId: forwardInfo.sourceMessageId, date: forwardInfo.date, authorSignature: forwardInfo.authorSignature, psaType: forwardInfo.psaType, flags: forwardInfo.flags)
+        } else {
+            storeForwardInfo = nil
+        }
+        let message = StoreMessage(
+            id: intermediateMessage.id,
+            customStableId: nil,
+            globallyUniqueId: intermediateMessage.globallyUniqueId,
+            groupingKey: intermediateMessage.groupingKey,
+            threadId: intermediateMessage.threadId,
+            timestamp: intermediateMessage.timestamp,
+            flags: StoreMessageFlags(intermediateMessage.flags),
+            tags: intermediateMessage.tags,
+            globalTags: intermediateMessage.globalTags,
+            localTags: intermediateMessage.localTags,
+            forwardInfo: storeForwardInfo,
+            authorId: intermediateMessage.authorId,
+            text: intermediateMessage.text,
+            attributes: currentMessage.attributes,
+            media: currentMessage.media
+        )
+        guard let updatedMessage = self.messageHistoryTable.markMessageAsLocallyDeleted(id, message: message, attribute: attribute, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &self.currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations) else {
+            return false
+        }
+
+        if let bag = self.installedStoreOrUpdateMessageActionsByPeerId[id.peerId] {
+            for action in bag.copyItems() {
+                action.addOrUpdate(messages: [updatedMessage], transaction: transaction)
+            }
+        }
+        return true
+    }
+
+    fileprivate func addMessageAttribute(transaction: Transaction, id: MessageId, attribute: MessageAttribute) -> Bool {
+        guard let index = self.messageHistoryIndexTable.getIndex(id), let intermediateMessage = self.messageHistoryTable.getMessage(index) else {
+            return false
+        }
+        let currentMessage = self.renderIntermediateMessage(intermediateMessage)
+        let storeForwardInfo: StoreMessageForwardInfo?
+        if let forwardInfo = intermediateMessage.forwardInfo {
+            storeForwardInfo = StoreMessageForwardInfo(
+                authorId: forwardInfo.authorId,
+                sourceId: forwardInfo.sourceId,
+                sourceMessageId: forwardInfo.sourceMessageId,
+                date: forwardInfo.date,
+                authorSignature: forwardInfo.authorSignature,
+                psaType: forwardInfo.psaType,
+                flags: forwardInfo.flags
+            )
+        } else {
+            storeForwardInfo = nil
+        }
+        let updatedMessage = StoreMessage(
+            id: intermediateMessage.id,
+            customStableId: nil,
+            globallyUniqueId: intermediateMessage.globallyUniqueId,
+            groupingKey: intermediateMessage.groupingKey,
+            threadId: intermediateMessage.threadId,
+            timestamp: intermediateMessage.timestamp,
+            flags: StoreMessageFlags(intermediateMessage.flags),
+            tags: intermediateMessage.tags,
+            globalTags: intermediateMessage.globalTags,
+            localTags: intermediateMessage.localTags,
+            forwardInfo: storeForwardInfo,
+            authorId: intermediateMessage.authorId,
+            text: intermediateMessage.text,
+            attributes: currentMessage.attributes + [attribute],
+            media: currentMessage.media
+        )
+        self.messageHistoryTable.updateMessage(id, message: updatedMessage, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &self.currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations)
+
+        if let bag = self.installedStoreOrUpdateMessageActionsByPeerId[id.peerId] {
+            for action in bag.copyItems() {
+                action.addOrUpdate(messages: [updatedMessage], transaction: transaction)
+            }
+        }
+        return true
+    }
     
     fileprivate func offsetPendingMessagesTimestamps(lowerBound: MessageId, excludeIds: Set<MessageId>, timestamp: Int32) {
         self.messageHistoryTable.offsetPendingMessagesTimestamps(lowerBound: lowerBound, excludeIds: excludeIds, timestamp: timestamp, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &self.currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations)
@@ -3430,7 +3725,7 @@ final class PostboxImpl {
         let transaction = Transaction(queue: self.queue, postbox: self)
         self.afterBegin(transaction: transaction)
         let result = f(transaction)
-        let (updatedTransactionState, updatedMasterClientId) = self.beforeCommit(currentTransaction: transaction)
+        let (updatedTransactionState, updatedMasterClientId, localUnreadMessagePeerIds) = self.beforeCommit(currentTransaction: transaction)
         transaction.disposed = true
         self.valueBox.commit()
         
@@ -3441,6 +3736,10 @@ final class PostboxImpl {
         }
         
         let _ = self.isInTransaction.swap(false)
+
+        if !localUnreadMessagePeerIds.isEmpty {
+            self.localUnreadMessagePeerIdsUpdatesPipe.putNext(localUnreadMessagePeerIds)
+        }
         
         if let currentUpdatedState = self.currentUpdatedState {
             self.statePipe.putNext(currentUpdatedState)
@@ -4156,6 +4455,10 @@ final class PostboxImpl {
                 }
             }
         }
+    }
+
+    public func localUnreadMessagePeerIdsUpdates() -> Signal<Set<PeerId>, NoError> {
+        return self.localUnreadMessagePeerIdsUpdatesPipe.signal()
     }
     
     public func recentPeers() -> Signal<[Peer], NoError> {
@@ -5213,6 +5516,18 @@ public class Postbox {
 
             self.impl.with { impl in
                 disposable.set(impl.unreadMessageCountsView(items: items).start(next: subscriber.putNext, error: subscriber.putError, completed: subscriber.putCompletion))
+            }
+
+            return disposable
+        }
+    }
+
+    public func localUnreadMessagePeerIdsUpdates() -> Signal<Set<PeerId>, NoError> {
+        return Signal { subscriber in
+            let disposable = MetaDisposable()
+
+            self.impl.with { impl in
+                disposable.set(impl.localUnreadMessagePeerIdsUpdates().start(next: subscriber.putNext, error: subscriber.putError, completed: subscriber.putCompletion))
             }
 
             return disposable

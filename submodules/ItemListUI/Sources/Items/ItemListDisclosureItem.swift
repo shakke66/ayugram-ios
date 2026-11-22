@@ -63,6 +63,8 @@ public class ItemListDisclosureItem: ListViewItem, ItemListItem, ListItemCompone
     let label: String
     let attributedLabel: NSAttributedString?
     let labelStyle: ItemListDisclosureLabelStyle
+    let maximumTitleNumberOfLines: Int
+    let adaptiveLayout: Bool
     let additionalDetailLabel: String?
     let additionalDetailLabelColor: ItemListDisclosureItemDetailLabelColor
     public let sectionId: ItemListSectionId
@@ -91,6 +93,8 @@ public class ItemListDisclosureItem: ListViewItem, ItemListItem, ListItemCompone
         label: String,
         attributedLabel: NSAttributedString? = nil,
         labelStyle: ItemListDisclosureLabelStyle = .text,
+        maximumTitleNumberOfLines: Int = 1,
+        adaptiveLayout: Bool = false,
         additionalDetailLabel: String? = nil,
         additionalDetailLabelColor: ItemListDisclosureItemDetailLabelColor = .generic,
         sectionId: ItemListSectionId,
@@ -118,6 +122,8 @@ public class ItemListDisclosureItem: ListViewItem, ItemListItem, ListItemCompone
         self.labelStyle = labelStyle
         self.label = label
         self.attributedLabel = attributedLabel
+        self.maximumTitleNumberOfLines = maximumTitleNumberOfLines
+        self.adaptiveLayout = adaptiveLayout
         self.additionalDetailLabel = additionalDetailLabel
         self.additionalDetailLabelColor = additionalDetailLabelColor
         self.sectionId = sectionId
@@ -449,7 +455,13 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
                 titleFont = Font.medium(item.presentationData.fontSize.itemListBaseFontSize)
             }
             
-            var maxTitleWidth: CGFloat = params.width - params.rightInset - 20.0 - leftInset - additionalTextRightInset
+            let stackTitleAndLabel = item.adaptiveLayout && !item.label.isEmpty
+            var maxTitleWidth: CGFloat
+            if stackTitleAndLabel {
+                maxTitleWidth = params.width - leftInset - rightInset
+            } else {
+                maxTitleWidth = params.width - params.rightInset - 20.0 - leftInset - additionalTextRightInset
+            }
             if item.iconPeer != nil {
                 maxTitleWidth -= 12.0
             }
@@ -461,7 +473,10 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
                 maxTitleWidth -= 5.0 + titleBadgeTextNodeLayoutValue.0.size.width
             }
             
-            let titleArguments = TextNodeLayoutArguments(attributedString: item.attributedTitle ?? NSAttributedString(string: item.title, font: titleFont, textColor: titleColor), backgroundColor: nil, maximumNumberOfLines: item.attributedTitle != nil ? 0 : 1, truncationType: .end, constrainedSize: CGSize(width: maxTitleWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets())
+            let titleMaximumNumberOfLines = item.attributedTitle != nil
+                ? 0
+                : (item.adaptiveLayout ? max(2, item.maximumTitleNumberOfLines) : item.maximumTitleNumberOfLines)
+            let titleArguments = TextNodeLayoutArguments(attributedString: item.attributedTitle ?? NSAttributedString(string: item.title, font: titleFont, textColor: titleColor), backgroundColor: nil, maximumNumberOfLines: titleMaximumNumberOfLines, truncationType: .end, constrainedSize: CGSize(width: maxTitleWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets())
             let (titleLayoutAndApply) = item.context == nil ? makeTitleLayout(titleArguments) : nil
             let (titleWithEntitiesLayoutAndApply) = item.context != nil ? makeTitleWithEntitiesLayout(titleArguments) : nil
             
@@ -471,7 +486,9 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
             
             let labelFont: UIFont
             let labelBadgeColor: UIColor
-            var labelConstrain: CGFloat = itemListDisclosureLabelConstrainedWidth(width: params.width, rightInset: params.rightInset, labelRightInset: rightInset, leftInset: leftInset, titleWidth: titleLayout.size.width, hasIconPeer: item.iconPeer != nil, minimumSpacing: item.minimumLabelSpacing)
+            var labelConstrain: CGFloat = stackTitleAndLabel
+                ? params.width - leftInset - rightInset - (item.iconPeer != nil ? 6.0 : 0.0)
+                : itemListDisclosureLabelConstrainedWidth(width: params.width, rightInset: params.rightInset, labelRightInset: rightInset, leftInset: leftInset, titleWidth: titleLayout.size.width, hasIconPeer: item.iconPeer != nil, minimumSpacing: item.minimumLabelSpacing)
             
             switch item.labelStyle {
             case .badge:
@@ -491,10 +508,12 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
                 labelBadgeColor = item.presentationData.theme.list.itemSecondaryTextColor
                 labelFont = defaultLabelFont
             }
-            var multilineLabel = false
-            if case .multilineDetailText = item.labelStyle {
-                multilineLabel = true
-            }
+            let multilineLabel = stackTitleAndLabel || {
+                if case .multilineDetailText = item.labelStyle {
+                    return true
+                }
+                return false
+            }()
             
             let (labelLayout, labelApply) = makeLabelLayout(TextNodeLayoutArguments(attributedString: item.attributedLabel ?? NSAttributedString(string: item.label, font: labelFont, textColor: labelBadgeColor), backgroundColor: nil, maximumNumberOfLines: multilineLabel ? 0 : 1, truncationType: .end, constrainedSize: CGSize(width: labelConstrain, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
@@ -546,11 +565,15 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
             let titleSpacing: CGFloat = 1.0
             
             var height: CGFloat
-            switch item.labelStyle {
-            case .detailText, .multilineDetailText:
+            if stackTitleAndLabel {
                 height = verticalInset * 2.0 + titleLayout.size.height + titleSpacing + labelLayout.size.height
-            default:
-                height = verticalInset * 2.0 + titleLayout.size.height
+            } else {
+                switch item.labelStyle {
+                case .detailText, .multilineDetailText:
+                    height = verticalInset * 2.0 + titleLayout.size.height + titleSpacing + labelLayout.size.height
+                default:
+                    height = verticalInset * 2.0 + titleLayout.size.height
+                }
             }
             if let additionalDetailLabelInfo = additionalDetailLabelInfo {
                 height += titleSpacing + additionalDetailLabelInfo.0.size.height
@@ -723,12 +746,17 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
                     }
                     
                     var centralContentHeight: CGFloat = titleLayout.size.height
-                    switch item.labelStyle {
-                    case .detailText, .multilineDetailText:
+                    if stackTitleAndLabel {
                         centralContentHeight += titleSpacing
                         centralContentHeight += labelLayout.size.height
-                    default:
-                        break
+                    } else {
+                        switch item.labelStyle {
+                        case .detailText, .multilineDetailText:
+                            centralContentHeight += titleSpacing
+                            centralContentHeight += labelLayout.size.height
+                        default:
+                            break
+                        }
                     }
                     if let additionalDetailLabelInfo {
                         centralContentHeight += titleSpacing
@@ -757,7 +785,10 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
                     strongSelf.labelBadgeNode.frame = badgeFrame
                     
                     let labelFrame: CGRect
-                    switch item.labelStyle {
+                    if stackTitleAndLabel {
+                        labelFrame = CGRect(origin: CGPoint(x: leftInset, y: titleFrame.maxY + titleSpacing), size: labelLayout.size)
+                    } else {
+                        switch item.labelStyle {
                     case .badge:
                         labelFrame = CGRect(origin: CGPoint(x: params.width - rightInset - badgeWidth + (badgeWidth - labelLayout.size.width) / 2.0, y: badgeFrame.minY + 1.0), size: labelLayout.size)
                     case .semitransparentBadge:
@@ -766,6 +797,7 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
                         labelFrame = CGRect(origin: CGPoint(x: leftInset, y: titleFrame.maxY + titleSpacing), size: labelLayout.size)
                     default:
                         labelFrame = CGRect(origin: CGPoint(x: params.width - rightInset - labelLayout.size.width, y: floorToScreenPixels((height - labelLayout.size.height) / 2.0) + 1.0), size: labelLayout.size)
+                        }
                     }
                     strongSelf.labelNode.frame = labelFrame
                     

@@ -123,6 +123,54 @@ private final class ChatMessageBubbleClippingNode: ASDisplayNode {
     }
 }
 
+private let channelAuthorBadgeSize = CGSize(width: 16.0, height: 16.0)
+private let channelAuthorBadgeSpacing: CGFloat = 3.0
+
+private func shouldDisplayChannelAuthorBadge(
+    item: ChatMessageItem,
+    incoming: Bool,
+    displayHeader: Bool,
+    effectiveAuthor: Peer?
+) -> Bool {
+    guard incoming,
+          displayHeader,
+          !item.presentationData.isPreview,
+          !item.associatedData.isRecentActions,
+          effectiveAuthor is TelegramChannel else {
+        return false
+    }
+    if case .customChatContents = item.chatLocation {
+        return false
+    }
+    guard let containingChannel = item.message.peers[item.message.id.peerId] as? TelegramChannel,
+          case .group = containingChannel.info else {
+        return false
+    }
+    return true
+}
+
+private func grvmDeletedMessageContentAlpha(
+    item: ChatMessageItem
+) -> CGFloat {
+    let chats = AyuGramHooks.chatAppearance(accountPeerId: item.context.account.peerId).chats
+    guard chats.semiTransparentDeletedMessages,
+          case let .message(message, _, _, _, _) = item.content,
+          message.attributes.contains(where: { $0 is GRVMDeletedMessageAttribute }),
+          !item.associatedData.isRecentActions,
+          item.controllerInteraction.selectionState == nil,
+          !item.presentationData.isPreview else {
+        return 1.0
+    }
+
+    if case .customChatContents = item.chatLocation {
+        return 1.0
+    }
+    if let subject = item.associatedData.subject, case .messageOptions = subject {
+        return 1.0
+    }
+    return 0.7
+}
+
 private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([(Message, AnyClass, ChatMessageEntryAttributes, BubbleItemAttributes)], Bool, Bool, Bool) {
     var result: [(Message, AnyClass, ChatMessageEntryAttributes, BubbleItemAttributes)] = []
     var skipText = false
@@ -498,7 +546,7 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
         }
     }
     
-    if !reactionsAreInline && !hideAllAdditionalInfo, let reactionsAttribute = mergedMessageReactions(attributes: firstMessage.attributes, isTags: firstMessage.areReactionsTags(accountPeerId: item.context.account.peerId)), !reactionsAttribute.reactions.isEmpty {
+    if !reactionsAreInline && !hideAllAdditionalInfo, let reactionsAttribute = grvmVisibleMessageReactions(accountPeerId: item.context.account.peerId, message: firstMessage), !reactionsAttribute.reactions.isEmpty {
         if result.last?.1 == ChatMessageTextBubbleContentNode.self {
         } else if item.bubbleStyle == .bubblelessCard && result.last?.1 != ChatMessageCommentFooterContentNode.self {
             // Without bubbles a card keeps its reactions under its outline, as a message without a card does.
@@ -832,6 +880,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
     private var credibilityIconContent: EmojiStatusComponent.Content?
     private var credibilityButtonNode: HighlightTrackingButtonNode?
     private var credibilityHighlightNode: ASImageNode?
+    private var channelAuthorBadgeNode: ASImageNode?
+    private var channelAuthorBadgeColor: UIColor?
     
     // The author's third-party verification icon, left of the name.
     private var verificationIconView: ComponentHostView<Empty>?
@@ -907,6 +957,13 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
     private var appliedItem: ChatMessageItem?
     private var appliedForwardInfo: ChatMessageAppliedForwardInfo?
     private var disablesComments = true
+
+    private func updateGRVMDeletedMessageContentAlpha() {
+        guard let item = self.appliedItem else {
+            return
+        }
+        self.mainContextSourceNode.alpha = grvmDeletedMessageContentAlpha(item: item)
+    }
     
     private var wasPending: Bool = false
     private var didChangeFromPendingToSent: Bool = false
@@ -1772,6 +1829,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         isSelected: Bool?,
         hasExpandedInstantVideoTranscription: Bool
     ) -> (ListViewItemNodeLayout, (ListViewItemUpdateAnimation, ListViewItemApply, Bool) -> Void) {
+        let chats = AyuGramHooks.chatAppearance(accountPeerId: item.context.account.peerId).chats
         let isPreview = item.presentationData.isPreview
         let accessibilityData = ChatMessageAccessibilityData(item: item, isSelected: isSelected)
         let isSidePanelOpen = item.controllerInteraction.isSidePanelOpen
@@ -2210,6 +2268,10 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             needsShareButton = false
         }
 
+        if chats.hideFastShareButton {
+            needsShareButton = false
+        }
+                        
         var tmpWidth: CGFloat
         if allowFullWidth {
             tmpWidth = baseWidth
@@ -2301,6 +2363,12 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             }
         }
         maximumContentWidth = max(0.0, maximumContentWidth)
+        let multiplier = chats.messageWidthMultiplier
+        if multiplier != 1.0 && !hasInstantVideo {
+            maximumContentWidth = floor(maximumContentWidth * CGFloat(multiplier))
+            maximumContentWidth = min(maximumContentWidth, baseWidth - layoutConstants.bubble.edgeInset * 2.0 - avatarInset)
+            maximumContentWidth = max(0.0, maximumContentWidth)
+        }
         
         var contentPropertiesAndPrepareLayouts: [(Message, Bool, ChatMessageEntryAttributes, BubbleItemAttributes, (_ item: ChatMessageBubbleContentItem, _ layoutConstants: ChatMessageItemLayoutConstants, _ preparePosition: ChatMessageBubblePreparePosition, _ messageSelection: Bool?, _ constrainedSize: CGSize, _ avatarInset: CGFloat) -> (ChatMessageBubbleContentProperties, CGSize?, CGFloat, (CGSize, ChatMessageBubbleContentPosition) -> (CGFloat, (CGFloat) -> (CGSize, (ListViewItemUpdateAnimation, Bool, ListViewItemApply?) -> Void))))] = []
         var addedContentNodes: [(Message, Bool, ChatMessageBubbleContentNode, Int?)]?
@@ -2654,7 +2722,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         
         let bubbleReactions: ReactionsMessageAttribute
         if needReactions || forceReactionsOutside {
-            bubbleReactions = mergedMessageReactions(attributes: item.message.attributes, isTags: item.message.areReactionsTags(accountPeerId: item.context.account.peerId)) ?? ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
+            bubbleReactions = grvmVisibleMessageReactions(accountPeerId: item.context.account.peerId, message: item.message) ?? ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
         } else {
             bubbleReactions = ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
         }
@@ -2795,20 +2863,24 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     color = item.presentationData.theme.theme.chat.message.outgoing.accentTextColor
                 }
                 authorNameColor = color
+                let hidePremiumStatuses = AyuGramHooks.chatAppearance(
+                    accountPeerId: item.context.account.peerId
+                ).appearance.hidePremiumStatuses
+                let shouldHidePremiumStatus = hidePremiumStatuses && effectiveAuthor.id != item.context.account.peerId
 
                 if case let .peer(peerId) = item.chatLocation, let authorPeerId = item.message.author?.id, authorPeerId == peerId {
-                    if effectiveAuthor is TelegramChannel, let emojiStatus = effectiveAuthor.emojiStatus {
+                    if effectiveAuthor is TelegramChannel, let emojiStatus = effectiveAuthor.emojiStatus, !shouldHidePremiumStatus {
                         currentCredibilityIcon = (.animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 20.0, height: 20.0), placeholderColor: incoming ? item.presentationData.theme.theme.chat.message.incoming.mediaPlaceholderColor : item.presentationData.theme.theme.chat.message.outgoing.mediaPlaceholderColor, themeColor: color.withMultipliedAlpha(0.4), loopMode: .count(2)), nil)
                     }
                 } else if effectiveAuthor.isScam {
                     currentCredibilityIcon = (.text(color: incoming ? item.presentationData.theme.theme.chat.message.incoming.scamColor : item.presentationData.theme.theme.chat.message.outgoing.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased()), nil)
                 } else if effectiveAuthor.isFake {
                     currentCredibilityIcon = (.text(color: incoming ? item.presentationData.theme.theme.chat.message.incoming.scamColor : item.presentationData.theme.theme.chat.message.outgoing.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased()), nil)
-                } else if let emojiStatus = effectiveAuthor.emojiStatus {
+                } else if let emojiStatus = effectiveAuthor.emojiStatus, !shouldHidePremiumStatus {
                     currentCredibilityIcon = (.animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 20.0, height: 20.0), placeholderColor: incoming ? item.presentationData.theme.theme.chat.message.incoming.mediaPlaceholderColor : item.presentationData.theme.theme.chat.message.outgoing.mediaPlaceholderColor, themeColor: color.withMultipliedAlpha(0.4), loopMode: .count(2)), emojiStatus.color.flatMap { UIColor(rgb: UInt32(bitPattern: $0)) })
                 } else if effectiveAuthor.isVerified {
                     currentCredibilityIcon = (.verified(fillColor: item.presentationData.theme.theme.list.itemCheckColors.fillColor, foregroundColor: item.presentationData.theme.theme.list.itemCheckColors.foregroundColor, sizeType: .compact), nil)
-                } else if effectiveAuthor.isPremium {
+                } else if effectiveAuthor.isPremium && !shouldHidePremiumStatus {
                     currentCredibilityIcon = (.premium(color: color.withMultipliedAlpha(0.4)), nil)
                 }
             }
@@ -2882,6 +2954,12 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 displayHeader = true
             }
         }
+        let displayChannelAuthorBadge = shouldDisplayChannelAuthorBadge(
+            item: item,
+            incoming: incoming,
+            displayHeader: displayHeader,
+            effectiveAuthor: effectiveAuthor
+        )
         
         let firstNodeTopPosition: ChatMessageBubbleRelativePosition
         if displayHeader {
@@ -2929,7 +3007,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 var viewCount: Int?
                 var dateReplies = 0
                 var starsCount: Int64?
-                var dateReactionsAndPeers = mergedMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: message)
+                var dateReactionsAndPeers = grvmVisibleMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: message)
                 if message.isRestricted(platform: "ios", contentSettings: item.context.currentContentSettings.with { $0 }) {
                     dateReactionsAndPeers = ([], [])
                 }
@@ -3139,6 +3217,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                         credibilityIconWidth += 20.0
                     }
                 }
+                let channelAuthorBadgeWidth: CGFloat = displayChannelAuthorBadge ? channelAuthorBadgeSpacing + channelAuthorBadgeSize.width : 0.0
                 
                 let rankBadgeSizeAndApply = rankBadgeLayout(TextNodeLayoutArguments(attributedString: rankBadgeString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: max(0, maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right), height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
                 if rankBadgeSizeAndApply.0.size.width > 0.0 {
@@ -3175,7 +3254,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 
                 let verificationIconWidth = ChatMessageAuthorVerificationIcon.leadingWidth(iconSize: authorVerificationIcon != nil ? ChatMessageAuthorVerificationIcon.size : nil)
                 
-                var nameMaximumWidth = maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right - verificationIconWidth - credibilityIconWidth - rankBadgeSizeAndApply.0.size.width - closeButtonWidth
+                var nameMaximumWidth = maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right - verificationIconWidth - credibilityIconWidth - channelAuthorBadgeWidth - rankBadgeSizeAndApply.0.size.width - closeButtonWidth
                 var bubblelessHeaderRunWidth: CGFloat = 0.0
                 if bubbleStyle.isBubbleless {
                     // Without a bubble the time leaves the corner and follows the name and its rank badge, on the name's
@@ -3216,7 +3295,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 })
 
                 if let viaSuffix {
-                    let (viaLayout, _) = viaMeasureLayout(TextNodeLayoutArguments(attributedString: viaSuffix, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: max(0, maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right - verificationIconWidth - credibilityIconWidth - rankBadgeSizeAndApply.0.size.width - closeButtonWidth), height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+                    let (viaLayout, _) = viaMeasureLayout(TextNodeLayoutArguments(attributedString: viaSuffix, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: max(0, maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right - verificationIconWidth - credibilityIconWidth - channelAuthorBadgeWidth - rankBadgeSizeAndApply.0.size.width - closeButtonWidth), height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
                     viaWidth = viaLayout.size.width + 3.0
                 }
                 
@@ -3235,7 +3314,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     nameNodeOriginY += 5.0
                 }
                 
-                var headerSizeWidth = nameAvatarSpaceWidth + verificationIconWidth + nameNodeSizeApply.0.width + 8.0 + credibilityIconWidth + boostBadgeWidth + closeButtonWidth + bubbleWidthInsets
+                var headerSizeWidth = nameAvatarSpaceWidth + verificationIconWidth + nameNodeSizeApply.0.width + 8.0 + credibilityIconWidth + channelAuthorBadgeWidth + boostBadgeWidth + closeButtonWidth + bubbleWidthInsets
                 if bubbleStyle.isBubbleless {
                     // The clipping node is as wide as the header, so it must hold the time's run.
                     headerSizeWidth += max(0.0, bubblelessHeaderRunWidth - credibilityIconWidth)
@@ -4268,6 +4347,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 hasTitleTopicNavigation: hasTitleTopicNavigation,
                 authorNameColor: authorNameColor,
                 layoutConstants: layoutConstants,
+                displayChannelAuthorBadge: displayChannelAuthorBadge,
                 currentCredibilityIcon: currentCredibilityIcon,
                 authorVerificationIcon: authorVerificationIcon,
                 rankBadgeNodeSizeApply: rankBadgeNodeSizeApply,
@@ -4352,6 +4432,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         hasTitleTopicNavigation: Bool,
         authorNameColor: UIColor?,
         layoutConstants: ChatMessageItemLayoutConstants,
+        displayChannelAuthorBadge: Bool,
         currentCredibilityIcon: (EmojiStatusComponent.Content, UIColor?)?,
         authorVerificationIcon: EmojiStatusComponent.Content?,
         rankBadgeNodeSizeApply: (CGSize, () -> TextNode?, UIColor?),
@@ -4423,6 +4504,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         strongSelf.contentContainersWrapperNode.frame = CGRect(origin: CGPoint(), size: layout.contentSize)
         
         strongSelf.appliedItem = item
+        strongSelf.updateGRVMDeletedMessageContentAlpha()
         strongSelf.appliedForwardInfo = ChatMessageAppliedForwardInfo(messageId: item.content.firstMessage.id, source: forwardSource, authorSignature: forwardAuthorSignature)
         strongSelf.updateAccessibilityData(accessibilityData)
         strongSelf.disablesComments = disablesComments
@@ -4845,6 +4927,40 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             if themeUpdated {
                 nameHighlightNode.image = generateFilledRoundedRectImage(size: CGSize(width: 8.0, height: 8.0), cornerRadius: 4.0, color: nameColor.withAlphaComponent(0.1))?.stretchableImage(withLeftCapWidth: 4, topCapHeight: 4)
             }
+
+            var channelAuthorBadgeFrame: CGRect?
+            if displayChannelAuthorBadge {
+                let channelAuthorBadgeNode: ASImageNode
+                if let current = strongSelf.channelAuthorBadgeNode {
+                    channelAuthorBadgeNode = current
+                } else {
+                    channelAuthorBadgeNode = ASImageNode()
+                    channelAuthorBadgeNode.displaysAsynchronously = false
+                    channelAuthorBadgeNode.isUserInteractionEnabled = false
+                    strongSelf.channelAuthorBadgeNode = channelAuthorBadgeNode
+                    strongSelf.clippingNode.addSubnode(channelAuthorBadgeNode)
+                    if animation.isAnimated {
+                        channelAuthorBadgeNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
+                    }
+                }
+                if strongSelf.channelAuthorBadgeColor != nameColor || channelAuthorBadgeNode.image == nil {
+                    strongSelf.channelAuthorBadgeColor = nameColor
+                    channelAuthorBadgeNode.image = generateTintedImage(image: UIImage(bundleImageName: "Chat List/Search/Channel"), color: nameColor)
+                }
+                let badgeFrame = CGRect(
+                    origin: CGPoint(
+                        x: nameNode.frame.maxX + channelAuthorBadgeSpacing,
+                        y: nameNode.frame.minY + floor((nameNode.bounds.height - channelAuthorBadgeSize.height) / 2.0)
+                    ),
+                    size: channelAuthorBadgeSize
+                )
+                channelAuthorBadgeFrame = badgeFrame
+                animation.animator.updateFrame(layer: channelAuthorBadgeNode.layer, frame: badgeFrame, completion: nil)
+            } else if let channelAuthorBadgeNode = strongSelf.channelAuthorBadgeNode {
+                strongSelf.channelAuthorBadgeNode = nil
+                strongSelf.channelAuthorBadgeColor = nil
+                channelAuthorBadgeNode.removeFromSupernode()
+            }
             
             if let (currentCredibilityIcon, currentParticleColor) = currentCredibilityIcon {
                 let credibilityIconView: ComponentHostView<Empty>
@@ -4882,7 +4998,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     containerSize: CGSize(width: 20.0, height: 20.0)
                 )
                 
-                let credibilityIconFrame = CGRect(origin: CGPoint(x: nameNode.frame.maxX + 3.0, y: nameNode.frame.minY + floor((nameNode.bounds.height - credibilityIconSize.height) / 2.0)), size: credibilityIconSize)
+                let credibilityIconX = channelAuthorBadgeFrame?.maxX ?? nameNode.frame.maxX
+                let credibilityIconFrame = CGRect(origin: CGPoint(x: credibilityIconX + 3.0, y: nameNode.frame.minY + floor((nameNode.bounds.height - credibilityIconSize.height) / 2.0)), size: credibilityIconSize)
                 if !animateCredibilityIconFrame {
                     credibilityIconView.frame = CGRect(origin: CGPoint(x: previousNameNodeFrame.maxX + 3.0, y: previousNameNodeFrame.minY + floor((previousNameNodeFrame.height - credibilityIconSize.height) / 2.0)), size: credibilityIconSize)
                 }
@@ -5216,6 +5333,13 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                         verificationIconView?.removeFromSuperview()
                     })
                 }
+                if let channelAuthorBadgeNode = strongSelf.channelAuthorBadgeNode {
+                    strongSelf.channelAuthorBadgeNode = nil
+                    strongSelf.channelAuthorBadgeColor = nil
+                    channelAuthorBadgeNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.1, removeOnCompletion: false, completion: { [weak channelAuthorBadgeNode] _ in
+                        channelAuthorBadgeNode?.removeFromSupernode()
+                    })
+                }
                 if let boostBadgeNode = strongSelf.boostBadgeNode {
                     strongSelf.boostBadgeNode = nil
                     boostBadgeNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.1, removeOnCompletion: false, completion: { [weak boostBadgeNode] _ in
@@ -5244,6 +5368,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 strongSelf.verificationIconView?.removeFromSuperview()
                 strongSelf.verificationIconView = nil
                 strongSelf.verificationIconComponent = nil
+                strongSelf.channelAuthorBadgeNode?.removeFromSupernode()
+                strongSelf.channelAuthorBadgeNode = nil
+                strongSelf.channelAuthorBadgeColor = nil
                 strongSelf.boostBadgeNode?.removeFromSupernode()
                 strongSelf.boostBadgeNode = nil
                 strongSelf.boostIconNode?.removeFromSuperview()
@@ -7756,6 +7883,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         if wasSelected != isSelected {
             self.updateAccessibilityData(ChatMessageAccessibilityData(item: item, isSelected: isSelected))
         }
+        self.updateGRVMDeletedMessageContentAlpha()
     }
     
     override public func updateSearchTextHighlightState() {

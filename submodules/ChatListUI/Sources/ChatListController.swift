@@ -56,6 +56,8 @@ import AvatarUploadToastScreen
 import AvatarNode
 import AdsInfoScreen
 import AdsReportScreen
+import AyuGramLib
+import AyuGramSettingsUI
 import SearchBarNode
 import ChatListFilterTabContainerNode
 import HeaderPanelContainerComponent
@@ -218,9 +220,17 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     private let isReorderingTabsValue = ValuePromise<Bool>(false)
     
     private(set) var tabContainerData: ([ChatListFilterTabEntry], Bool, Int32?)?
+    private(set) var hideFolderCounters = false
+    private(set) var hideAllChatsFolder = false
     var hasTabs: Bool {
         if let tabContainerData = self.tabContainerData {
-            let isEmpty = tabContainerData.0.count <= 1 || tabContainerData.1
+            let tabPresentation = chatListFilterTabPresentation(
+                filters: tabContainerData.0,
+                selectedFilter: nil,
+                hideAllChatsFolder: self.hideAllChatsFolder,
+                limit: tabContainerData.2
+            )
+            let isEmpty = tabPresentation.filters.count <= 1 || tabContainerData.1
             return !isEmpty
         } else {
             return false
@@ -271,6 +281,13 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     private var shouldFixStorySubscriptionOrder: Bool = false
     private var fixedStorySubscriptionOrder: [EnginePeer.Id] = []
     private(set) var orderedStorySubscriptions: EngineStorySubscriptions?
+    private(set) var hideStories: Bool
+    var effectiveStorySubscriptions: EngineStorySubscriptions? {
+        if self.hideStories {
+            return nil
+        }
+        return self.orderedStorySubscriptions
+    }
     private var displayedStoriesTooltip: Bool = false
     
     public var hasStorySubscriptions: Bool {
@@ -288,6 +305,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     
     private var storyProgressDisposable: Disposable?
     private var storySubscriptionsDisposable: Disposable?
+    private var hideStoriesDisposable: Disposable?
     private var preloadStorySubscriptionsDisposable: Disposable?
     private var preloadStoryResourceDisposables: [MediaId: Disposable] = [:]
     
@@ -313,6 +331,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         
         self.location = location
         self.previewing = previewing
+        self.hideStories = AyuGramHooks.shouldHideStories?(context.account.peerId) ?? false
         
         self.presentationData = (context.sharedContext.currentPresentationData.with { $0 })
         self.presentationDataValue.set(.single(self.presentationData))
@@ -810,7 +829,25 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 }
                 
                 if let navigationBarView = strongSelf.chatListDisplayNode.navigationBarView.view as? ChatListNavigationBar.View, let headerPanelsView = navigationBarView.headerPanels as? HeaderPanelContainerComponent.View, let tabsView = headerPanelsView.tabs as? HorizontalTabsComponent.View {
-                    tabsView.updateTabSwitchFraction(fraction: fraction, isDragging: strongSelf.chatListDisplayNode.mainContainerNode.isSwitchingCurrentItemFilterByDragging, transition: ComponentTransition(transition))
+                    var targetTab: HorizontalTabsComponent.Tab.Id?
+                    if !fraction.isZero, let tabContainerData = strongSelf.tabContainerData {
+                        let tabPresentation = chatListFilterTabPresentation(
+                            filters: tabContainerData.0,
+                            selectedFilter: filter,
+                            hideAllChatsFolder: strongSelf.hideAllChatsFolder,
+                            limit: tabContainerData.2
+                        )
+                        let direction: ChatListFilterTabNavigationDirection = fraction > 0.0 ? .previous : .next
+                        if let targetFilterId = tabPresentation.accessPolicy.adjacentAllowedFilter(from: filter, direction: direction) {
+                            switch targetFilterId {
+                            case .all:
+                                targetTab = AnyHashable(Int32.min)
+                            case let .filter(id):
+                                targetTab = AnyHashable(id)
+                            }
+                        }
+                    }
+                    tabsView.updateTabSwitchFraction(fraction: fraction, targetTab: targetTab, isDragging: strongSelf.chatListDisplayNode.mainContainerNode.isSwitchingCurrentItemFilterByDragging, transition: ComponentTransition(transition))
                 }
             }
             self.reloadFilters()
@@ -832,6 +869,29 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 self.storyPostingAvailability = postingAvailability
                 self.storyPostingAvailabilityValue.set(postingAvailability)
             }
+        })
+
+        self.hideStoriesDisposable = (grvmSettings(
+            accountId: self.context.account.peerId,
+            accountManager: self.context.sharedContext.accountManager
+        )
+        |> map { $0.hideStories }
+        |> distinctUntilChanged
+        |> deliverOnMainQueue).startStrict(next: { [weak self] hideStories in
+            guard let self, self.hideStories != hideStories else {
+                return
+            }
+            self.hideStories = hideStories
+            if hideStories {
+                self.chatListDisplayNode.scrollToTopIfStoriesAreExpanded()
+            }
+            let transition: ContainedViewLayoutTransition
+            if self.didAppear {
+                transition = .animated(duration: 0.4, curve: .spring)
+            } else {
+                transition = .immediate
+            }
+            self.requestLayout(transition: transition)
         })
         
         self.updateNavigationMetadata()
@@ -869,6 +929,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         self.actionDisposables.dispose()
         self.powerSavingMonitoringDisposable?.dispose()
         self.storySubscriptionsDisposable?.dispose()
+        self.hideStoriesDisposable?.dispose()
         self.storyArchiveSubscriptionsDisposable?.dispose()
         self.preloadStorySubscriptionsDisposable?.dispose()
         self.storyProgressDisposable?.dispose()
@@ -3731,11 +3792,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 return id
             }
         }
-        let _ = defaultFilterIds
-        
         var reorderedFilterIdsValue: [Int32]?
         if let navigationBarView = self.chatListDisplayNode.navigationBarView.view as? ChatListNavigationBar.View, let headerPanelsView = navigationBarView.headerPanels as? HeaderPanelContainerComponent.View, let tabsView = headerPanelsView.tabs as? HorizontalTabsComponent.View, let reorderedItemIds = tabsView.reorderedItemIds {
-            reorderedFilterIdsValue = reorderedItemIds.compactMap { item -> Int32? in
+            let reorderedVisibleFilterIds = reorderedItemIds.compactMap { item -> Int32? in
                 guard let value = item.base as? Int32 else {
                     return nil
                 }
@@ -3743,6 +3802,26 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                     return 0
                 }
                 return value
+            }
+            let visibleFilterIds = Set(chatListFilterTabPresentation(
+                filters: defaultFilters.0,
+                selectedFilter: nil,
+                hideAllChatsFolder: self.hideAllChatsFolder
+            ).filters.map { entry -> Int32 in
+                switch entry.id {
+                case .all:
+                    return 0
+                case let .filter(id):
+                    return id
+                }
+            })
+            var reorderedVisibleFilterIterator = reorderedVisibleFilterIds.makeIterator()
+            reorderedFilterIdsValue = defaultFilterIds.map { id in
+                if visibleFilterIds.contains(id) {
+                    return reorderedVisibleFilterIterator.next() ?? id
+                } else {
+                    return id
+                }
             }
         }
         
@@ -3862,7 +3941,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         self.dismiss()
     }
     
-    public static func openMoreMenu(context: AccountContext, peerId: EnginePeer.Id, sourceController: ViewController, isViewingAsTopics: Bool, sourceView: UIView, gesture: ContextGesture?) {
+    public static func openMoreMenu(context: AccountContext, peerId: EnginePeer.Id, sourceController: ViewController, isViewingAsTopics: Bool, sourceView: UIView, gesture: ContextGesture?, additionalItems: [ContextMenuItem] = []) {
         let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
         |> deliverOnMainQueue).startStandalone(next: { [sourceController] peer in
             guard case let .channel(channel) = peer else {
@@ -4020,6 +4099,17 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 })))
             }
 
+            items.append(contentsOf: grvmArchiveContextMenuItems(
+                context: context,
+                sourceController: sourceController,
+                peerId: peerId,
+                threadId: nil
+            ))
+            if !items.isEmpty && !additionalItems.isEmpty {
+                items.append(.separator)
+            }
+            items.append(contentsOf: additionalItems)
+
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
             let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
             sourceController.presentInGlobalOverlay(contextController)
@@ -4108,13 +4198,18 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     private var initializedFilters = false
     private func reloadFilters(firstUpdate: (() -> Void)? = nil) {
         let filterItems = chatListFilterItems(context: self.context)
+        let settingsSignal = grvmSettings(
+            accountId: self.context.account.peerId,
+            accountManager: self.context.sharedContext.accountManager
+        )
         var notifiedFirstUpdate = false
         self.filterDisposable.set((combineLatest(queue: .mainQueue(),
             filterItems,
             self.context.account.postbox.peerView(id: self.context.account.peerId),
-            self.context.engine.data.get(TelegramEngine.EngineData.Item.Configuration.UserLimits(isPremium: false))
+            self.context.engine.data.get(TelegramEngine.EngineData.Item.Configuration.UserLimits(isPremium: false)),
+            settingsSignal
         )
-        |> deliverOnMainQueue).startStrict(next: { [weak self] countAndFilterItems, peerView, limits in
+        |> deliverOnMainQueue).startStrict(next: { [weak self] countAndFilterItems, peerView, limits, settings in
             guard let strongSelf = self else {
                 return
             }
@@ -4128,22 +4223,23 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             for (filter, unreadCount, hasUnmutedUnread) in items {
                 switch filter {
                     case .allChats:
-                        if let isPremium = isPremium, !isPremium && filterItems.count > 0 {
-                            filterItems.insert(.all(unreadCount: 0), at: 0)
-                        } else {
-                            filterItems.append(.all(unreadCount: 0))
-                        }
+                        filterItems.append(.all(unreadCount: 0))
                     case let .filter(id, title, _, _):
                         filterItems.append(.filter(id: id, text: title, unread: ChatListFilterTabEntryUnreadCount(value: unreadCount, hasUnmuted: hasUnmutedUnread)))
                 }
             }
             
             var resolvedItems = filterItems
+            let isRootLocation: Bool
             if case .chatList(.root) = strongSelf.location {
+                isRootLocation = true
             } else {
+                isRootLocation = false
                 resolvedItems = []
             }
+            let filtersLimit = isPremium == false ? limits.maxFoldersCount : nil
             
+            // GRVMgram-PORT: 12.6.2 computed wasEmpty/previousTabPresentation here to relayout only when the tab set changed; 13.2 always relayouts after the filter update, so it was not re-applied.
             let firstItem = countAndFilterItems.1.first?.0 ?? .allChats
             let firstItemEntryId: ChatListFilterTabEntryId
             switch firstItem {
@@ -4153,49 +4249,32 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                     firstItemEntryId = .filter(id)
             }
             
-            var selectedEntryId = !strongSelf.initializedFilters ? firstItemEntryId : strongSelf.chatListDisplayNode.mainContainerNode.currentItemFilter
-            var resetCurrentEntry = false
-            if !resolvedItems.contains(where: { $0.id == selectedEntryId }) {
-                resetCurrentEntry = true
-                if let tabContainerData = strongSelf.tabContainerData {
-                    var found = false
-                    if let index = tabContainerData.0.firstIndex(where: { $0.id == selectedEntryId }) {
-                        for i in (0 ..< index - 1).reversed() {
-                            if resolvedItems.contains(where: { $0.id == tabContainerData.0[i].id }) {
-                                selectedEntryId = tabContainerData.0[i].id
-                                found = true
-                                break
-                            }
-                        }
-                    }
-                    if !found {
-                        selectedEntryId = .all
-                    }
-                } else {
-                    selectedEntryId = .all
-                }
-            }
-            let filtersLimit = isPremium == false ? limits.maxFoldersCount : nil
+            let requestedSelectedEntryId = !strongSelf.initializedFilters ? firstItemEntryId : strongSelf.chatListDisplayNode.mainContainerNode.currentItemFilter
+            let tabPresentation = chatListFilterTabPresentation(
+                filters: resolvedItems,
+                selectedFilter: requestedSelectedEntryId,
+                hideAllChatsFolder: settings.hideAllChatsFolder,
+                limit: filtersLimit
+            )
+            let selectedEntryId = tabPresentation.selectedFilter ?? .all
             strongSelf.tabContainerData = (resolvedItems, false, filtersLimit)
+            strongSelf.hideFolderCounters = settings.hideFolderCounters
+            strongSelf.hideAllChatsFolder = settings.hideAllChatsFolder
             var availableFilters: [ChatListContainerNodeFilter] = []
-            var hasAllChats = false
             for item in items {
                 switch item.0 {
                     case .allChats:
-                        hasAllChats = true
-                        if let isPremium = isPremium, !isPremium && availableFilters.count > 0 {
-                            availableFilters.insert(.all, at: 0)
-                        } else {
-                            availableFilters.append(.all)
-                        }
+                        availableFilters.append(.all)
                     case .filter:
                         availableFilters.append(.filter(item.0))
                 }
             }
-            if !hasAllChats {
-                availableFilters.insert(.all, at: 0)
+            if isRootLocation {
+                let visibleFilterIds = Set(tabPresentation.filters.map(\.id))
+                let allowedFilterIds = Set(tabPresentation.accessPolicy.allowedFilterIds)
+                availableFilters = availableFilters.filter { visibleFilterIds.contains($0.id) && allowedFilterIds.contains($0.id) }
             }
-            strongSelf.chatListDisplayNode.mainContainerNode.updateAvailableFilters(availableFilters, limit: filtersLimit)
+            strongSelf.chatListDisplayNode.mainContainerNode.updateAvailableFilters(availableFilters, accessPolicy: tabPresentation.accessPolicy)
             
             if isPremium == nil && items.isEmpty {
                 strongSelf.mainReady.set(strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.ready)
@@ -4226,9 +4305,6 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 firstUpdate?()
             }
             
-            if resetCurrentEntry {
-                strongSelf.selectTab(id: selectedEntryId, switchToChatsIfNeeded: false)
-            }
         }))
     }
     
@@ -6936,7 +7012,9 @@ private final class ChatListLocationContext {
         let peerStatus: Signal<NetworkStatusTitle.Status?, NoError>
         switch self.location {
         case .chatList(.root):
-            peerStatus = context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
+            peerStatus = context.engine.data.subscribe(
+                TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId)
+            )
             |> map { peer -> NetworkStatusTitle.Status? in
                 guard case let .user(user) = peer else {
                     return nil

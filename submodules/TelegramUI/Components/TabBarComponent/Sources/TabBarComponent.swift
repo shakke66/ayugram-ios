@@ -477,6 +477,7 @@ public final class TabBarComponent: Component {
     public let isLiftedStateEnabled: Bool
     public let strings: PresentationStrings
     public let items: [Item]
+    public let hideBadges: Bool
     public let search: Search?
     public let selectedId: AnyHashable?
     public let outerInsets: UIEdgeInsets
@@ -494,6 +495,7 @@ public final class TabBarComponent: Component {
         isLiftedStateEnabled: Bool = true,
         strings: PresentationStrings,
         items: [Item],
+        hideBadges: Bool = false,
         search: Search?,
         selectedId: AnyHashable?,
         outerInsets: UIEdgeInsets,
@@ -506,6 +508,7 @@ public final class TabBarComponent: Component {
         self.isLiftedStateEnabled = isLiftedStateEnabled
         self.strings = strings
         self.items = items
+        self.hideBadges = hideBadges
         self.search = search
         self.selectedId = selectedId
         self.outerInsets = outerInsets
@@ -528,6 +531,9 @@ public final class TabBarComponent: Component {
             return false
         }
         if lhs.items != rhs.items {
+            return false
+        }
+        if lhs.hideBadges != rhs.hideBadges {
             return false
         }
         if lhs.search != rhs.search {
@@ -923,6 +929,7 @@ public final class TabBarComponent: Component {
                         isSelected: false,
                         tintSelectedItem: true,
                         isSystemLayout: isSystemLayout,
+                        hideBadges: component.hideBadges,
                         isUnconstrained: true
                     )),
                     environment: {},
@@ -986,6 +993,7 @@ public final class TabBarComponent: Component {
                         isSelected: false,
                         tintSelectedItem: component.tintSelectedItem,
                         isSystemLayout: isSystemLayout,
+                        hideBadges: component.hideBadges,
                         isUnconstrained: false
                     )),
                     environment: {},
@@ -1001,6 +1009,7 @@ public final class TabBarComponent: Component {
                         isSelected: true,
                         tintSelectedItem: component.tintSelectedItem,
                         isSystemLayout: isSystemLayout,
+                        hideBadges: component.hideBadges,
                         isUnconstrained: false
                     )),
                     environment: {},
@@ -1173,10 +1182,11 @@ private final class ItemComponent: Component {
     /// iOS 27's portrait item (`_UITabButton`, stacked): 54pt tall, the icon centered 20pt below its top and the
     /// title 35pt below it. Else the bar's own 56pt item.
     let isSystemLayout: Bool
+    let hideBadges: Bool
     /// Measures the title alone: its width at the unselected font is the item's size.
     let isUnconstrained: Bool
     
-    init(item: TabBarComponent.Item, theme: PresentationTheme, isSearchActive: Bool, showsTitle: Bool, isSelected: Bool, tintSelectedItem: Bool, isSystemLayout: Bool, isUnconstrained: Bool) {
+    init(item: TabBarComponent.Item, theme: PresentationTheme, isSearchActive: Bool, showsTitle: Bool, isSelected: Bool, tintSelectedItem: Bool, isSystemLayout: Bool, hideBadges: Bool, isUnconstrained: Bool) {
         self.item = item
         self.theme = theme
         self.isSearchActive = isSearchActive
@@ -1184,6 +1194,7 @@ private final class ItemComponent: Component {
         self.isSelected = isSelected
         self.tintSelectedItem = tintSelectedItem
         self.isSystemLayout = isSystemLayout
+        self.hideBadges = hideBadges
         self.isUnconstrained = isUnconstrained
     }
     
@@ -1207,6 +1218,9 @@ private final class ItemComponent: Component {
             return false
         }
         if lhs.isSystemLayout != rhs.isSystemLayout {
+            return false
+        }
+        if lhs.hideBadges != rhs.hideBadges {
             return false
         }
         if lhs.isUnconstrained != rhs.isUnconstrained {
@@ -1351,7 +1365,7 @@ private final class ItemComponent: Component {
             switch component.item.content {
             case let .tabBarItem(tabBarItem):
                 title = tabBarItem.title ?? " "
-                badgeValue = tabBarItem.badgeValue
+                badgeValue = component.hideBadges ? nil : tabBarItem.badgeValue
 
                 if let animationName = tabBarItem.animationName {
                     if let imageIcon = self.imageIcon {
@@ -1440,7 +1454,7 @@ private final class ItemComponent: Component {
                 }
             case let .customItem(customItem):
                 title = customItem.title
-                badgeValue = customItem.badge
+                badgeValue = component.hideBadges ? nil : customItem.badge
 
                 switch customItem.icon {
                 case let .animation(name, offset):

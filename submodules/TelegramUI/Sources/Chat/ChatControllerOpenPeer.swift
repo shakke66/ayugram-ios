@@ -43,6 +43,7 @@ import UrlHandling
 import AvatarNode
 import AppBundle
 import LocalizedPeerData
+import AyuGramSettingsUI
 import PhoneNumberFormat
 import SettingsUI
 import UrlWhitelist
@@ -341,7 +342,7 @@ extension ChatControllerImpl {
         })
     }
     
-    func openBotForumMoreMenu(sourceView: UIView, gesture: ContextGesture?) {
+    func openBotForumMoreMenu(sourceView: UIView, gesture: ContextGesture?, additionalItems: [ContextMenuItem] = []) {
         guard let peerId = self.chatLocation.peerId else {
             return
         }
@@ -462,6 +463,11 @@ extension ChatControllerImpl {
                 })))
             }
         }
+
+        if !items.isEmpty && !additionalItems.isEmpty {
+            items.append(.separator)
+        }
+        items.append(contentsOf: additionalItems)
 
         let presentationData = self.presentationData
         

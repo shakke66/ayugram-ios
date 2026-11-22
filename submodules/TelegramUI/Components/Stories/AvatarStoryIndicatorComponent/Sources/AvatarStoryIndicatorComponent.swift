@@ -427,6 +427,7 @@ public final class AvatarStoryIndicatorComponent: Component {
     public let counters: Counters?
     public let progress: Progress?
     public let isRoundedRect: Bool
+    public let normalizedCornerRadius: CGFloat?
     
     public init(
         hasUnseen: Bool,
@@ -437,7 +438,8 @@ public final class AvatarStoryIndicatorComponent: Component {
         inactiveLineWidth: CGFloat,
         counters: Counters?,
         progress: Progress? = nil,
-        isRoundedRect: Bool = false
+        isRoundedRect: Bool = false,
+        normalizedCornerRadius: CGFloat? = nil
     ) {
         self.hasUnseen = hasUnseen
         self.hasUnseenCloseFriendsItems = hasUnseenCloseFriendsItems
@@ -448,6 +450,7 @@ public final class AvatarStoryIndicatorComponent: Component {
         self.counters = counters
         self.progress = progress
         self.isRoundedRect = isRoundedRect
+        self.normalizedCornerRadius = normalizedCornerRadius
     }
     
     public static func ==(lhs: AvatarStoryIndicatorComponent, rhs: AvatarStoryIndicatorComponent) -> Bool {
@@ -476,6 +479,9 @@ public final class AvatarStoryIndicatorComponent: Component {
             return false
         }
         if lhs.isRoundedRect != rhs.isRoundedRect {
+            return false
+        }
+        if lhs.normalizedCornerRadius != rhs.normalizedCornerRadius {
             return false
         }
         return true
@@ -659,8 +665,9 @@ public final class AvatarStoryIndicatorComponent: Component {
             let diameter: CGFloat
             
             let maxOuterInset = component.activeLineWidth * 2.0
-            diameter = availableSize.width + maxOuterInset * 2.0
-            let imageDiameter = ceil(availableSize.width + maxOuterInset * 2.0)
+            let availableDiameter = min(availableSize.width, availableSize.height)
+            diameter = availableDiameter + maxOuterInset * 2.0
+            let imageDiameter = ceil(diameter)
             
             let activeColors: [CGColor]
             let inactiveColors: [CGColor]
@@ -676,6 +683,19 @@ public final class AvatarStoryIndicatorComponent: Component {
             inactiveColors = component.colors.seenColors.map(\.cgColor)
             
             let radius = (diameter - component.activeLineWidth) * 0.5
+            let resolvedCornerRadius: CGFloat
+            let usesRoundedPath: Bool
+            if let normalizedCornerRadius = component.normalizedCornerRadius {
+                let clampedCornerRadius = min(0.5, max(0.0, normalizedCornerRadius))
+                resolvedCornerRadius = floor(diameter * clampedCornerRadius)
+                usesRoundedPath = clampedCornerRadius < 0.5
+            } else if component.isRoundedRect {
+                resolvedCornerRadius = floor(diameter * 0.27)
+                usesRoundedPath = true
+            } else {
+                resolvedCornerRadius = floor(diameter * 0.5)
+                usesRoundedPath = false
+            }
             
             self.indicatorView.image = generateImage(CGSize(width: imageDiameter, height: imageDiameter), rotatedContext: { size, context in
                 UIGraphicsPushContext(context)
@@ -686,14 +706,20 @@ public final class AvatarStoryIndicatorComponent: Component {
                 context.clear(CGRect(origin: CGPoint(), size: size))
                 
                 context.setLineCap(.round)
+                let indicatorBounds = CGRect(
+                    x: floor((size.width - diameter) * 0.5),
+                    y: floor((size.height - diameter) * 0.5),
+                    width: diameter,
+                    height: diameter
+                )
                 
                 var locations: [CGFloat] = [0.0, 1.0]
                 
                 if let counters = component.counters, !component.hasLiveItems, counters.totalCount > 1 {
-                    if component.isRoundedRect {
+                    if usesRoundedPath {
                         let lineWidth: CGFloat = (component.hasUnseen || component.hasLiveItems) ? component.activeLineWidth : component.inactiveLineWidth
                         context.setLineWidth(lineWidth)
-                        let path = UIBezierPath(roundedRect: CGRect(origin: CGPoint(x: size.width * 0.5 - diameter * 0.5, y: size.height * 0.5 - diameter * 0.5), size: size).insetBy(dx: lineWidth * 0.5, dy: lineWidth * 0.5), cornerRadius: floor(diameter * 0.27))
+                        let path = UIBezierPath(roundedRect: indicatorBounds.insetBy(dx: lineWidth * 0.5, dy: lineWidth * 0.5), cornerRadius: resolvedCornerRadius)
                         
                         var startPoint: CGPoint?
                         var vertices: [CurveVertex] = []
@@ -836,11 +862,11 @@ public final class AvatarStoryIndicatorComponent: Component {
                 } else {
                     let lineWidth: CGFloat = (component.hasUnseen || component.hasLiveItems) ? component.activeLineWidth : component.inactiveLineWidth
                     context.setLineWidth(lineWidth)
-                    if component.isRoundedRect {
-                        let path = UIBezierPath(roundedRect: CGRect(origin: CGPoint(x: size.width * 0.5 - diameter * 0.5, y: size.height * 0.5 - diameter * 0.5), size: size).insetBy(dx: lineWidth * 0.5, dy: lineWidth * 0.5), cornerRadius: floor(diameter * 0.27))
+                    if usesRoundedPath {
+                        let path = UIBezierPath(roundedRect: indicatorBounds.insetBy(dx: lineWidth * 0.5, dy: lineWidth * 0.5), cornerRadius: resolvedCornerRadius)
                         context.addPath(path.cgPath)
                     } else {
-                        context.addEllipse(in: CGRect(origin: CGPoint(x: size.width * 0.5 - diameter * 0.5, y: size.height * 0.5 - diameter * 0.5), size: size).insetBy(dx: lineWidth * 0.5, dy: lineWidth * 0.5))
+                        context.addEllipse(in: indicatorBounds.insetBy(dx: lineWidth * 0.5, dy: lineWidth * 0.5))
                     }
                     
                     context.replacePathWithStrokedPath()
@@ -865,7 +891,7 @@ public final class AvatarStoryIndicatorComponent: Component {
             transition.setFrame(view: self.indicatorView, frame: indicatorFrame)
             
             let progressTransition = ComponentTransition(animation: .curve(duration: 0.3, curve: .easeInOut))
-            if let progress = component.progress, !component.isRoundedRect {
+            if let progress = component.progress, !usesRoundedPath {
                 let colorLayer: SimpleGradientLayer
                 if let current = self.colorLayer {
                     colorLayer = current
@@ -911,7 +937,7 @@ public final class AvatarStoryIndicatorComponent: Component {
                     mappedProgress = .progress(value)
                 }
                 
-                progressLayer.update(size: indicatorFrame.size, radius: radius, isRoundedRect: component.isRoundedRect, lineWidth: lineWidth, value: mappedProgress, transition: .immediate)
+                progressLayer.update(size: indicatorFrame.size, radius: radius, isRoundedRect: usesRoundedPath, lineWidth: lineWidth, value: mappedProgress, transition: .immediate)
             } else {
                 progressTransition.setAlpha(view: self.indicatorView, alpha: 1.0)
                 

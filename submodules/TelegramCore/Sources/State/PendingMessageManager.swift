@@ -1207,6 +1207,11 @@ public final class PendingMessageManager {
                 
                 return .complete()
             } else if let peer = transaction.getPeer(peerId), let inputPeer = apiInputPeer(peer) {
+                let grvmEmojiTransport = grvmLocalPremiumEmojiTransport(
+                    transaction: transaction,
+                    accountPeerId: accountPeerId,
+                    peerId: peerId
+                )
                 var isForward = false
                 var hideSendersNames = false
                 var hideCaptions = false
@@ -1409,7 +1414,11 @@ public final class PendingMessageManager {
                                     var messageEntities: [Api.MessageEntity]?
                                     for attribute in message.attributes {
                                         if let attribute = attribute as? TextEntitiesMessageAttribute {
-                                            messageEntities = apiTextAttributeEntities(attribute, associatedPeers: message.peers)
+                                            messageEntities = apiTextAttributeEntities(
+                                                attribute,
+                                                associatedPeers: message.peers,
+                                                localPremiumEmojiTransport: grvmEmojiTransport
+                                            )
                                         }
                                     }
                                     
@@ -1463,7 +1472,7 @@ public final class PendingMessageManager {
                             replyFlags |= 1 << 1
                         }
                         
-                        let quoteFields = apiReplyQuoteFields(replyQuote, peer: { transaction.getPeer($0) })
+                        let quoteFields = apiReplyQuoteFields(replyQuote, peer: { transaction.getPeer($0) }, localPremiumEmojiTransport: grvmEmojiTransport)
                         replyFlags |= quoteFields.flags
                         
                         if let _ = replyTodoItemId {
@@ -1707,6 +1716,11 @@ public final class PendingMessageManager {
                 PendingMessageManager.sendSecretMessageContent(transaction: transaction, message: message, content: content)
                 return .complete()
             } else if let peer = transaction.getPeer(messageId.peerId), let inputPeer = apiInputPeer(peer) {
+                let grvmEmojiTransport = grvmLocalPremiumEmojiTransport(
+                    transaction: transaction,
+                    accountPeerId: accountPeerId,
+                    peerId: messageId.peerId
+                )
                 var uniqueId: Int64 = 0
                 var forwardSourceInfoAttribute: ForwardSourceInfoAttribute?
                 var messageEntities: [Api.MessageEntity]?
@@ -1766,7 +1780,11 @@ public final class PendingMessageManager {
                     } else if let attribute = attribute as? ForwardSourceInfoAttribute {
                         forwardSourceInfoAttribute = attribute
                     } else if let attribute = attribute as? TextEntitiesMessageAttribute {
-                        messageEntities = apiTextAttributeEntities(attribute, associatedPeers: message.peers)
+                        messageEntities = apiTextAttributeEntities(
+                            attribute,
+                            associatedPeers: message.peers,
+                            localPremiumEmojiTransport: grvmEmojiTransport
+                        )
                     } else if let attribute = attribute as? OutgoingContentInfoMessageAttribute {
                         if attribute.flags.contains(.disableLinkPreviews) {
                             flags |= Int32(1 << 1)
@@ -1850,7 +1868,7 @@ public final class PendingMessageManager {
                                 replyFlags |= 1 << 1
                             }
                             
-                            let quoteFields = apiReplyQuoteFields(replyQuote, peer: { transaction.getPeer($0) })
+                            let quoteFields = apiReplyQuoteFields(replyQuote, peer: { transaction.getPeer($0) }, localPremiumEmojiTransport: grvmEmojiTransport)
                             replyFlags |= quoteFields.flags
                             
                             if let _ = replyTodoItemId {
@@ -1926,7 +1944,7 @@ public final class PendingMessageManager {
                                 replyFlags |= 1 << 1
                             }
                             
-                            let quoteFields = apiReplyQuoteFields(replyQuote, peer: { transaction.getPeer($0) })
+                            let quoteFields = apiReplyQuoteFields(replyQuote, peer: { transaction.getPeer($0) }, localPremiumEmojiTransport: grvmEmojiTransport)
                             replyFlags |= quoteFields.flags
 
                             if let _ = replyTodoItemId {
@@ -2056,7 +2074,7 @@ public final class PendingMessageManager {
                                 replyFlags |= 1 << 1
                             }
                             
-                            let quoteFields = apiReplyQuoteFields(replyQuote, peer: { transaction.getPeer($0) })
+                            let quoteFields = apiReplyQuoteFields(replyQuote, peer: { transaction.getPeer($0) }, localPremiumEmojiTransport: grvmEmojiTransport)
                             replyFlags |= quoteFields.flags
 
                             if let _ = replyTodoItemId {

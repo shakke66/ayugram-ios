@@ -50,11 +50,20 @@ extension ChatControllerImpl {
         }
 
         // The sidebar button stays outermost, with Saved Messages' search before it.
-        let rightBarButtons: [UIBarButtonItem]
+        var rightBarButtons: [UIBarButtonItem]
         if self.rightNavigationButton?.action == .toggleSideList {
             rightBarButtons = [self.secondaryRightNavigationButton, self.rightNavigationButton].compactMap { $0?.buttonItem }
         } else {
             rightBarButtons = [self.rightNavigationButton, self.secondaryRightNavigationButton].compactMap { $0?.buttonItem }
+        }
+        let quickAdminAvailability = grvmQuickAdminNavigationAvailability(presentationInterfaceState)
+        if quickAdminAvailability.recentActions {
+            self.grvmRecentActionsButtonItem.accessibilityLabel = presentationInterfaceState.strings.Group_Info_AdminLog
+            rightBarButtons.append(self.grvmRecentActionsButtonItem)
+        }
+        if quickAdminAvailability.admins {
+            self.grvmAdminsButtonItem.accessibilityLabel = presentationInterfaceState.strings.GroupInfo_Administrators
+            rightBarButtons.append(self.grvmAdminsButtonItem)
         }
         var rightBarButtonsUpdated = false
         let currentRightBarButtons = self.navigationItem.rightBarButtonItems ?? []

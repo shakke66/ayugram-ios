@@ -135,11 +135,11 @@ extension ReplayContext {
 
         if let peerId = peerId {
             for id in messageIds {
-                markMessageContentAsConsumedRemotely(transaction: transaction, messageId: MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: id), consumeDate: date)
+                markMessageContentAsConsumedRemotely(accountPeerId: accountPeerId, transaction: transaction, messageId: MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: id), consumeDate: date)
             }
         } else {
             for messageId in transaction.messageIdsForGlobalIds(messageIds) {
-                markMessageContentAsConsumedRemotely(transaction: transaction, messageId: messageId, consumeDate: date)
+                markMessageContentAsConsumedRemotely(accountPeerId: accountPeerId, transaction: transaction, messageId: messageId, consumeDate: date)
             }
         }
     }

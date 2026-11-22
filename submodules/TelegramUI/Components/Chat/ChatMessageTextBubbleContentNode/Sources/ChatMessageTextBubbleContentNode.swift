@@ -29,6 +29,57 @@ import ShimmeringMask
 import StreamingTextReveal
 import WalletContext
 
+private extension Unicode.Scalar {
+    var isZalgoCombiningMark: Bool {
+        switch self.value {
+        case 0x0300...0x036F, 0x1AB0...0x1AFF, 0x1DC0...0x1DFF, 0x20D0...0x20FF:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+private extension String {
+    // Mirrors AyuGramDesktop's filterZalgo: only "excessive" runs of combining
+    // marks are neutralised, and each is replaced (not removed) with U+2060
+    // (Word Joiner) so the string length stays identical and message text
+    // entity ranges remain valid.
+    func filteringZalgo() -> String {
+        let zalgoRunThreshold = 3
+
+        var scalars = Array(self.unicodeScalars)
+        var runStart = 0
+        var foundExcessiveRun = false
+
+        var index = 0
+        while index <= scalars.count {
+            let isMark = index < scalars.count && scalars[index].isZalgoCombiningMark
+            if isMark {
+                index += 1
+                continue
+            }
+            let runLength = index - runStart
+            if runLength >= zalgoRunThreshold {
+                foundExcessiveRun = true
+                for markIndex in runStart..<index {
+                    scalars[markIndex] = Unicode.Scalar(0x2060)!
+                }
+            }
+            index += 1
+            runStart = index
+        }
+
+        if !foundExcessiveRun {
+            return self
+        }
+
+        var result = String.UnicodeScalarView()
+        result.append(contentsOf: scalars)
+        return String(result)
+    }
+}
+
 private final class CachedChatMessageText {
     let text: String
     let inputEntities: [MessageTextEntity]?
@@ -267,7 +318,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                 var viewCount: Int?
                 var dateReplies = 0
                 var starsCount: Int64?
-                var dateReactionsAndPeers = mergedMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: item.topMessage)
+                var dateReactionsAndPeers = grvmVisibleMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: item.topMessage)
                 if item.message.isRestricted(platform: "ios", contentSettings: item.context.currentContentSettings.with { $0 }) {
                     dateReactionsAndPeers = ([], [])
                 }
@@ -426,8 +477,11 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                         }
                     }
                 }
-                
-                
+
+                if AyuGramHooks.shouldFilterZalgo?(item.context.account.peerId) == true {
+                    rawText = rawText.filteringZalgo()
+                }
+
                 if incoming && item.associatedData.isSuspiciousPeer, let entities = messageEntities {
                     messageEntities = entities.filter(\.isShownFromSuspiciousPeer)
                 }

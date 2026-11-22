@@ -13,6 +13,7 @@ import AccountUtils
 import OverlayStatusController
 import PremiumUI
 import TelegramPresentationData
+import AyuGramSettingsUI
 import PresentationDataUtils
 import PasswordSetupUI
 import InstantPageCache
@@ -310,6 +311,16 @@ extension PeerInfoScreenNode {
                 return
             }
             push(self.context.sharedContext.makeWalletScreen(context: self.context))
+        case .ayuGramSettings:
+            push(ayuGramMainController(
+                context: self.context,
+                openGRVMNotify: { [weak self] in
+                    guard let self else {
+                        return
+                    }
+                    push(grvmNotifySettingsController(context: self.context))
+                }
+            ))
         }
     }
 

@@ -152,6 +152,10 @@ public final class MediaBox {
     public var didRemoveResources: Signal<Void, NoError> {
         return .single(Void()) |> then(self.didRemoveResourcesPipe.signal())
     }
+    private let didRemoveResourceIdsPipe = ValuePipe<[MediaResourceId]>()
+    public var didRemoveResourceIds: Signal<[MediaResourceId], NoError> {
+        return self.didRemoveResourceIdsPipe.signal()
+    }
     
     private var statusContexts: [MediaResourceId: ResourceStatusContext] = [:]
     private var cachedRepresentationContexts: [CachedMediaResourceRepresentationKey: CachedMediaResourceRepresentationContext] = [:]
@@ -350,6 +354,63 @@ public final class MediaBox {
         self.dataQueue.async {
             let paths = self.storePathsForId(id)
             let _ = try? FileManager.default.copyItem(at: URL(fileURLWithPath: fromTempPath), to: URL(fileURLWithPath: paths.complete))
+        }
+    }
+
+    private func copyResourceDataFromArchive(_ id: MediaResourceId, path: String) -> Bool {
+        assert(self.dataQueue.isCurrent())
+        guard self.fileContexts[id] == nil else {
+            return false
+        }
+
+        let paths = self.storePathsForId(id)
+        let sourceURL = URL(fileURLWithPath: path)
+        let temporaryURL = URL(fileURLWithPath: paths.complete + ".restore-\(UUID().uuidString).tmp")
+        let destinationURL = URL(fileURLWithPath: paths.complete)
+        do {
+            let sourceSize = try FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber
+            try? FileManager.default.removeItem(at: temporaryURL)
+            try FileManager.default.copyItem(at: sourceURL, to: temporaryURL)
+            let temporarySize = try FileManager.default.attributesOfItem(atPath: temporaryURL.path)[.size] as? NSNumber
+            guard let sourceSize, let temporarySize, sourceSize.int64Value == temporarySize.int64Value else {
+                try? FileManager.default.removeItem(at: temporaryURL)
+                return false
+            }
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                _ = try FileManager.default.replaceItemAt(destinationURL, withItemAt: temporaryURL)
+            } else {
+                try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
+            }
+            guard FileManager.default.fileExists(atPath: paths.complete) else {
+                return false
+            }
+            unlink(paths.partial)
+            unlink(paths.partial + ".meta")
+            return true
+        } catch {
+            try? FileManager.default.removeItem(at: temporaryURL)
+            return false
+        }
+    }
+
+    public func restoreResourceData(_ id: MediaResourceId, fromPath path: String) -> Signal<Bool, NoError> {
+        return Signal { subscriber in
+            self.dataQueue.async {
+                let success = self.copyResourceDataFromArchive(id, path: path)
+                if success {
+                    self.statusQueue.async {
+                        if let context = self.statusContexts[id] {
+                            context.status = .Local
+                            for subscriber in context.subscribers.copyItems() {
+                                subscriber(.Local)
+                            }
+                        }
+                    }
+                }
+                subscriber.putNext(success)
+                subscriber.putCompletion()
+            }
+            return EmptyDisposable
         }
     }
     
@@ -1803,6 +1864,7 @@ public final class MediaBox {
                 }*/
                 
                 var count: Int = 0
+                var removedIds: [MediaResourceId] = []
                 let totalCount = ids.count * 3 + pathsToDelete.count
                 if totalCount == 0 {
                     subscriber.putNext(1.0)
@@ -1835,9 +1897,12 @@ public final class MediaBox {
                         }
                     }
                     let paths = self.storePathsForId(id)
-                    unlink(paths.complete)
-                    unlink(paths.partial)
-                    unlink(paths.partial + ".meta")
+                    let removedComplete = unlink(paths.complete) == 0
+                    let removedPartial = unlink(paths.partial) == 0
+                    let removedMeta = unlink(paths.partial + ".meta") == 0
+                    if removedComplete || removedPartial || removedMeta {
+                        removedIds.append(id)
+                    }
                     self.fileContexts.removeValue(forKey: id)
                     count += 3
                     reportProgress(count)
@@ -1850,7 +1915,7 @@ public final class MediaBox {
                 }
                 
                 if notify {
-                    for id in ids {
+                    for id in removedIds {
                         if let context = self.statusContexts[id] {
                             context.status = .Remote(progress: 0.0)
                             for f in context.subscribers.copyItems() {
@@ -1862,6 +1927,7 @@ public final class MediaBox {
                 
                 self.dataQueue.justDispatch {
                     self.didRemoveResourcesPipe.putNext(Void())
+                    self.didRemoveResourceIdsPipe.putNext(removedIds)
                 }
                 
                 subscriber.putNext(1.0)
@@ -1947,15 +2013,17 @@ public final class MediaBox {
                         }
                     }
                     let paths = self.storePathsForId(id)
-                    unlink(paths.complete)
-                    unlink(paths.partial)
-                    unlink(paths.partial + ".meta")
+                    let removedComplete = unlink(paths.complete) == 0
+                    let removedPartial = unlink(paths.partial) == 0
+                    let removedMeta = unlink(paths.partial + ".meta") == 0
+                    if removedComplete || removedPartial || removedMeta {
+                        removedIds.append(id)
+                    }
                     self.fileContexts.removeValue(forKey: id)
-                    removedIds.append(id)
                 }
                 
                 if notify {
-                    for id in ids {
+                    for id in removedIds {
                         if let context = self.statusContexts[id] {
                             context.status = .Remote(progress: 0.0)
                             for f in context.subscribers.copyItems() {
@@ -1967,6 +2035,7 @@ public final class MediaBox {
                 
                 self.dataQueue.justDispatch {
                     self.didRemoveResourcesPipe.putNext(Void())
+                    self.didRemoveResourceIdsPipe.putNext(removedIds)
                 }
                 
                 subscriber.putNext(removedIds)

@@ -5,6 +5,7 @@ import Foundation
 import SwiftSignalKit
 import UIKit
 import TelegramCore
+import Postbox
 import Display
 import DeviceAccess
 import TelegramPresentationData
@@ -771,16 +772,41 @@ public final class AccountContextImpl: AccountContext {
     public func chatLocationUnreadCount(for location: ChatLocation, contextHolder: Atomic<ChatLocationContextHolder?>) -> Signal<Int, NoError> {
         switch location {
         case let .peer(peerId):
-            return self.engine.data.subscribe(TelegramEngine.EngineData.Item.Messages.PeerUnreadCount(id: peerId, handleThreads: false))
+            let readStateKey: PostboxViewKey = .combinedReadState(peerId: peerId, handleThreads: false)
+            return combineLatest(
+                self.account.postbox.combinedView(keys: [readStateKey]),
+                AyuGramHooks.filteredUnreadStateUpdates?(self.account.peerId) ?? .single(0)
+            )
+            |> map { views, _ in
+                guard let view = views.views[readStateKey] as? CombinedReadStateView,
+                      let state = view.state else {
+                    return 0
+                }
+                let adjustedState = AyuGramHooks.adjustedUnreadPeerReadState?(
+                    self.account.peerId,
+                    peerId,
+                    state
+                ) ?? state
+                return Int(adjustedState.count)
+            }
         case let .replyThread(data):
             if data.isForumPost {
-                return self.engine.data.subscribe(TelegramEngine.EngineData.Item.Messages.ThreadInfo(peerId: data.peerId, threadId: data.threadId))
-                |> map { threadData -> Int in
-                    if let threadData {
-                        return Int(threadData.incomingUnreadCount)
-                    } else {
+                let viewKey: PostboxViewKey = .messageHistoryThreadInfo(peerId: data.peerId, threadId: data.threadId)
+                return combineLatest(
+                    self.account.postbox.combinedView(keys: [viewKey]),
+                    AyuGramHooks.filteredUnreadStateUpdates?(self.account.peerId) ?? .single(0)
+                )
+                |> map { views, _ -> Int in
+                    guard let threadInfo = views.views[viewKey] as? MessageHistoryThreadInfoView,
+                          let threadData = threadInfo.info?.data.get(MessageHistoryThreadData.self) else {
                         return 0
                     }
+                    return Int(AyuGramHooks.adjustedUnreadThreadCount?(
+                        self.account.peerId,
+                        data.peerId,
+                        data.threadId,
+                        threadData.incomingUnreadCount
+                    ) ?? threadData.incomingUnreadCount)
                 }
             } else if data.peerId.namespace != Namespaces.Peer.CloudChannel {
                 return .single(0)
@@ -794,12 +820,16 @@ public final class AccountContextImpl: AccountContext {
     }
     
     public func applyMaxReadIndex(for location: ChatLocation, contextHolder: Atomic<ChatLocationContextHolder?>, messageIndex: EngineMessage.Index) {
+        self.grvmApplyMaxReadIndex(for: location, contextHolder: contextHolder, messageIndex: messageIndex, mode: .automatic)
+    }
+
+    public func grvmApplyMaxReadIndex(for location: ChatLocation, contextHolder: Atomic<ChatLocationContextHolder?>, messageIndex: EngineMessage.Index, mode: GRVMReadMode) {
         switch location {
         case .peer:
-            let _ = self.engine.messages.applyMaxReadIndexInteractively(index: messageIndex).start()
+            let _ = self.engine.messages.grvmApplyMaxReadIndex(messageIndex, mode: mode).start()
         case let .replyThread(data):
             let context = chatLocationContext(holder: contextHolder, account: self.account, data: data)
-            context.applyMaxReadIndex(messageIndex: messageIndex)
+            context.applyMaxReadIndex(messageIndex: messageIndex, mode: mode)
         case .customChatContents:
             break
         }

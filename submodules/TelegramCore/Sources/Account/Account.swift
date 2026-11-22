@@ -1375,7 +1375,7 @@ public class Account {
         
         self.contactSyncManager = ContactSyncManager(postbox: postbox, network: network, accountPeerId: peerId, stateManager: self.stateManager)
         self.localInputActivityManager = PeerInputActivityManager()
-        self.accountPresenceManager = AccountPresenceManager(shouldKeepOnlinePresence: self.shouldKeepOnlinePresence.get(), network: network)
+        self.accountPresenceManager = AccountPresenceManager(accountPeerId: peerId, shouldKeepOnlinePresence: self.shouldKeepOnlinePresence.get(), network: network)
         #if os(iOS)
         // iOS only for now: the Rust engine is the macOS default, and its online keepalive cadence
         // (pings every 1-2 s while the account is in front) has not been measured there.
@@ -1505,8 +1505,8 @@ public class Account {
         
         self.managedOperationsDisposable.add(managedSecretChatOutgoingOperations(auxiliaryMethods: auxiliaryMethods, postbox: self.postbox, network: self.network, accountPeerId: peerId, mode: .all).start())
         self.managedOperationsDisposable.add(managedCloudChatRemoveMessagesOperations(postbox: self.postbox, network: self.network, stateManager: self.stateManager).start())
-        self.managedOperationsDisposable.add(managedAutoremoveMessageOperations(network: self.network, postbox: self.postbox, isRemove: true).start())
-        self.managedOperationsDisposable.add(managedAutoremoveMessageOperations(network: self.network, postbox: self.postbox, isRemove: false).start())
+        self.managedOperationsDisposable.add(managedAutoremoveMessageOperations(accountPeerId: self.peerId, network: self.network, postbox: self.postbox, isRemove: true).start())
+        self.managedOperationsDisposable.add(managedAutoremoveMessageOperations(accountPeerId: self.peerId, network: self.network, postbox: self.postbox, isRemove: false).start())
         self.managedOperationsDisposable.add(managedAutoexpireStoryOperations(network: self.network, postbox: self.postbox).start())
         self.managedOperationsDisposable.add(managedPeerTimestampAttributeOperations(network: self.network, postbox: self.postbox).start())
         self.managedOperationsDisposable.add(managedPendingWalletTransferMessages(postbox: self.postbox).start())
@@ -1724,7 +1724,13 @@ public class Account {
     public func peerInputActivities(peerId: PeerActivitySpace) -> Signal<[(PeerId, PeerInputActivity)], NoError> {
         return self.peerInputActivityManager.activities(peerId: peerId)
         |> map { activities in
-            return activities.map({ ($0.0, $0.1.activity) })
+            return activities.compactMap { entry in
+                let peerId = entry.0
+                if AyuGramHooks.isShadowBanned?(self.peerId, peerId) == true {
+                    return nil
+                }
+                return (peerId, entry.1.activity)
+            }
         }
     }
     
@@ -1733,7 +1739,13 @@ public class Account {
         |> map { activities in
             var result: [PeerActivitySpace: [(PeerId, PeerInputActivity)]] = [:]
             for (chatPeerId, chatActivities) in activities {
-                result[chatPeerId] = chatActivities.map { ($0.0, $0.1.activity) }
+                result[chatPeerId] = chatActivities.compactMap { entry in
+                    let peerId = entry.0
+                    if AyuGramHooks.isShadowBanned?(self.peerId, peerId) == true {
+                        return nil
+                    }
+                    return (peerId, entry.1.activity)
+                }
             }
             return result
         }

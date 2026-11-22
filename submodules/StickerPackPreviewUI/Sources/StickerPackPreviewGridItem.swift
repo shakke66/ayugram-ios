@@ -77,6 +77,7 @@ final class StickerPackPreviewGridItem: GridItem {
 }
 
 private let textFont = Font.regular(20.0)
+private let stickerArtworkCornerRadius: CGFloat = 5.0
 
 final class StickerPackPreviewGridItemNode: GridItemNode {
     private var currentState: (AccountContext, StickerPackItem?, Bool, Bool)?
@@ -85,6 +86,7 @@ final class StickerPackPreviewGridItemNode: GridItemNode {
     private var isEditable: Bool?
     private var isEmpty: Bool?
     private let containerNode: ASDisplayNode
+    private let artworkNode: ASDisplayNode
     private let imageNode: TransformImageNode
     private var animationNode: AnimatedStickerNode?
     private var placeholderNode: StickerShimmerEffectNode
@@ -126,6 +128,9 @@ final class StickerPackPreviewGridItemNode: GridItemNode {
     
     override init() {
         self.containerNode = ASDisplayNode()
+        self.artworkNode = ASDisplayNode()
+        self.artworkNode.cornerRadius = stickerArtworkCornerRadius
+        self.artworkNode.clipsToBounds = true
         
         self.imageNode = TransformImageNode()
         self.placeholderNode = StickerShimmerEffectNode()
@@ -134,8 +139,9 @@ final class StickerPackPreviewGridItemNode: GridItemNode {
         super.init()
         
         self.addSubnode(self.containerNode)
-        self.containerNode.addSubnode(self.imageNode)
-        self.containerNode.addSubnode(self.placeholderNode)
+        self.containerNode.addSubnode(self.artworkNode)
+        self.artworkNode.addSubnode(self.imageNode)
+        self.artworkNode.addSubnode(self.placeholderNode)
         
         var firstTime = true
         self.imageNode.imageUpdated = { [weak self] image in
@@ -321,7 +327,7 @@ final class StickerPackPreviewGridItemNode: GridItemNode {
                     if self.animationNode == nil {
                         let animationNode = DefaultAnimatedStickerNodeImpl()
                         self.animationNode = animationNode
-                        self.containerNode.insertSubnode(animationNode, aboveSubnode: self.imageNode)
+                        self.artworkNode.insertSubnode(animationNode, aboveSubnode: self.imageNode)
                         animationNode.started = { [weak self] in
                             guard let strongSelf = self else {
                                 return
@@ -446,7 +452,9 @@ final class StickerPackPreviewGridItemNode: GridItemNode {
                 let imageSize = CGSize(width: 512, height: 512).aspectFitted(boundingSize)
                 let imageFrame = CGRect(origin: CGPoint(x: floor((bounds.size.width - imageSize.width) / 2.0), y: (bounds.size.height - imageSize.height) / 2.0), size: imageSize)
                 self.imageNode.asyncLayout()(TransformImageArguments(corners: ImageCorners(), imageSize: imageSize, boundingSize: imageSize, intrinsicInsets: UIEdgeInsets()))()
-                self.imageNode.frame = imageFrame
+                self.artworkNode.frame = imageFrame
+                self.imageNode.frame = CGRect(origin: .zero, size: imageSize)
+                self.placeholderNode.frame = self.artworkNode.bounds
                 
                 return
             } else if let item = item, let dimensions = item.file.dimensions?.cgSize {
@@ -457,18 +465,17 @@ final class StickerPackPreviewGridItemNode: GridItemNode {
                 let imageSize = dimensions.aspectFitted(boundingSize)
                 let imageFrame = CGRect(origin: CGPoint(x: floor((bounds.size.width - imageSize.width) / 2.0), y: (bounds.size.height - imageSize.height) / 2.0), size: imageSize)
                 self.imageNode.asyncLayout()(TransformImageArguments(corners: ImageCorners(), imageSize: imageSize, boundingSize: imageSize, intrinsicInsets: UIEdgeInsets()))()
-                self.imageNode.frame = imageFrame
+                self.artworkNode.frame = imageFrame
+                self.imageNode.frame = CGRect(origin: .zero, size: imageSize)
                 if let animationNode = self.animationNode {
-                    animationNode.frame = imageFrame
+                    animationNode.frame = CGRect(origin: .zero, size: imageSize)
                     animationNode.updateLayout(size: imageSize)
                 }
             }
         }
         
-        let imageFrame = self.imageNode.frame
-            
-        let placeholderFrame = imageFrame
-        self.placeholderNode.frame = imageFrame
+        let placeholderFrame = self.artworkNode.bounds
+        self.placeholderNode.frame = self.artworkNode.bounds
     
         if let theme = self.theme, let (context, stickerItem, _, _) = self.currentState, let item = stickerItem {
             self.placeholderNode.update(backgroundColor: theme.list.itemBlocksBackgroundColor, foregroundColor: theme.list.mediaPlaceholderColor, shimmeringColor: theme.list.itemBlocksBackgroundColor.withAlphaComponent(0.4), data: item.file.immediateThumbnailData, size: placeholderFrame.size, enableEffect: context.sharedContext.energyUsageSettings.fullTranslucency)

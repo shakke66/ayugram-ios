@@ -209,7 +209,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             }
         }
     }
-    
+
     public init(theme: PresentationTheme, strings: PresentationStrings, peerMedia: Bool = false) {
         self.theme = theme
         self.peerMedia = peerMedia
@@ -331,7 +331,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.interfaceInteraction?.shareSelectedMessages()
         }
     }
-    
+
     @objc private func tagButtonPressed() {
         guard let context = self.context else {
             return
@@ -511,7 +511,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.tagButton.isHidden = true
             self.tagEditButton.isHidden = true
         }
-        
+
         if self.reportButton.isHidden || (self.peerMedia && self.deleteButton.isHidden && self.reportButton.isHidden) {
             if let peer = interfaceState.renderedPeer?.peer as? TelegramChannel, case .broadcast = peer.info {
                 self.reportButton.isHidden = false
@@ -583,7 +583,6 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
                 ]
             }
         }
-        
         let buttonSize = CGSize(width: 40.0, height: 40.0)
         
         let availableWidth = width - leftInset - rightInset

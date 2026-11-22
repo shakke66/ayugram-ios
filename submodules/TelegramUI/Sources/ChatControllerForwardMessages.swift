@@ -15,6 +15,14 @@ import TopMessageReactions
 import ChatMessagePaymentAlertController
 
 extension ChatControllerImpl {
+    func forwardLocalCopy(message: Message) {
+        let localCopy: Signal<GRVMPreservedMediaEnqueuePayload, GRVMPreservedMediaEnqueueError> = GRVMPreservedMediaEnqueue(
+            context: self.context,
+            message: message
+        )
+        self.forwardMessages(messages: [message], resetCurrent: false, localCopy: localCopy)
+    }
+
     func forwardMessages(messageIds: [EngineMessage.Id], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool = false) {
         let _ = (self.context.engine.data.get(EngineDataMap(
             messageIds.map(TelegramEngine.EngineData.Item.Messages.Message.init)
@@ -27,7 +35,7 @@ extension ChatControllerImpl {
         })
     }
 
-    func forwardMessages(messages: [EngineRawMessage], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool) {
+    func forwardMessages(messages: [EngineRawMessage], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool, localCopy: Signal<GRVMPreservedMediaEnqueuePayload, GRVMPreservedMediaEnqueueError>? = nil) {
         let _ = self.presentVoiceMessageDiscardAlert(action: { [weak self] in
             guard let self else {
                 return
@@ -56,8 +64,12 @@ extension ChatControllerImpl {
             var attemptSelectionImpl: ((EnginePeer, ChatListDisabledPeerReason) -> Void)?
             let controller = self.context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(context: self.context, updatedPresentationData: self.updatedPresentationData, filter: filter, hasFilters: true, attemptSelection: { peer, _, reason in
                 attemptSelectionImpl?(peer, reason)
-            }, multipleSelection: true, forwardedMessageIds: messages.map { $0.id }, selectForumThreads: true))
+            }, multipleSelection: true, forwardedMessageIds: localCopy == nil ? messages.map { $0.id } : nil, selectForumThreads: true))
             let context = self.context
+            let grvmStrings = GRVMgramStrings(self.presentationData.strings)
+            var preparedLocalCopy: GRVMPreservedMediaEnqueuePayload?
+            var preparingLocalCopy = false
+            var localCopyThreadIds: [EnginePeer.Id: Int64] = [:]
             attemptSelectionImpl = { [weak self, weak controller] peer, reason in
                 guard let strongSelf = self, let controller = controller else {
                     return
@@ -105,6 +117,103 @@ extension ChatControllerImpl {
                 }
             }
             controller.multiplePeersSelected = { [weak self, weak controller] peers, peerMap, messageText, mode, forwardOptions, _ in
+                if let localCopy, preparedLocalCopy == nil {
+                    guard let controller else {
+                        return
+                    }
+                    guard !preparingLocalCopy else {
+                        return
+                    }
+                    preparingLocalCopy = true
+                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                    let preparationDisposable = MetaDisposable()
+                    var receivedPayload = false
+                    var terminal = false
+                    var progressController: ViewController?
+                    let completePreparation: () -> Bool = {
+                        guard !terminal else {
+                            return false
+                        }
+                        terminal = true
+                        progressController?.dismiss()
+                        progressController = nil
+                        preparingLocalCopy = false
+                        preparationDisposable.dispose()
+                        return true
+                    }
+                    let displayLocalCopyError: (GRVMPreservedMediaEnqueueError) -> Void = { [weak controller] error in
+                        switch error {
+                        case .unsupported:
+                            controller?.present(UndoOverlayController(
+                                presentationData: presentationData,
+                                content: .info(
+                                    title: nil,
+                                    text: grvmStrings[.forwardLocalCopyUnsupported],
+                                    timeout: nil,
+                                    customUndoText: nil
+                                ),
+                                elevatedLayout: false,
+                                animateInAsReplacement: false,
+                                action: { _ in false }
+                            ), in: .current)
+                        case .unavailable:
+                            controller?.present(UndoOverlayController(
+                                presentationData: presentationData,
+                                content: .info(
+                                    title: nil,
+                                    text: grvmStrings[.forwardLocalCopyUnavailable],
+                                    timeout: nil,
+                                    customUndoText: nil
+                                ),
+                                elevatedLayout: false,
+                                animateInAsReplacement: false,
+                                action: { _ in false }
+                            ), in: .current)
+                        }
+                    }
+                    let currentProgressController = OverlayStatusController(
+                        theme: presentationData.theme,
+                        type: .loading(cancelled: {
+                            _ = completePreparation()
+                        })
+                    )
+                    progressController = currentProgressController
+                    controller.present(currentProgressController, in: .current)
+                    preparationDisposable.set((localCopy
+                    |> timeout(30.0, queue: Queue.mainQueue(), alternate: .fail(.unavailable))
+                    |> deliverOnMainQueue).startStandalone(next: { [weak controller] payload in
+                        guard !terminal else {
+                            return
+                        }
+                        receivedPayload = true
+                        preparedLocalCopy = payload
+                        guard completePreparation() else {
+                            return
+                        }
+                        controller?.multiplePeersSelected?(
+                            peers,
+                            peerMap,
+                            messageText,
+                            mode,
+                            forwardOptions,
+                            nil
+                        )
+                    }, error: { error in
+                        guard completePreparation() else {
+                            return
+                        }
+                        displayLocalCopyError(error)
+                    }, completed: {
+                        guard !receivedPayload else {
+                            return
+                        }
+                        guard completePreparation() else {
+                            return
+                        }
+                        displayLocalCopyError(.unavailable)
+                    }))
+                    return
+                }
                 let peerIds = peers.map { $0.id }
                 
                 let _ = (context.engine.data.get(
@@ -159,9 +268,13 @@ extension ChatControllerImpl {
                         var attributes: [EngineMessage.Attribute] = []
                         attributes.append(ForwardOptionsMessageAttribute(hideNames: forwardOptions?.hideNames == true, hideCaptions: forwardOptions?.hideCaptions == true))
                         
-                        result.append(contentsOf: messages.map { message -> EnqueueMessage in
-                            return .forward(source: message.id, threadId: nil, grouping: .auto, attributes: attributes, correlationId: nil)
-                        })
+                        if let preparedLocalCopy {
+                            result.append(preparedLocalCopy.message)
+                        } else {
+                            result.append(contentsOf: messages.map { message -> EnqueueMessage in
+                                return .forward(source: message.id, threadId: nil, grouping: .auto, attributes: attributes, correlationId: nil)
+                            })
+                        }
                         
                         let commit: ([EnqueueMessage]) -> Void = { result in
                             guard let strongSelf = self else {
@@ -196,6 +309,11 @@ extension ChatControllerImpl {
                                 var displayPeers: [EnginePeer] = []
                                 for (peer, shouldDivert) in targetPeersShouldDivert {
                                     var peerMessages = result
+                                    if preparedLocalCopy != nil, let threadId = localCopyThreadIds[peer.id] {
+                                        peerMessages = peerMessages.map { message in
+                                            return message.withUpdatedThreadId(threadId)
+                                        }
+                                    }
                                     if shouldDivert {
                                         displayConvertingTooltip = true
                                         peerMessages = peerMessages.map { message -> EnqueueMessage in
@@ -218,6 +336,7 @@ extension ChatControllerImpl {
                                         }
                                     }
                                     
+                                    preparedLocalCopy?.transferOwnership()
                                     let _ = (enqueueMessages(account: strongSelf.context.account, peerId: peer.id, messages: peerMessages)
                                     |> deliverOnMainQueue).startStandalone(next: { messageIds in
                                         if let strongSelf = self {
@@ -357,6 +476,22 @@ extension ChatControllerImpl {
                 guard let strongSelf = self, let strongController = controller else {
                     return
                 }
+                if localCopy != nil {
+                    if let threadId {
+                        localCopyThreadIds[peer.id] = threadId
+                    } else {
+                        localCopyThreadIds.removeValue(forKey: peer.id)
+                    }
+                    strongController.multiplePeersSelected?(
+                        [peer],
+                        [peer.id: peer],
+                        NSAttributedString(),
+                        .generic,
+                        nil,
+                        nil
+                    )
+                    return
+                }
                 let peerId = peer.id
                 let accountPeerId = strongSelf.context.account.peerId
                 
@@ -398,7 +533,7 @@ extension ChatControllerImpl {
                     let mappedMessages = messages.map { message -> EnqueueMessage in
                         let correlationId = Int64.random(in: Int64.min ... Int64.max)
                         correlationIds.append(correlationId)
-                        return .forward(source: message.id, threadId: nil, grouping: .auto, attributes: [], correlationId: correlationId)
+                        return .forward(source: message.id, threadId: threadId, grouping: .auto, attributes: [], correlationId: correlationId)
                     }
                     
                     let _ = (reactionItems

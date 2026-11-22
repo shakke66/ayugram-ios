@@ -1,0 +1,194 @@
+import Foundation
+import UIKit
+import Display
+import SwiftSignalKit
+import Postbox
+import TelegramCore
+import TelegramPresentationData
+import TelegramUIPreferences
+import ItemListUI
+import PresentationDataUtils
+import AccountContext
+import AyuGramLib
+
+private final class AyuGramGeneralArguments {
+    let context: AccountContext
+    let updateBool: (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void
+    let updateInt32: (WritableKeyPath<AyuGramSettings, Int32>, Int32) -> Void
+
+    init(context: AccountContext, updateBool: @escaping (WritableKeyPath<AyuGramSettings, Bool>, Bool) -> Void, updateInt32: @escaping (WritableKeyPath<AyuGramSettings, Int32>, Int32) -> Void) {
+        self.context = context
+        self.updateBool = updateBool
+        self.updateInt32 = updateInt32
+    }
+}
+
+private enum AyuGramGeneralSection: Int32 {
+    case translation
+    case general
+    case confirmations
+}
+
+private enum AyuGramGeneralEntry: ItemListNodeEntry {
+    case translationHeader(PresentationTheme)
+    case translationProvider(PresentationTheme, String, Int32)
+    case generalHeader(PresentationTheme)
+    case hideStories(PresentationTheme, Bool)
+    case disableSimilarChannels(PresentationTheme, Bool)
+    case disableNotificationDelay(PresentationTheme, Bool)
+    case showSeconds(PresentationTheme, Bool)
+    case showDialogId(PresentationTheme, String, Int32)
+    case filterZalgo(PresentationTheme, Bool)
+    case improveLinkPreviews(PresentationTheme, Bool)
+    case disableExternalLinkWarning(PresentationTheme, Bool)
+    case confirmHeader(PresentationTheme)
+    case confirmSticker(PresentationTheme, Bool)
+    case confirmGIF(PresentationTheme, Bool)
+    case confirmVoice(PresentationTheme, Bool)
+
+    var section: ItemListSectionId {
+        switch self {
+        case .translationHeader, .translationProvider: return AyuGramGeneralSection.translation.rawValue
+        case .generalHeader, .hideStories, .disableSimilarChannels, .disableNotificationDelay, .showSeconds, .showDialogId, .filterZalgo, .improveLinkPreviews, .disableExternalLinkWarning: return AyuGramGeneralSection.general.rawValue
+        case .confirmHeader, .confirmSticker, .confirmGIF, .confirmVoice: return AyuGramGeneralSection.confirmations.rawValue
+        }
+    }
+
+    var stableId: Int32 {
+        switch self {
+        case .translationHeader: return 0
+        case .translationProvider: return 1
+        case .generalHeader: return 2
+        case .hideStories: return 3
+        case .disableSimilarChannels: return 4
+        case .disableNotificationDelay: return 5
+        case .showSeconds: return 6
+        case .showDialogId: return 7
+        case .filterZalgo: return 8
+        case .improveLinkPreviews: return 9
+        case .disableExternalLinkWarning: return 10
+        case .confirmHeader: return 15
+        case .confirmSticker: return 16
+        case .confirmGIF: return 17
+        case .confirmVoice: return 18
+        }
+    }
+
+    static func ==(lhs: AyuGramGeneralEntry, rhs: AyuGramGeneralEntry) -> Bool {
+        switch (lhs, rhs) {
+        case let (.hideStories(_, lv), .hideStories(_, rv)): return lv == rv
+        case let (.disableSimilarChannels(_, lv), .disableSimilarChannels(_, rv)): return lv == rv
+        case let (.disableNotificationDelay(_, lv), .disableNotificationDelay(_, rv)): return lv == rv
+        case let (.showSeconds(_, lv), .showSeconds(_, rv)): return lv == rv
+        case let (.confirmSticker(_, lv), .confirmSticker(_, rv)): return lv == rv
+        case let (.confirmGIF(_, lv), .confirmGIF(_, rv)): return lv == rv
+        case let (.confirmVoice(_, lv), .confirmVoice(_, rv)): return lv == rv
+        case let (.translationProvider(_, _, lv), .translationProvider(_, _, rv)): return lv == rv
+        case let (.showDialogId(_, _, lv), .showDialogId(_, _, rv)): return lv == rv
+        case let (.filterZalgo(_, lv), .filterZalgo(_, rv)): return lv == rv
+        case let (.improveLinkPreviews(_, lv), .improveLinkPreviews(_, rv)): return lv == rv
+        case let (.disableExternalLinkWarning(_, lv), .disableExternalLinkWarning(_, rv)): return lv == rv
+        default: return lhs.stableId == rhs.stableId
+        }
+    }
+
+    static func <(lhs: AyuGramGeneralEntry, rhs: AyuGramGeneralEntry) -> Bool {
+        return lhs.stableId < rhs.stableId
+    }
+
+    func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
+        let arguments = arguments as! AyuGramGeneralArguments
+        let strings = GRVMgramStrings(presentationData.strings)
+        switch self {
+        case .translationHeader:
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.translationHeader], sectionId: self.section)
+        case let .translationProvider(_, label, value):
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.translationProvider], label: label, maximumTitleNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, action: {
+                arguments.updateInt32(\.translationProvider, (value + 1) % 2)
+            })
+        case .generalHeader:
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.generalHeader], sectionId: self.section)
+        case let .hideStories(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalHideStories], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.hideStories, v) })
+        case let .disableSimilarChannels(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalSimilarChannels], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableSimilarChannels, v) })
+        case let .disableNotificationDelay(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalNotificationDelay], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableNotificationDelay, v) })
+        case let .showSeconds(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalSeconds], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.showSecondsInMessages, v) })
+        case let .showDialogId(_, label, value):
+            return ItemListDisclosureItem(presentationData: presentationData, icon: nil, title: strings[.generalPeerId], label: label, sectionId: self.section, style: .blocks, action: {
+                arguments.updateInt32(\.showDialogId, (value + 1) % 3)
+            })
+        case let .filterZalgo(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalZalgo], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.filterZalgo, v) })
+        case let .improveLinkPreviews(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalLinkPreviews], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.improveLinkPreviews, v) })
+        case let .disableExternalLinkWarning(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.generalLinkWarning], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.disableExternalLinkWarning, v) })
+        case .confirmHeader:
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: strings[.confirmationsHeader], sectionId: self.section)
+        case let .confirmSticker(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.confirmationsSticker], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendSticker, v) })
+        case let .confirmGIF(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.confirmationsGif], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendGIF, v) })
+        case let .confirmVoice(_, value):
+            return ItemListSwitchItem(presentationData: presentationData, title: strings[.confirmationsVoice], value: value, maximumNumberOfLines: 2, adaptiveLayout: true, sectionId: self.section, style: .blocks, updated: { v in arguments.updateBool(\.confirmSendVoice, v) })
+        }
+    }
+}
+
+private func ayuGramGeneralEntries(settings: AyuGramSettings, presentationData: PresentationData) -> [AyuGramGeneralEntry] {
+    let strings = GRVMgramStrings(presentationData.strings)
+    let providerNames = [
+        strings[.translationTelegram],
+        strings[.translationGoogle],
+    ]
+    let normalizedTranslationProvider = settings.translationProvider >= 0 && settings.translationProvider < Int32(providerNames.count) ? settings.translationProvider : 0
+    let providerLabel = providerNames[Int(normalizedTranslationProvider)]
+    let dialogIdLabels = [strings[.commonOff], strings[.peerIdApi], strings[.peerIdBotApi]]
+    let normalizedDialogId = settings.showDialogId >= 0 && settings.showDialogId < Int32(dialogIdLabels.count) ? settings.showDialogId : 0
+    let dialogIdLabel = dialogIdLabels[Int(normalizedDialogId)]
+
+    var entries: [AyuGramGeneralEntry] = []
+    entries.append(.translationHeader(presentationData.theme))
+    entries.append(.translationProvider(presentationData.theme, providerLabel, normalizedTranslationProvider))
+    entries.append(.generalHeader(presentationData.theme))
+    entries.append(.hideStories(presentationData.theme, settings.hideStories))
+    entries.append(.disableSimilarChannels(presentationData.theme, settings.disableSimilarChannels))
+    entries.append(.disableNotificationDelay(presentationData.theme, settings.disableNotificationDelay))
+    entries.append(.showSeconds(presentationData.theme, settings.showSecondsInMessages))
+    entries.append(.showDialogId(presentationData.theme, dialogIdLabel, normalizedDialogId))
+    entries.append(.filterZalgo(presentationData.theme, settings.filterZalgo))
+    entries.append(.improveLinkPreviews(presentationData.theme, settings.improveLinkPreviews))
+    entries.append(.disableExternalLinkWarning(presentationData.theme, settings.disableExternalLinkWarning))
+    entries.append(.confirmHeader(presentationData.theme))
+    entries.append(.confirmSticker(presentationData.theme, settings.confirmSendSticker))
+    entries.append(.confirmGIF(presentationData.theme, settings.confirmSendGIF))
+    entries.append(.confirmVoice(presentationData.theme, settings.confirmSendVoice))
+    return entries
+}
+
+public func ayuGramGeneralController(context: AccountContext) -> ViewController {
+    let arguments = AyuGramGeneralArguments(
+        context: context,
+        updateBool: { keyPath, value in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in var s = s; s[keyPath: keyPath] = value; return s }.startStandalone()
+        },
+        updateInt32: { keyPath, value in
+            let _ = updateGRVMSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager) { s in var s = s; s[keyPath: keyPath] = value; return s }.startStandalone()
+        }
+    )
+
+    let signal = combineLatest(context.sharedContext.presentationData, grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager))
+    |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let strings = GRVMgramStrings(presentationData.strings)
+        let entries = ayuGramGeneralEntries(settings: settings, presentationData: presentationData)
+        return (
+            ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(strings[.generalTitle]), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
+            (ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks), arguments)
+        )
+    }
+
+    return ItemListController(context: context, state: signal)
+}

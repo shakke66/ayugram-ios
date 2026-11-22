@@ -226,7 +226,7 @@ private class ReplyThreadHistoryContextImpl {
         }
     }
     
-    func applyMaxReadIndex(messageIndex: MessageIndex) {
+    func applyMaxReadIndex(messageIndex: MessageIndex, mode: GRVMReadMode = .automatic) {
         let peerId = self.peerId
         let threadId = self.threadId
         
@@ -244,6 +244,7 @@ private class ReplyThreadHistoryContextImpl {
         self.maxReadIncomingMessageIdValue = messageIndex.id
 
         let account = self.account
+        let shouldSuppressReadReceipts = AyuGramHooks.shouldSuppressReadReceipts?(self.account.peerId) == true
         
         let _ = (self.account.postbox.transaction { transaction -> (Api.InputPeer?, Api.InputPeer?, MessageId?, Int?) in
             guard let peer = transaction.getPeer(peerId) else {
@@ -297,7 +298,15 @@ private class ReplyThreadHistoryContextImpl {
             }
             
             if markMainAsRead {
+                let associatedHistoryMessageId = (transaction.getPeerCachedData(peerId: messageIndex.id.peerId) as? CachedChannelData)?.associatedHistoryMessageId
                 _internal_applyMaxReadIndexInteractively(transaction: transaction, stateManager: account.stateManager, index: messageIndex)
+                if case .localOnly = mode {
+                    transaction.confirmSynchronizedIncomingReadState(messageIndex.id.peerId)
+                    if let associatedHistoryMessageId = associatedHistoryMessageId,
+                       associatedHistoryMessageId.peerId != messageIndex.id.peerId {
+                        transaction.confirmSynchronizedIncomingReadState(associatedHistoryMessageId.peerId)
+                    }
+                }
             }
             
             var subPeerId: Api.InputPeer?
@@ -386,6 +395,20 @@ private class ReplyThreadHistoryContextImpl {
                         revalidate = true
                     }
                 }
+            }
+
+            let shouldSendReadReceipt: Bool
+            switch mode {
+            case .automatic:
+                shouldSendReadReceipt = shouldSuppressReadReceipts == false
+            case .localOnly:
+                shouldSendReadReceipt = false
+            case .forceServer:
+                shouldSendReadReceipt = true
+            }
+
+            guard shouldSendReadReceipt else {
+                return
             }
 
             if let subPeerId {
@@ -507,9 +530,9 @@ public class ReplyThreadHistoryContext {
         })
     }
     
-    public func applyMaxReadIndex(messageIndex: MessageIndex) {
+    public func applyMaxReadIndex(messageIndex: MessageIndex, mode: GRVMReadMode = .automatic) {
         self.impl.with { impl in
-            impl.applyMaxReadIndex(messageIndex: messageIndex)
+            impl.applyMaxReadIndex(messageIndex: messageIndex, mode: mode)
         }
     }
 }

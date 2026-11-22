@@ -163,7 +163,7 @@ public func stringForMessageTimestampStatus(
         timestamp = orignalDate
     }
     
-    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)
+    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: AyuGramHooks.shouldShowSeconds?(accountPeerId) == true)
     if timestamp == scheduleWhenOnlineTimestamp {
         dateText = "         "
     }
@@ -251,12 +251,27 @@ public func stringForMessageTimestampStatus(
     }
     
     if case .minimal = format {
-        
+
     } else {
         if let authorTitle = authorTitle, !authorTitle.isEmpty {
             dateText = "\(authorTitle), \(dateText)"
         }
     }
-    
+
+    let chats = AyuGramHooks.chatAppearance(accountPeerId: accountPeerId).chats
+    let isDeleted = message.attributes.contains(where: { $0 is GRVMDeletedMessageAttribute })
+    let hasHistory = message.attributes.contains(where: { $0 is GRVMEditHistoryMessageAttribute })
+    if chats.showDeletedMark, isDeleted {
+        let mark = chats.replaceMarksWithIcons ? "\u{1F5D1}" : chats.deletedMessageMark
+        if !mark.isEmpty {
+            dateText = "\(mark) \(dateText)"
+        }
+    }
+    if chats.showEditedMark, hasHistory {
+        let configuredMark = chats.editedMessageMark
+        let mark = chats.replaceMarksWithIcons ? "\u{270F}\u{FE0F}" : (configuredMark.isEmpty ? strings.Conversation_MessageEditedLabel : configuredMark)
+        dateText = "\(mark) \(dateText)"
+    }
+
     return dateText
 }

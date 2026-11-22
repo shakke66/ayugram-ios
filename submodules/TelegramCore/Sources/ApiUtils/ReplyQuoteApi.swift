@@ -13,7 +13,7 @@ struct ApiReplyQuoteFields {
 
 /// The quote fields for `quote`. A rich quote travels as `quote_rich` alone: the server rejects it
 /// alongside `quote_text`/`quote_entities` (`QUOTE_TEXT_INVALID`).
-func apiReplyQuoteFields(_ quote: EngineMessageReplyQuote?, peer: (PeerId) -> Peer?) -> ApiReplyQuoteFields {
+func apiReplyQuoteFields(_ quote: EngineMessageReplyQuote?, peer: (PeerId) -> Peer?, localPremiumEmojiTransport: GRVMLocalPremiumEmojiTransport? = nil) -> ApiReplyQuoteFields {
     var result = ApiReplyQuoteFields()
     guard let quote else {
         return result
@@ -34,7 +34,8 @@ func apiReplyQuoteFields(_ quote: EngineMessageReplyQuote?, peer: (PeerId) -> Pe
                 }
             }
             result.flags |= 1 << 3
-            result.entities = apiEntitiesFromMessageTextEntities(quote.entities, associatedPeers: associatedPeers)
+            // GRVMgram: local Premium emoji travel as links the receiver can turn back into custom emoji.
+            result.entities = apiEntitiesFromMessageTextEntities(quote.entities, associatedPeers: associatedPeers, localPremiumEmojiTransport: localPremiumEmojiTransport)
         }
     }
     if let offset = quote.offset {
@@ -51,7 +52,8 @@ func engineReplyQuote(text: String?, entities: [Api.MessageEntity]?, offset: Int
         return EngineMessageReplyQuote(richText: rich.map(RichText.init(apiText:)), offset: offset.flatMap(Int.init), media: media)
     }
     if text != nil || media != nil {
-        return EngineMessageReplyQuote(text: text ?? "", offset: offset.flatMap(Int.init), entities: messageTextEntitiesFromApiEntities(entities ?? []), media: media)
+        // GRVMgram: `text:` turns local Premium emoji links in the quote back into custom emoji.
+        return EngineMessageReplyQuote(text: text ?? "", offset: offset.flatMap(Int.init), entities: messageTextEntitiesFromApiEntities(entities ?? [], text: text ?? ""), media: media)
     }
     return nil
 }

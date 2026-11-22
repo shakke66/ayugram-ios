@@ -473,6 +473,9 @@ public final class ChatListHeaderComponent: Component {
                     environment: {},
                     containerSize: CGSize(width: centeredContentFrame.width, height: ChatListNavigationBar.storiesScrollHeight)
                 )
+            } else if let storyPeerList = self.storyPeerList {
+                self.storyPeerList = nil
+                storyPeerList.view?.removeFromSuperview()
             }
 
             if let storyPeerList = self.storyPeerList, let storyPeerListComponentView = storyPeerList.view as? StoryPeerListComponent.View {

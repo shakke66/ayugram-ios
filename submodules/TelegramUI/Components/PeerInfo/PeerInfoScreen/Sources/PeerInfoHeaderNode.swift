@@ -275,6 +275,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     
     var emojiStatusPackDisposable = MetaDisposable()
     var emojiStatusFileAndPackTitle = Promise<(TelegramMediaFile, LoadedStickerPack)?>()
+    private let grvmLocalPremiumStateDisposable = MetaDisposable()
+    private var grvmLocalPremiumStatePeerId: PeerId?
+    private var grvmLocalPremiumState: GRVMLocalPremiumPeerState?
     
     var customNavigationContentNode: PeerInfoPanelNodeNavigationContentNode?
     private var appliedCustomNavigationContentNode: PeerInfoPanelNodeNavigationContentNode?
@@ -460,6 +463,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     
     deinit {
         self.emojiStatusPackDisposable.dispose()
+        self.grvmLocalPremiumStateDisposable.dispose()
     }
     
     /// VoiceOver: the avatar, name and status (with the buttons, in `PeerInfoHeaderRegularContentNode`), then the gifts
@@ -634,6 +638,32 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         self.threadData = threadData
         self.isSearching = isSearching
         self.avatarListNode.listContainerNode.peer = peer
+
+        let grvmPeerId = peer?.id
+        if self.grvmLocalPremiumStatePeerId != grvmPeerId {
+            self.grvmLocalPremiumStatePeerId = grvmPeerId
+            self.grvmLocalPremiumState = nil
+            if let grvmPeerId {
+                self.grvmLocalPremiumStateDisposable.set((
+                    grvmLocalPremiumPeerState(
+                        postbox: self.context.account.postbox,
+                        accountPeerId: self.context.account.peerId,
+                        peerId: grvmPeerId
+                    )
+                    |> deliverOnMainQueue
+                ).start(next: { [weak self] grvmState in
+                    guard let self,
+                          self.grvmLocalPremiumStatePeerId == grvmPeerId,
+                          self.grvmLocalPremiumState != grvmState else {
+                        return
+                    }
+                    self.grvmLocalPremiumState = grvmState
+                    self.requestUpdateLayout?(false)
+                }))
+            } else {
+                self.grvmLocalPremiumStateDisposable.set(nil)
+            }
+        }
         
         let isFirstTime = self.validLayout == nil
         self.validLayout = (width, statusBarHeight, deviceMetrics)
@@ -705,20 +735,32 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         self.presentationData = presentationData
         
         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: self.context.currentAppConfiguration.with { $0 })
+        let hidePremiumStatuses = AyuGramHooks.chatAppearance(
+            accountPeerId: self.context.account.peerId
+        ).appearance.hidePremiumStatuses
+        let shouldHidePremiumStatus = hidePremiumStatuses && peer?.id != self.context.account.peerId
+        let grvmPresentation = shouldHidePremiumStatus ? nil : grvmLocalPremiumPresentation(
+            peer: peer?._asPeer(),
+            state: self.grvmLocalPremiumState,
+            currentTimestamp: Int32(Date().timeIntervalSince1970)
+        )
         var credibilityIcon: CredibilityIcon = .none
         var verifiedIcon: CredibilityIcon = .none
         var statusIcon: CredibilityIcon = .none
         if let peer {
-            if peer.id == self.context.account.peerId && !self.isSettings && !self.isMyProfile {
-                credibilityIcon = .none
-            } else if peer.isFake {
+            if peer.isFake {
                 credibilityIcon = .fake
             } else if peer.isScam {
                 credibilityIcon = .scam
-            } else if let emojiStatus = peer.emojiStatus {
+            } else if let emojiStatus = peer.emojiStatus, !shouldHidePremiumStatus {
                 statusIcon = .emojiStatus(emojiStatus)
-            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && (peer.id != self.context.account.peerId || self.isSettings || self.isMyProfile) {
+            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !shouldHidePremiumStatus {
                 credibilityIcon = .premium
+            } else if let grvmPresentation {
+                statusIcon = .emojiStatus(grvmPresentation.emojiStatus)
+                if !premiumConfiguration.isPremiumDisabled {
+                    credibilityIcon = .premium
+                }
             } else {
                 credibilityIcon = .none
             }
@@ -1267,7 +1309,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         var panelSubtitleString: (text: String, attributes: MultiScaleTextState.Attributes)?
         let usernameString: (text: String, attributes: MultiScaleTextState.Attributes)
         if let peer = peer {
-            isPremium = peer.isPremium
+            isPremium = (peer.isPremium || grvmPresentation != nil) && !shouldHidePremiumStatus
             isVerified = peer.isVerified
             isFake = peer.isFake || peer.isScam
         }
