@@ -307,18 +307,23 @@ final class AuthorizedApplicationContext {
                 }
             ))
             |> map { chatListIndexMap in
-                return messageList.compactMap { item in
-                    let visibleMessages = item.0.filter { message in
-                        return AyuGramHooks.isMessageHiddenByFilter?(context.account.peerId, message) != true
-                    }
-                    guard !visibleMessages.isEmpty, let message = visibleMessages.first else {
-                        return nil
+                // GRVMgram: messages hidden by filters are left out of the notification; one with nothing left is dropped.
+                let isVisible: (EngineRawMessage) -> Bool = { message in
+                    return AyuGramHooks.isMessageHiddenByFilter?(context.account.peerId, message) != true
+                }
+                return messageList.filter { item in
+                    guard let message = item.0.first(where: isVisible) else {
+                        return false
                     }
                     if let maybeChatListIndex = chatListIndexMap[message.id.peerId], maybeChatListIndex != nil {
-                        return (visibleMessages, item.1, item.2, item.3)
+                        return true
                     } else {
-                        return nil
+                        return false
                     }
+                }.map { item in
+                    var item = item
+                    item.0 = item.0.filter(isVisible)
+                    return item
                 }
             }
         }

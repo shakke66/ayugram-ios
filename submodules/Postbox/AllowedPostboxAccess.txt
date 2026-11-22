@@ -19,6 +19,12 @@ submodules/AccountUtils/Sources/AccountUtils.swift
 submodules/ActionSheetPeerItem/Sources/ActionSheetPeerItem.swift
 submodules/AvatarNode/Sources/PeerAvatar.swift
 submodules/AvatarVideoNode/Sources/AvatarVideoNode.swift
+submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift
+submodules/AyuGramFeatures/Sources/GRVMFilteredUnreadCoordinator.swift
+submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift
+submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift
+submodules/AyuGramSettingsUI/Sources/AyuGramIntegerValueControllers.swift
+submodules/AyuGramSettingsUI/Sources/GRVMMessageHistoryController.swift
 submodules/BrowserUI/Sources/BrowserWebContent.swift
 submodules/ChatImportUI/Sources/ChatImportActivityScreen.swift
 submodules/ChatListSearchRecentPeersNode/Sources/ChatListSearchRecentPeersNode.swift
@@ -141,6 +147,7 @@ submodules/TelegramUI/Components/Chat/ReplyAccessoryPanelNode/Sources/ReplyAcces
 submodules/TelegramUI/Components/ChatEntityKeyboardInputNode/Sources/ChatEntityKeyboardInputNode.swift
 submodules/TelegramUI/Components/ChatFolderLinkPreviewScreen/Sources/ChatFolderLinkPreviewScreen.swift
 submodules/TelegramUI/Components/ChatThemeScreen/Sources/ChatThemeScreen.swift
+submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift
 submodules/TelegramUI/Components/Communities/CommunityEditScreen/Sources/CommunityEditScreen.swift
 submodules/TelegramUI/Components/Communities/CommunityViewScreen/Sources/CommunityViewScreen.swift
 submodules/TelegramUI/Components/ComposePollScreen/Sources/ComposePollScreen.swift
@@ -174,6 +181,7 @@ submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/Panes/PeerInfoG
 submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoAvatarTransformContainerNode.swift
 submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift
 submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoEditingAvatarNode.swift
+submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift
 submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoMembers.swift
 submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
 submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenAvatarSetup.swift
@@ -212,12 +220,14 @@ submodules/TelegramUI/Sources/ChatControllerContentData.swift
 submodules/TelegramUI/Sources/ChatControllerNode.swift
 submodules/TelegramUI/Sources/ChatControllerOpenMessageShareMenu.swift
 submodules/TelegramUI/Sources/ChatHistoryListNode.swift
+submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
 submodules/TelegramUI/Sources/ChatPinnedMessageTitlePanelNode.swift
 submodules/TelegramUI/Sources/CreateGroupController.swift
 submodules/TelegramUI/Sources/CreatePeerAvatarSetup.swift
 submodules/TelegramUI/Sources/DocumentPreviewController.swift
 submodules/TelegramUI/Sources/EditAccessoryPanelNode.swift
 submodules/TelegramUI/Sources/FetchCachedRepresentations.swift
+submodules/TelegramUI/Sources/GRVMPreservedMediaEnqueue.swift
 submodules/TelegramUI/Sources/HorizontalListContextResultsChatInputPanelItem.swift
 submodules/TelegramUI/Sources/HorizontalStickerGridItem.swift
 submodules/TelegramUI/Sources/InChatPrefetchManager.swift

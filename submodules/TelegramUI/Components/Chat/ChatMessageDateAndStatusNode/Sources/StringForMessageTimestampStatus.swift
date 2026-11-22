@@ -163,7 +163,7 @@ public func stringForMessageTimestampStatus(
         timestamp = orignalDate
     }
     
-    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: AyuGramHooks.shouldShowSeconds?(accountPeerId) == true)
+    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: AyuGramHooks.shouldShowSeconds?(context.account.peerId) == true)
     if timestamp == scheduleWhenOnlineTimestamp {
         dateText = "         "
     }
@@ -258,7 +258,7 @@ public func stringForMessageTimestampStatus(
         }
     }
 
-    let chats = AyuGramHooks.chatAppearance(accountPeerId: accountPeerId).chats
+    let chats = AyuGramHooks.chatAppearance(accountPeerId: context.account.peerId).chats
     let isDeleted = message.attributes.contains(where: { $0 is GRVMDeletedMessageAttribute })
     let hasHistory = message.attributes.contains(where: { $0 is GRVMEditHistoryMessageAttribute })
     if chats.showDeletedMark, isDeleted {

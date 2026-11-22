@@ -594,8 +594,8 @@ public final class ChatTitleComponent: Component {
         
         private var presenceManager: PeerPresenceStatusManager?
         private let grvmLocalPremiumStateDisposable = MetaDisposable()
-        private var grvmLocalPremiumStateAccountPeerId: PeerId?
-        private var grvmLocalPremiumStatePeerId: PeerId?
+        private var grvmLocalPremiumStateAccountPeerId: EnginePeer.Id?
+        private var grvmLocalPremiumStatePeerId: EnginePeer.Id?
         private var grvmLocalPremiumState: GRVMLocalPremiumPeerState?
         
         private var component: ChatTitleComponent?
@@ -635,9 +635,6 @@ public final class ChatTitleComponent: Component {
 
         deinit {
             self.grvmLocalPremiumStateDisposable.dispose()
-        }
-        
-        deinit {
             self.agentSelectionDisposable.dispose()
         }
         
@@ -682,7 +679,7 @@ public final class ChatTitleComponent: Component {
             self.state = state
 
             let grvmAccountPeerId = component.context.account.peerId
-            let grvmPeerId: PeerId?
+            let grvmPeerId: EnginePeer.Id?
             switch component.content {
             case let .peer(peerView, _, _, _, _, _, _, _, _):
                 grvmPeerId = peerView.peerId

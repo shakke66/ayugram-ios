@@ -13,7 +13,7 @@ struct ApiReplyQuoteFields {
 
 /// The quote fields for `quote`. A rich quote travels as `quote_rich` alone: the server rejects it
 /// alongside `quote_text`/`quote_entities` (`QUOTE_TEXT_INVALID`).
-func apiReplyQuoteFields(_ quote: EngineMessageReplyQuote?, peer: (PeerId) -> Peer?, localPremiumEmojiTransport: GRVMLocalPremiumEmojiTransport? = nil) -> ApiReplyQuoteFields {
+func apiReplyQuoteFields(_ quote: EngineMessageReplyQuote?, peer: (PeerId) -> Peer?, localPremiumEmojiTransport: GRVMLocalPremiumEmojiTransport = .disabled) -> ApiReplyQuoteFields {
     var result = ApiReplyQuoteFields()
     guard let quote else {
         return result

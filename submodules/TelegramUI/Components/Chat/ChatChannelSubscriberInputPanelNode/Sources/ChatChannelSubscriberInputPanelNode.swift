@@ -41,7 +41,7 @@ private enum SubscriberAction: Equatable, Hashable {
     case addToNews
     case addedToNews
     case addedToChats(muted: Bool)
-    case openDiscussion(PeerId)
+    case openDiscussion(EnginePeer.Id)
 }
 
 private func titleAndColorForAction(_ action: SubscriberAction, theme: PresentationTheme, strings: PresentationStrings) -> (String, UIColor) {

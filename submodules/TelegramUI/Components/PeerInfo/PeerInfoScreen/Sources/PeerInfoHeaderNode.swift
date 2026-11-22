@@ -276,7 +276,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     var emojiStatusPackDisposable = MetaDisposable()
     var emojiStatusFileAndPackTitle = Promise<(TelegramMediaFile, LoadedStickerPack)?>()
     private let grvmLocalPremiumStateDisposable = MetaDisposable()
-    private var grvmLocalPremiumStatePeerId: PeerId?
+    private var grvmLocalPremiumStatePeerId: EnginePeer.Id?
     private var grvmLocalPremiumState: GRVMLocalPremiumPeerState?
     
     var customNavigationContentNode: PeerInfoPanelNodeNavigationContentNode?

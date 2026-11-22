@@ -315,7 +315,7 @@ public func grvmDeletedMessagesController(
             content: .text(strings[.deletedClearAction]),
             style: .regular,
             enabled: !messages.isEmpty,
-            action: { [weak controller] in
+            action: {
                 let alert = standardTextAlertController(
                     theme: AlertControllerTheme(presentationData: presentationData),
                     title: strings[.deletedClearTitle],
@@ -334,7 +334,7 @@ public func grvmDeletedMessagesController(
                             |> deliverOnMainQueue).start(next: { _ in
                                 refreshToken.set(refreshCounter.modify { $0 + 1 })
                             }, error: { error in
-                                controller?.present(
+                                controllerHolder.controller?.present(
                                     grvmClearDeletedErrorController(error, presentationData: presentationData),
                                     in: .window(.root)
                                 )
@@ -342,7 +342,7 @@ public func grvmDeletedMessagesController(
                         })
                     ]
                 )
-                controller?.present(alert, in: .window(.root))
+                controllerHolder.controller?.present(alert, in: .window(.root))
             }
         )
         let controllerState = ItemListControllerState(

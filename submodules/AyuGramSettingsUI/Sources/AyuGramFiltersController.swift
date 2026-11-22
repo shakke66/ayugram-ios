@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import UniformTypeIdentifiers
 import Display
 import SwiftSignalKit
 import Postbox
@@ -36,7 +37,7 @@ private final class AyuGramFilterTransferController: NSObject, UIDocumentPickerD
     }
 
     func presentImport() {
-        let controller = UIDocumentPickerViewController(documentTypes: ["public.json"], in: .import)
+        let controller = UIDocumentPickerViewController(forOpeningContentTypes: [.json], asCopy: true)
         controller.delegate = self
         self.context.sharedContext.applicationBindings.presentNativeController(controller)
     }

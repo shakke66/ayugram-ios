@@ -8912,7 +8912,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         guard availability.recentActions, let channel = self.presentationInterfaceState.renderedPeer?.peer as? TelegramChannel else {
             return
         }
-        let controller = self.context.sharedContext.makeChatRecentActionsController(context: self.context, peer: channel, adminPeerId: nil, starsState: nil)
+        let controller = self.context.sharedContext.makeChatRecentActionsController(context: self.context, peer: EnginePeer(channel), adminPeerId: nil, starsState: nil)
         self.push(controller)
     }
 

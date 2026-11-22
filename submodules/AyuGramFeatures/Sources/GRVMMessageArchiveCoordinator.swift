@@ -322,7 +322,7 @@ public final class GRVMMessageArchiveCoordinator {
     }
 
     private func runCleanupJob(_ initialJob: GRVMCleanupJob) -> Signal<[MessageId], GRVMClearDeletedError> {
-        return Signal { subscriber in
+        return Signal { [self] subscriber in
             let disposable = MetaDisposable()
             var job = initialJob
             if job.phase == .planned {
@@ -1068,7 +1068,7 @@ public final class GRVMMessageArchiveCoordinator {
     }
 
     public func clearDeleted(peerId: PeerId?, threadId: Int64?) -> Signal<[MessageId], GRVMClearDeletedError> {
-        return Signal { subscriber in
+        return Signal { [self] subscriber in
             let waiterId = UUID()
             self.queue.async { [weak self] in
                 guard let self else {
@@ -1110,7 +1110,7 @@ public final class GRVMMessageArchiveCoordinator {
     }
 
     public func removeDeletedMessage(_ key: GRVMMessageKey) -> Signal<[MessageId], GRVMClearDeletedError> {
-        return Signal { subscriber in
+        return Signal { [self] subscriber in
             let waiterId = UUID()
             self.queue.async { [weak self] in
                 guard let self,
@@ -1171,7 +1171,7 @@ public final class GRVMMessageArchiveCoordinator {
         threadId: Int64?,
         query: String?
     ) -> Signal<[GRVMArchivedMessage], NoError> {
-        return Signal { subscriber in
+        return Signal { [self] subscriber in
             self.queue.async {
                 let result = (try? self.store.deletedMessages(GRVMArchiveQuery(
                     accountId: self.accountRecordId.int64,
@@ -1198,7 +1198,7 @@ public final class GRVMMessageArchiveCoordinator {
     }
 
     public func editHistory(_ id: MessageId) -> Signal<[GRVMEditRevision], NoError> {
-        return Signal { subscriber in
+        return Signal { [self] subscriber in
             self.queue.async {
                 let key = self.index.snapshot().revised.first(where: {
                     $0.accountId == self.accountRecordId.int64

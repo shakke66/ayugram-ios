@@ -86,7 +86,7 @@ func infoItems(
         items[section] = []
     }
 
-    func insertGRVMArchiveRow(anchorIds: [AnyHashable], peerId: PeerId) {
+    func insertGRVMArchiveRow(anchorIds: [AnyHashable], peerId: EnginePeer.Id) {
         var sectionItems = items[.peerInfo] ?? []
         let archiveItemId = AnyHashable(GRVMPeerInfoItemId.archives)
         guard !sectionItems.contains(where: { $0.id == archiveItemId }) else {
@@ -135,7 +135,7 @@ func infoItems(
         interaction.openBirthdayContextMenu(node, gesture)
     }
 
-    let makePeerIdItem: (AnyHashable, PeerId) -> PeerInfoScreenLabeledValueItem = { itemId, peerId in
+    let makePeerIdItem: (AnyHashable, EnginePeer.Id) -> PeerInfoScreenLabeledValueItem = { itemId, peerId in
         let displayFormat: GRVMPeerIdFormat
         switch AyuGramHooks.peerIdDisplayMode?(context.account.peerId) ?? 1 {
         case 2:

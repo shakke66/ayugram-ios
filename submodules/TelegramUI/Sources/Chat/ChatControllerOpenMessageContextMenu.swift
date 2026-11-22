@@ -103,7 +103,7 @@ extension ChatControllerImpl {
                 if case var .list(itemList) = actions.content {
                     let grvmItems = self.grvmMessageFilterContextMenuItems(
                         message: message._asMessage(),
-                        shadowBanPeerIds: Set(settings.shadowBanIds.map(PeerId.init)),
+                        shadowBanPeerIds: Set(settings.shadowBanIds.map(EnginePeer.Id.init)),
                         includeAddFilter: false
                     )
                     if !grvmItems.isEmpty {

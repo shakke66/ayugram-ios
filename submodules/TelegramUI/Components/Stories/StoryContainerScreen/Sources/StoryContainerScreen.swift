@@ -1111,7 +1111,7 @@ private final class StoryContainerScreenComponent: Component {
             })
         }
 
-        private func grvmMarkStoryAsSeen(id: StoryId) {
+        private func grvmMarkStoryAsSeen(id: EngineStoryId) {
             guard let component = self.component else {
                 return
             }
@@ -1155,7 +1155,7 @@ private final class StoryContainerScreenComponent: Component {
             ), in: .window(.root))
         }
 
-        private func grvmEnableGhostForStory(id: StoryId) {
+        private func grvmEnableGhostForStory(id: EngineStoryId) {
             guard let component = self.component else {
                 return
             }
@@ -1173,7 +1173,7 @@ private final class StoryContainerScreenComponent: Component {
             }))
         }
 
-        private func grvmWaitForStoryGhostSnapshot(id: StoryId) {
+        private func grvmWaitForStoryGhostSnapshot(id: EngineStoryId) {
             guard let component = self.component else {
                 self.isAwaitingGhostStoryChoice = false
                 self.ghostStorySettingsDisposable.set(nil)
@@ -1201,7 +1201,7 @@ private final class StoryContainerScreenComponent: Component {
             timer.start()
         }
 
-        private func grvmFinishStoryGhostChoice(id: StoryId) {
+        private func grvmFinishStoryGhostChoice(id: EngineStoryId) {
             guard self.isAwaitingGhostStoryChoice else {
                 return
             }

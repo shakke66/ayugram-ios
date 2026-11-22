@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import TelegramCore
+import Postbox
 import AsyncDisplayKit
 import Display
 import UIKit
@@ -160,7 +161,7 @@ private func grvmCanOfferReadMessage(in state: ChatPresentationInterfaceState) -
 }
 
 private func grvmMessageAuthors(message: Message) -> [Peer] {
-    var seen = Set<PeerId>()
+    var seen = Set<EnginePeer.Id>()
     var result: [Peer] = []
     if let author = message.author, seen.insert(author.id).inserted {
         result.append(author)
@@ -371,7 +372,7 @@ private func grvmPurgeDeletedMessage(
 }
 
 private func grvmCanReplayMessage(
-    accountPeerId: PeerId,
+    accountPeerId: EnginePeer.Id,
     messages: [Message]
 ) -> Signal<Bool, NoError> {
     guard messages.count == 1 else {
@@ -1412,7 +1413,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
     return combineLatest(dataSignal, replayAvailableSignal, localCopyAvailableSignal)
     |> deliverOnMainQueue
     |> map { [context] combinedData, replayAvailable, localCopyAvailable -> ContextController.Items in
-        let (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer) = combinedData
+        let (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, _, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer) = combinedData
         let isPremium = accountPeer?.isPremium ?? false
 
         var actions: [ContextMenuItem] = []
