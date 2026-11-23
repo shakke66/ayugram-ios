@@ -186,7 +186,7 @@ public struct AyuGramSettings: Codable, Equatable {
             showDeletedMark: true,
             showEditedMark: true,
             deletedMessageMark: "\u{1F9F9}",
-            editedMessageMark: "edited",
+            editedMessageMark: "",
             replaceMarksWithIcons: false,
             hideFastShareButton: false,
             messageWidthMultiplier: 1.0,
@@ -465,7 +465,7 @@ public struct AyuGramSettings: Codable, Equatable {
         self.showDeletedMark = try container.decodeIfPresent(Bool.self, forKey: "showDeletedMark") ?? true
         self.showEditedMark = try container.decodeIfPresent(Bool.self, forKey: "showEditedMark") ?? true
         self.deletedMessageMark = try container.decodeIfPresent(String.self, forKey: "deletedMessageMark") ?? "\u{1F9F9}"
-        self.editedMessageMark = try container.decodeIfPresent(String.self, forKey: "editedMessageMark") ?? "edited"
+        self.editedMessageMark = try container.decodeIfPresent(String.self, forKey: "editedMessageMark") ?? ""
         self.replaceMarksWithIcons = try container.decodeIfPresent(Bool.self, forKey: "replaceMarksWithIcons") ?? false
         self.hideFastShareButton = try container.decodeIfPresent(Bool.self, forKey: "hideFastShareButton") ?? false
         self.messageWidthMultiplier = try container.decodeIfPresent(Double.self, forKey: "messageWidthMultiplier") ?? 1.0

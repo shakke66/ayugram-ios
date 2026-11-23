@@ -60,7 +60,7 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
     case reversed(PresentationTheme, Bool)
     case caseInsensitive(PresentationTheme, Bool)
     case scopeHeader(PresentationTheme)
-    case chat(PresentationTheme, Int64?)
+    case chat(PresentationTheme, Int64?, String?)
     case clearChat(PresentationTheme)
     case excludedChats(PresentationTheme, Int)
     case clearExcludedChats(PresentationTheme)
@@ -106,8 +106,8 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
              let (.reversed(lt, lv), .reversed(rt, rv)),
              let (.caseInsensitive(lt, lv), .caseInsensitive(rt, rv)):
             return lt === rt && lv == rv
-        case let (.chat(lt, lv), .chat(rt, rv)):
-            return lt === rt && lv == rv
+        case let (.chat(lt, lv, ln), .chat(rt, rv, rn)):
+            return lt === rt && lv == rv && ln == rn
         case let (.excludedChats(lt, lv), .excludedChats(rt, rv)):
             return lt === rt && lv == rv
         default:
@@ -186,11 +186,11 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
                 text: strings[.filterEditorScopeHeader],
                 sectionId: self.section
             )
-        case let .chat(_, peerId):
+        case let .chat(_, peerId, chatTitle):
             return ItemListDisclosureItem(
                 presentationData: presentationData,
                 title: strings[.filterEditorScopeChat],
-                label: peerId.map { String($0) } ?? strings[.filterEditorScopeAllChats],
+                label: peerId.map { chatTitle ?? String($0) } ?? strings[.filterEditorScopeAllChats],
                 labelStyle: .multilineDetailText,
                 maximumTitleNumberOfLines: 2,
                 adaptiveLayout: true,
@@ -236,6 +236,7 @@ private enum AyuGramFilterEditorEntry: ItemListNodeEntry {
 
 private func ayuGramFilterEditorEntries(
     state: AyuGramFilterEditorState,
+    chatPeer: EnginePeer?,
     presentationData: PresentationData
 ) -> [AyuGramFilterEditorEntry] {
     let theme = presentationData.theme
@@ -247,7 +248,7 @@ private func ayuGramFilterEditorEntries(
         .reversed(theme, state.draft.isReversed),
         .caseInsensitive(theme, state.draft.isCaseInsensitive),
         .scopeHeader(theme),
-        .chat(theme, state.draft.peerId)
+        .chat(theme, state.draft.peerId, state.draft.peerId.map { ayuGramPeerTitleWithPublicId(peerId: $0, peer: chatPeer, presentationData: presentationData) })
     ]
     if state.draft.peerId != nil {
         entries.append(.clearChat(theme))
@@ -417,11 +418,25 @@ public func ayuGramFilterEditorController(
         })
     }
 
+    // The chat is stored as an internal PeerId: resolve it to a name for display (only when the chat changes).
+    let chatPeer = statePromise.get()
+    |> map { state -> Int64? in
+        return state.draft.peerId
+    }
+    |> distinctUntilChanged
+    |> mapToSignal { peerId -> Signal<EnginePeer?, NoError> in
+        guard let peerId else {
+            return .single(nil)
+        }
+        return context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: PeerId(peerId)))
+    }
+
     let signal = combineLatest(
         context.sharedContext.presentationData,
-        statePromise.get()
+        statePromise.get(),
+        chatPeer
     )
-    |> map { presentationData, state -> (ItemListControllerState, (ItemListNodeState, Any)) in
+    |> map { presentationData, state, chatPeer -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let strings = GRVMgramStrings(presentationData.strings)
         let rightNavigationButton = ItemListNavigationButton(
             content: .text(presentationData.strings.Common_Done),
@@ -442,7 +457,7 @@ public func ayuGramFilterEditorController(
             (
                 ItemListNodeState(
                     presentationData: ItemListPresentationData(presentationData),
-                    entries: ayuGramFilterEditorEntries(state: state, presentationData: presentationData),
+                    entries: ayuGramFilterEditorEntries(state: state, chatPeer: chatPeer, presentationData: presentationData),
                     style: .blocks
                 ),
                 arguments

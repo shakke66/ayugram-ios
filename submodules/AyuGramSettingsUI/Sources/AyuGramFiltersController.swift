@@ -246,7 +246,7 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
     case enableFilters(PresentationTheme, Bool)
     case enableFiltersInChats(PresentationTheme, Bool)
     case filtersHeader(PresentationTheme)
-    case filter(Int32, PresentationTheme, AyuMessageFilter, Bool, Bool)
+    case filter(Int32, PresentationTheme, AyuMessageFilter, String?, Bool, Bool)
     case empty(PresentationTheme)
     case addFilter(PresentationTheme)
     case transferHeader(PresentationTheme)
@@ -276,7 +276,7 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
         case .enableFilters: return AnyHashable(1 as Int32)
         case .enableFiltersInChats: return AnyHashable(2 as Int32)
         case .filtersHeader: return AnyHashable(3 as Int32)
-        case let .filter(_, _, filter, _, _): return AnyHashable(filter.id)
+        case let .filter(_, _, filter, _, _, _): return AnyHashable(filter.id)
         case .empty: return AnyHashable(4 as Int32)
         case .addFilter: return AnyHashable(5 as Int32)
         case .transferHeader: return AnyHashable(6 as Int32)
@@ -295,7 +295,7 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
         case .enableFilters: return 1
         case .enableFiltersInChats: return 2
         case .filtersHeader: return 3
-        case let .filter(index, _, _, _, _): return 100 + index
+        case let .filter(index, _, _, _, _, _): return 100 + index
         case .empty: return 5000
         case .addFilter: return 5001
         case .transferHeader: return 6000
@@ -324,8 +324,8 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
              let (.enableFiltersInChats(lt, lv), .enableFiltersInChats(rt, rv)),
              let (.hideFromBlocked(lt, lv), .hideFromBlocked(rt, rv)):
             return lt === rt && lv == rv
-        case let (.filter(li, lt, lf, le, lr), .filter(ri, rt, rf, re, rr)):
-            return li == ri && lt === rt && lf == rf && le == re && lr == rr
+        case let (.filter(li, lt, lf, lc, le, lr), .filter(ri, rt, rf, rc, re, rr)):
+            return li == ri && lt === rt && lf == rf && lc == rc && le == re && lr == rr
         case let (.exportFilters(lt, lf), .exportFilters(rt, rf)):
             return lt === rt && lf == rf
         default:
@@ -375,11 +375,11 @@ private enum AyuGramFiltersEntry: ItemListNodeEntry {
                 text: strings[.filtersTitle],
                 sectionId: self.section
             )
-        case let .filter(_, _, filter, editing, revealed):
+        case let .filter(_, _, filter, chatTitle, editing, revealed):
             var details: [String] = []
             details.append(filter.isReversed ? strings[.filtersStateReversed] : strings[.filtersStateNormal])
             details.append(filter.isCaseInsensitive ? strings[.filtersCaseInsensitive] : strings[.filtersCaseSensitive])
-            details.append(filter.peerId.map { strings.format(.filtersScopeChat, String($0)) } ?? strings[.filtersScopeAllChats])
+            details.append(filter.peerId.map { strings.format(.filtersScopeChat, chatTitle ?? String($0)) } ?? strings[.filtersScopeAllChats])
             if !filter.excludedPeerIds.isEmpty {
                 details.append(strings.format(.filtersExcludedCount, Int32(filter.excludedPeerIds.count)))
             }
@@ -511,6 +511,7 @@ private func ayuGramFiltersEntries(
     visibleFilters: [AyuMessageFilter],
     state: AyuGramFiltersState,
     matchingOnly: Bool,
+    peers: [EnginePeer.Id: EnginePeer?],
     presentationData: PresentationData
 ) -> [AyuGramFiltersEntry] {
     let theme = presentationData.theme
@@ -526,6 +527,7 @@ private func ayuGramFiltersEntries(
             Int32(index),
             theme,
             filter,
+            filter.peerId.map { ayuGramPeerTitleWithPublicId(peerId: $0, peer: peers[PeerId($0)] ?? nil, presentationData: presentationData) },
             !matchingOnly && state.editing,
             state.revealedFilterId == filter.id
         ))
@@ -659,12 +661,23 @@ public func ayuGramFiltersController(
         }
     )
 
+    // Filters store the chat as an internal PeerId: resolve it to a name for display.
+    let settingsAndPeers = grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager)
+    |> mapToSignal { settings -> Signal<(AyuGramSettings, [EnginePeer.Id: EnginePeer?]), NoError> in
+        let peerIds = Array(Set(settings.filters.compactMap { $0.peerId })).map { PeerId($0) }
+        return context.engine.data.subscribe(EngineDataMap(peerIds.map(TelegramEngine.EngineData.Item.Peer.Peer.init(id:))))
+        |> map { peers -> (AyuGramSettings, [EnginePeer.Id: EnginePeer?]) in
+            return (settings, peers)
+        }
+    }
+
     let signal = combineLatest(
         context.sharedContext.presentationData,
-        grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager),
+        settingsAndPeers,
         statePromise.get()
     )
-    |> map { presentationData, settings, state -> (ItemListControllerState, (ItemListNodeState, Any)) in
+    |> map { presentationData, settingsAndPeers, state -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let (settings, peers) = settingsAndPeers
         let strings = GRVMgramStrings(presentationData.strings)
         let visibleFilters: [AyuMessageFilter]
         if let matchingFilterIds {
@@ -712,6 +725,7 @@ public func ayuGramFiltersController(
                         visibleFilters: visibleFilters,
                         state: state,
                         matchingOnly: matchingFilterIds != nil,
+                        peers: peers,
                         presentationData: presentationData
                     ),
                     style: .blocks
@@ -732,8 +746,8 @@ public func ayuGramFiltersController(
               fromIndex < entries.count,
               toIndex >= 0,
               toIndex < entries.count,
-              case let .filter(_, _, fromFilter, _, _) = entries[fromIndex],
-              case let .filter(_, _, toFilter, _, _) = entries[toIndex],
+              case let .filter(_, _, fromFilter, _, _, _) = entries[fromIndex],
+              case let .filter(_, _, toFilter, _, _, _) = entries[toIndex],
               fromFilter.id != toFilter.id else {
             return .single(false)
         }

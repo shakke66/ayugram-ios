@@ -608,7 +608,8 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
             
             var updatedDateText = arguments.dateText
             let chats = AyuGramHooks.chatAppearance(accountPeerId: arguments.context.account.peerId).chats
-            let configuredEditedMark = chats.editedMessageMark.isEmpty ? arguments.presentationData.strings.Conversation_MessageEditedLabel : chats.editedMessageMark
+            // Same rule as stringForMessageTimestampStatus: empty or the legacy English "edited" means Telegram's label.
+            let configuredEditedMark = (chats.editedMessageMark.isEmpty || chats.editedMessageMark == "edited") ? arguments.presentationData.strings.Conversation_MessageEditedLabel : chats.editedMessageMark
             let editedMark = chats.replaceMarksWithIcons ? "\u{270F}\u{FE0F}" : configuredEditedMark
             let hasGRVMHistoryMark = chats.showEditedMark && arguments.dateText.hasPrefix("\(editedMark) ")
             if arguments.edited && !hasGRVMHistoryMark {

@@ -269,7 +269,9 @@ public func stringForMessageTimestampStatus(
     }
     if chats.showEditedMark, hasHistory {
         let configuredMark = chats.editedMessageMark
-        let mark = chats.replaceMarksWithIcons ? "\u{270F}\u{FE0F}" : (configuredMark.isEmpty ? strings.Conversation_MessageEditedLabel : configuredMark)
+        // An empty mark, or the English "edited" earlier builds stored as the default, means Telegram's own label.
+        let usesDefaultMark = configuredMark.isEmpty || configuredMark == "edited"
+        let mark = chats.replaceMarksWithIcons ? "\u{270F}\u{FE0F}" : (usesDefaultMark ? strings.Conversation_MessageEditedLabel : configuredMark)
         dateText = "\(mark) \(dateText)"
     }
 

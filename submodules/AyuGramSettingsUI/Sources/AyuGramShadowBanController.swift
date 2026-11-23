@@ -21,7 +21,7 @@ private final class AyuGramShadowBanArguments {
 
 private enum AyuGramShadowBanEntry: ItemListNodeEntry {
     case header(PresentationTheme)
-    case peer(PresentationTheme, Int32, Int64)
+    case peer(PresentationTheme, Int32, Int64, String)
     case empty(PresentationTheme)
     case add(PresentationTheme)
 
@@ -32,7 +32,7 @@ private enum AyuGramShadowBanEntry: ItemListNodeEntry {
     var stableId: Int32 {
         switch self {
         case .header: return 0
-        case let .peer(_, index, _): return 100 + index
+        case let .peer(_, index, _, _): return 100 + index
         case .empty: return 9000
         case .add: return 9001
         }
@@ -44,8 +44,8 @@ private enum AyuGramShadowBanEntry: ItemListNodeEntry {
              let (.empty(lt), .empty(rt)),
              let (.add(lt), .add(rt)):
             return lt === rt
-        case let (.peer(lt, li, lp), .peer(rt, ri, rp)):
-            return lt === rt && li == ri && lp == rp
+        case let (.peer(lt, li, lp, ltitle), .peer(rt, ri, rp, rtitle)):
+            return lt === rt && li == ri && lp == rp && ltitle == rtitle
         default:
             return false
         }
@@ -65,10 +65,10 @@ private enum AyuGramShadowBanEntry: ItemListNodeEntry {
                 text: strings[.shadowTitle],
                 sectionId: self.section
             )
-        case let .peer(_, _, peerId):
+        case let .peer(_, _, peerId, title):
             return ItemListCheckboxItem(
                 presentationData: presentationData,
-                title: "\(peerId)",
+                title: title,
                 style: .right,
                 checked: true,
                 zeroSeparatorInsets: false,
@@ -98,19 +98,36 @@ private enum AyuGramShadowBanEntry: ItemListNodeEntry {
     }
 }
 
-private func ayuGramShadowBanEntries(
-    settings: AyuGramSettings,
-    accountPeerId: PeerId,
-    presentationData: PresentationData
-) -> [AyuGramShadowBanEntry] {
-    let theme = presentationData.theme
-    let peerIds = GRVMShadowBanPolicy.normalizedPeerIds(
+private func ayuGramShadowBanPeerIds(settings: AyuGramSettings, accountPeerId: PeerId) -> [Int64] {
+    return GRVMShadowBanPolicy.normalizedPeerIds(
         settings.shadowBanIds,
         accountPeerId: accountPeerId.toInt64()
     )
+}
+
+// The stored value is the internal PeerId; show who it is: the name and the public Telegram ID (as in the
+// message menu), or only the ID while the peer is unknown locally. Also used by the filter screens.
+func ayuGramPeerTitleWithPublicId(peerId: Int64, peer: EnginePeer?, presentationData: PresentationData) -> String {
+    let id = PeerId(peerId)
+    let publicId = grvmFormatPeerId(id, format: .botAPI)
+    if let peer {
+        return "\(peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)) (\(publicId))"
+    }
+    return publicId
+}
+
+private func ayuGramShadowBanEntries(
+    settings: AyuGramSettings,
+    accountPeerId: PeerId,
+    peers: [EnginePeer.Id: EnginePeer?],
+    presentationData: PresentationData
+) -> [AyuGramShadowBanEntry] {
+    let theme = presentationData.theme
+    let peerIds = ayuGramShadowBanPeerIds(settings: settings, accountPeerId: accountPeerId)
     var entries: [AyuGramShadowBanEntry] = [.header(theme)]
     for (index, peerId) in peerIds.enumerated() {
-        entries.append(.peer(theme, Int32(index), peerId))
+        let peer = peers[PeerId(peerId)] ?? nil
+        entries.append(.peer(theme, Int32(index), peerId, ayuGramPeerTitleWithPublicId(peerId: peerId, peer: peer, presentationData: presentationData)))
     }
     if peerIds.isEmpty {
         entries.append(.empty(theme))
@@ -164,11 +181,21 @@ public func ayuGramShadowBanController(context: AccountContext) -> ViewControlle
         }
     )
 
+    let settingsAndPeers = grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager)
+    |> mapToSignal { settings -> Signal<(AyuGramSettings, [EnginePeer.Id: EnginePeer?]), NoError> in
+        let peerIds = ayuGramShadowBanPeerIds(settings: settings, accountPeerId: context.account.peerId).map { PeerId($0) }
+        return context.engine.data.subscribe(EngineDataMap(peerIds.map(TelegramEngine.EngineData.Item.Peer.Peer.init(id:))))
+        |> map { peers -> (AyuGramSettings, [EnginePeer.Id: EnginePeer?]) in
+            return (settings, peers)
+        }
+    }
+
     let signal = combineLatest(
         context.sharedContext.presentationData,
-        grvmSettings(accountId: context.account.peerId, accountManager: context.sharedContext.accountManager)
+        settingsAndPeers
     )
-    |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
+    |> map { presentationData, settingsAndPeers -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let (settings, peers) = settingsAndPeers
         let strings = GRVMgramStrings(presentationData.strings)
         return (
             ItemListControllerState(
@@ -184,6 +211,7 @@ public func ayuGramShadowBanController(context: AccountContext) -> ViewControlle
                     entries: ayuGramShadowBanEntries(
                         settings: settings,
                         accountPeerId: context.account.peerId,
+                        peers: peers,
                         presentationData: presentationData
                     ),
                     style: .blocks
