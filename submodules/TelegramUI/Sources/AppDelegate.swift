@@ -337,8 +337,7 @@ private final class GRVMLocalPremiumCleanupCoordinator {
             }
             self.queuedAccountIds.insert(peerId)
             let cleanup = grvmClearLocalPremiumSelfState(
-                postbox: context.account.postbox,
-                accountPeerId: context.account.peerId
+                account: context.account
             )
             |> afterDisposed { [weak self] in
                 Queue.mainQueue().async { [weak self] in

@@ -6,11 +6,14 @@ public struct GRVMLocalPremiumPeerState: Codable, Equatable {
     public let fileId: Int64
     public let updatedAt: Int32
     public let expiresAt: Int32
+    // true — статус прочитан из метки в «О себе» собеседника (GRVMLocalPremiumProfileMarker.swift).
+    public let fromProfile: Bool?
 
-    public init(fileId: Int64, updatedAt: Int32, expiresAt: Int32) {
+    public init(fileId: Int64, updatedAt: Int32, expiresAt: Int32, fromProfile: Bool? = nil) {
         self.fileId = fileId
         self.updatedAt = updatedAt
         self.expiresAt = expiresAt
+        self.fromProfile = fromProfile
     }
 }
 
@@ -58,6 +61,20 @@ func grvmSetLocalPremiumPeerState(
         return
     }
     if let entry = CodableEntry(GRVMLocalPremiumPeerState(fileId: fileId, updatedAt: updatedAt, expiresAt: expiresAt)) {
+        transaction.putItemCacheEntry(
+            id: grvmLocalPremiumPeerStateEntryId(accountPeerId: accountPeerId, peerId: peerId),
+            entry: entry
+        )
+    }
+}
+
+func grvmPutLocalPremiumPeerState(
+    transaction: Transaction,
+    accountPeerId: PeerId,
+    peerId: PeerId,
+    state: GRVMLocalPremiumPeerState
+) {
+    if let entry = CodableEntry(state) {
         transaction.putItemCacheEntry(
             id: grvmLocalPremiumPeerStateEntryId(accountPeerId: accountPeerId, peerId: peerId),
             entry: entry
@@ -148,6 +165,12 @@ func grvmUpdateLocalPremiumPeerStates(
         guard expiresAt > currentTimestamp else {
             continue
         }
+        // Статус из «О себе» главнее эмодзи из сообщений.
+        if let current = grvmStoredLocalPremiumPeerState(transaction: transaction, accountPeerId: accountPeerId, peerId: authorId),
+           current.fromProfile == true,
+           current.expiresAt > currentTimestamp {
+            continue
+        }
         grvmSetLocalPremiumPeerState(
             transaction: transaction,
             accountPeerId: accountPeerId,
@@ -159,11 +182,27 @@ func grvmUpdateLocalPremiumPeerStates(
     }
 }
 
+/// Сервер не знает о локальном статусе и присылает свой профиль без него: пока локальный Premium включён
+/// и статус действует, он остаётся на своём аккаунте после любого обновления профиля с сервера.
+func grvmKeepLocalPremiumSelfStatus(transaction: Transaction, accountPeerId: PeerId, user: TelegramUser) -> TelegramUser {
+    guard user.id == accountPeerId,
+          user.emojiStatus == nil,
+          !user.flags.contains(.isPremium),
+          AyuGramHooks.isLocalPremiumEnabled?(accountPeerId) == true,
+          let state = grvmStoredLocalPremiumPeerState(transaction: transaction, accountPeerId: accountPeerId, peerId: accountPeerId),
+          state.fileId > 0,
+          state.expiresAt > grvmCurrentTimestamp() else {
+        return user
+    }
+    let expirationDate = state.expiresAt == Int32.max ? nil : state.expiresAt
+    return user.withUpdatedEmojiStatus(PeerEmojiStatus(content: .emoji(fileId: state.fileId), expirationDate: expirationDate))
+}
+
 public func grvmClearLocalPremiumSelfState(
-    postbox: Postbox,
-    accountPeerId: PeerId
+    account: Account
 ) -> Signal<Never, NoError> {
-    return postbox.transaction { transaction -> Void in
+    let accountPeerId = account.peerId
+    return account.postbox.transaction { transaction -> Bool in
         let state = grvmStoredLocalPremiumPeerState(
             transaction: transaction,
             accountPeerId: accountPeerId,
@@ -174,17 +213,25 @@ public func grvmClearLocalPremiumSelfState(
             accountPeerId: accountPeerId,
             peerId: accountPeerId
         )
-        guard let state,
-              let peer = transaction.getPeer(accountPeerId) as? TelegramUser,
-              !peer.flags.contains(.isPremium),
-              peer.emojiStatus?.fileId == state.fileId else {
-            return
+        guard let state else {
+            return false
         }
-        updatePeersCustom(
-            transaction: transaction,
-            peers: [peer.withUpdatedEmojiStatus(nil)],
-            update: { _, updated in updated }
-        )
+        if let peer = transaction.getPeer(accountPeerId) as? TelegramUser,
+           !peer.flags.contains(.isPremium),
+           peer.emojiStatus?.fileId == state.fileId {
+            updatePeersCustom(
+                transaction: transaction,
+                peers: [peer.withUpdatedEmojiStatus(nil)],
+                update: { _, updated in updated }
+            )
+        }
+        return true
     }
-    |> ignoreValues
+    |> mapToSignal { hadLocalStatus -> Signal<Never, NoError> in
+        // Был локальный статус — в «О себе» могла остаться метка для других клиентов GRVMgram.
+        guard hadLocalStatus else {
+            return .complete()
+        }
+        return _internal_grvmSyncLocalPremiumProfileMarker(account: account, marker: nil)
+    }
 }

@@ -142,7 +142,8 @@ func shouldKeepUserStoriesInFeed(peerId: PeerId, isContactOrMember: Bool) -> Boo
 func updatePeers(transaction: Transaction, accountPeerId: PeerId, peers: AccumulatedPeers) {
     var parsedPeers: [Peer] = []
     for (_, user) in peers.users {
-        if let telegramUser = TelegramUser.merge(transaction.getPeer(user.peerId) as? TelegramUser, rhs: user) {
+        if let mergedUser = TelegramUser.merge(transaction.getPeer(user.peerId) as? TelegramUser, rhs: user) {
+            let telegramUser = grvmKeepLocalPremiumSelfStatus(transaction: transaction, accountPeerId: accountPeerId, user: mergedUser)
             parsedPeers.append(telegramUser)
             switch user {
             case let .user(userData):

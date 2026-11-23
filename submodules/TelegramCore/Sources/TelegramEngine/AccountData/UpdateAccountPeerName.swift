@@ -32,8 +32,9 @@ func _internal_updateAccountProfile(account: Account, firstName: String?, lastNa
         return postbox.transaction { transaction -> Void in
             updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: AccumulatedPeers(transaction: transaction, chats: [], users: [result]))
             if let about {
+                let visibleAbout = grvmParseLocalPremiumProfileMarker(about).text
                 transaction.updatePeerCachedData(peerIds: Set([accountPeerId]), update: { _, current in
-                    return ((current as? CachedUserData) ?? CachedUserData()).withUpdatedAbout(about)
+                    return ((current as? CachedUserData) ?? CachedUserData()).withUpdatedAbout(visibleAbout)
                 })
             }
         }
@@ -51,7 +52,28 @@ public enum UpdateAboutError {
 }
 
 func _internal_updateAbout(account: Account, about: String?) -> Signal<Void, UpdateAboutError> {
-    return _internal_updateAccountProfile(account: account, firstName: nil, lastName: nil, about: about)
+    guard let about else {
+        return _internal_updateAccountProfile(account: account, firstName: nil, lastName: nil, about: nil)
+        |> mapError { _ -> UpdateAboutError in .generic }
+    }
+    // Метка статуса локального Premium остаётся в конце «О себе» после правки текста (GRVMLocalPremiumProfileMarker.swift).
+    let visibleAbout = grvmParseLocalPremiumProfileMarker(about).text ?? ""
+    let accountPeerId = account.peerId
+    return account.postbox.transaction { transaction -> GRVMLocalPremiumProfileMarker? in
+        return grvmCurrentLocalPremiumProfileMarker(transaction: transaction, accountPeerId: accountPeerId)
+    }
+    |> castError(UpdateAccountProfileError.self)
+    |> mapToSignal { marker -> Signal<Void, UpdateAccountProfileError> in
+        let plain = _internal_updateAccountProfile(account: account, firstName: nil, lastName: nil, about: visibleAbout)
+        guard let marker else {
+            return plain
+        }
+        let marked = grvmComposeLocalPremiumProfileAbout(text: visibleAbout, marker: marker)
+        return _internal_updateAccountProfile(account: account, firstName: nil, lastName: nil, about: marked)
+        |> `catch` { _ -> Signal<Void, UpdateAccountProfileError> in
+            return plain
+        }
+    }
     |> mapError { _ -> UpdateAboutError in .generic }
 }
 

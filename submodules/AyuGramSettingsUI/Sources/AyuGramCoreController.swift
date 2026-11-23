@@ -332,8 +332,7 @@ public func ayuGramCoreController(context: AccountContext) -> ViewController {
                 cleanup = .complete()
             } else {
                 cleanup = grvmClearLocalPremiumSelfState(
-                    postbox: context.account.postbox,
-                    accountPeerId: context.account.peerId
+                    account: context.account
                 )
             }
             let _ = (settingsUpdate |> ignoreValues |> then(cleanup)).startStandalone()

@@ -286,11 +286,14 @@ func _internal_fetchAndUpdateCachedPeerData(accountPeerId: PeerId, peerId rawPee
                                 }
                             }
                             
+                            let grvmVisibleAbout: String?
                             switch fullUser {
                             case let .userFull(userFullData):
                                 let userFullNotifySettings = userFullData.notifySettings
                                 updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: parsedPeers)
                                 transaction.updateCurrentPeerNotificationSettings([peerId: TelegramPeerNotificationSettings(apiSettings: userFullNotifySettings)])
+                                // Статус локального Premium собеседника из метки в «О себе»; в кеш идёт текст без метки.
+                                grvmVisibleAbout = grvmApplyLocalPremiumProfileMarker(transaction: transaction, accountPeerId: accountPeerId, peerId: peerId, about: userFullData.about)
                             }
                             transaction.updatePeerCachedData(peerIds: [peerId], update: { peerId, current in
                                 let previous: CachedUserData
@@ -474,7 +477,8 @@ func _internal_fetchAndUpdateCachedPeerData(accountPeerId: PeerId, peerId rawPee
                                             }
                                         }
                                     
-                                        return previous.withUpdatedAbout(userFullAbout)
+                                        let _ = userFullAbout
+                                        return previous.withUpdatedAbout(grvmVisibleAbout)
                                             .withUpdatedBotInfo(botInfo)
                                             .withUpdatedEditableBotInfo(editableBotInfo)
                                             .withUpdatedCommonGroupCount(userFullCommonChatsCount)

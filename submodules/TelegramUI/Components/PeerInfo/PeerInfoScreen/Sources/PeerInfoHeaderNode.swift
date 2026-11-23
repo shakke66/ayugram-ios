@@ -757,10 +757,8 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !shouldHidePremiumStatus {
                 credibilityIcon = .premium
             } else if let grvmPresentation {
+                // Как у настоящего Premium со статусом: только эмодзи, без звезды.
                 statusIcon = .emojiStatus(grvmPresentation.emojiStatus)
-                if !premiumConfiguration.isPremiumDisabled {
-                    credibilityIcon = .premium
-                }
             } else {
                 credibilityIcon = .none
             }

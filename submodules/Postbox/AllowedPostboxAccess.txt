@@ -22,7 +22,6 @@ submodules/AvatarVideoNode/Sources/AvatarVideoNode.swift
 submodules/AyuGramFeatures/Sources/AyuGramFeatureManager.swift
 submodules/AyuGramFeatures/Sources/GRVMFilteredUnreadCoordinator.swift
 submodules/AyuGramFeatures/Sources/GRVMMessageArchiveCoordinator.swift
-submodules/AyuGramSettingsUI/Sources/AyuGramCoreController.swift
 submodules/AyuGramSettingsUI/Sources/AyuGramIntegerValueControllers.swift
 submodules/AyuGramSettingsUI/Sources/GRVMMessageHistoryController.swift
 submodules/BrowserUI/Sources/BrowserWebContent.swift

@@ -813,10 +813,8 @@ public final class ChatTitleComponent: Component {
                             } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !shouldHidePremiumStatus {
                                 titleCredibilityIcon = .premium
                             } else if let grvmPresentation {
+                                // Как у настоящего Premium со статусом: только эмодзи, без звезды.
                                 titleStatusIcon = .emojiStatus(grvmPresentation.emojiStatus)
-                                if !premiumConfiguration.isPremiumDisabled {
-                                    titleCredibilityIcon = .premium
-                                }
                             }
 
                             if peer.isVerified {

@@ -235,6 +235,9 @@ public extension TelegramEngine {
             |> castError(SetEmojiStatusError.self)
             |> mapToSignal { useLocalPremiumStatus -> Signal<Never, SetEmojiStatusError> in
                 if useLocalPremiumStatus {
+                    // Другие клиенты GRVMgram увидят статус по метке в «О себе» (GRVMLocalPremiumProfileMarker.swift).
+                    let marker = file.map { GRVMLocalPremiumProfileMarker(fileId: $0.fileId.id, expiresAt: expirationDate) }
+                    let _ = _internal_grvmSyncLocalPremiumProfileMarker(account: account, marker: marker).startStandalone()
                     return .complete()
                 }
                 return _internal_setAccountEmojiStatus(account: account, apiEmojiStatus: apiEmojiStatus, emojiStatus: emojiStatus, files: file.map { [$0] } ?? [], recentFile: file)
