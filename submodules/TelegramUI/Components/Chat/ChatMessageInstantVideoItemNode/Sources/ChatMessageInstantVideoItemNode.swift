@@ -398,6 +398,10 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
             if let subject = item.associatedData.subject, case .messageOptions = subject {
                 needsShareButton = false
             }
+            // GRVMgram: «Скрыть кнопку быстрой пересылки» (as in ChatMessageBubbleItemNode).
+            if AyuGramHooks.chatAppearance(accountPeerId: item.context.account.peerId).chats.hideFastShareButton {
+                needsShareButton = false
+            }
             
             var layoutInsets = layoutConstants.instantVideo.insets
             if dateHeaderAtBottom.hasDate && dateHeaderAtBottom.hasTopic {

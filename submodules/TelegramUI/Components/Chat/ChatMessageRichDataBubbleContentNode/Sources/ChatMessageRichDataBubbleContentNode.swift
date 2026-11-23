@@ -663,7 +663,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
                 let showMoreExpanded = (showMoreExpandedState?.messageId == item.message.id) ? (showMoreExpandedState?.value ?? false) : false
                 let page = (showMoreExpanded ? attribute.fullInstantPage : nil) ?? attribute.instantPage
                 if let lastBlock = page.blocks.last, richDataBlockEndsWithVisualMedia(lastBlock) {
-                    let reactions = mergedMessageReactions(attributes: item.message.attributes, isTags: item.message.areReactionsTags(accountPeerId: item.context.account.peerId))
+                    let reactions = grvmVisibleMessageReactions(accountPeerId: item.context.account.peerId, message: item.message)
                     let hasReactions = !(reactions?.reactions.isEmpty ?? true)
                     let inline = shouldDisplayInlineDateReactions(message: EngineMessage(item.message), isPremium: item.associatedData.isPremium, forceInline: item.associatedData.forceInlineReactions)
                     wantsReactionsOutside = hasReactions && !inline
@@ -1054,7 +1054,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
                 var viewCount: Int?
                 var dateReplies = 0
                 var starsCount: Int64?
-                var dateReactionsAndPeers = mergedMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: item.topMessage)
+                var dateReactionsAndPeers = grvmVisibleMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: item.topMessage)
                 if item.message.isRestricted(platform: "ios", contentSettings: item.context.currentContentSettings.with { $0 }) {
                     dateReactionsAndPeers = ([], [])
                 }

@@ -274,7 +274,7 @@ func grvmContextMoreActionsItem(
         return nil
     }
     return .action(ContextMenuActionItem(
-        text: "GRVMgram Actions",
+        text: GRVMgramStrings(strings)[.contextMoreActions],
         icon: { theme in
             return generateTintedImage(
                 image: UIImage(bundleImageName: "Chat/Context Menu/More"),
@@ -2961,7 +2961,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
 
         func grvmRepeatContextMenuItem() -> ContextMenuItem {
             return .action(ContextMenuActionItem(
-                text: "Repeat",
+                text: grvmStrings[.menuRepeat],
                 icon: { theme in
                     return generateTintedImage(
                         image: UIImage(bundleImageName: "Chat/Context Menu/Resend"),
@@ -2975,7 +2975,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                         if !success {
                             controllerInteraction.displayUndo(.info(
                                 title: nil,
-                                text: "This message cannot be repeated.",
+                                text: grvmStrings[.repeatUnavailable],
                                 timeout: nil,
                                 customUndoText: nil
                             ))
@@ -3014,7 +3014,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
 
             if !isReplyThreadHead, !isLocallyDeletedMessage(message.attributes) {
                 grvmRouteContextMenuItem(.action(ContextMenuActionItem(
-                    text: "Hide Locally",
+                    text: grvmStrings[.menuLocalHide],
                     icon: { theme in
                         return generateTintedImage(
                             image: UIImage(bundleImageName: "Chat/Context Menu/Clear"),
@@ -3028,9 +3028,18 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 )), visibility: contextMenuSettings.hide)
             }
 
-            for peer in grvmMessageAuthors(message: message) {
+            // As AyuGram Desktop: «Сообщения пользователя» only where there are several authors (groups).
+            var grvmIsGroupChat = false
+            if let chatPeer = message.peers[message.id.peerId] {
+                if chatPeer is TelegramGroup {
+                    grvmIsGroupChat = true
+                } else if let channel = chatPeer as? TelegramChannel, case .group = channel.info {
+                    grvmIsGroupChat = true
+                }
+            }
+            for peer in grvmIsGroupChat ? grvmMessageAuthors(message: message) : [] {
                 grvmRouteContextMenuItem(.action(ContextMenuActionItem(
-                    text: "User Messages: \(peer.debugDisplayTitle)",
+                    text: grvmStrings.format(.menuUserMessages, peer.debugDisplayTitle),
                     icon: { theme in
                         return generateTintedImage(
                             image: UIImage(bundleImageName: "Chat/Context Menu/Search"),
@@ -3045,7 +3054,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
 
             grvmRouteContextMenuItem(.action(ContextMenuActionItem(
-                text: "Details",
+                text: grvmStrings[.menuDetails],
                 icon: { theme in
                     return generateTintedImage(
                         image: UIImage(bundleImageName: "Chat/Context Menu/Info"),

@@ -67,9 +67,12 @@ private enum ApplicationSpecificSharedDataKeyValues: Int32 {
     case updateSettings = 21
     case chatSettings = 22
     case newsFeedSettings = 23
-    case ayuGramSettings = 24
-    case grvmAccountSettings = 25
-    case grvmNotifyState = 26
+    // GRVMgram: the live keys keep their 12.6.2 numbers so an install over 12.6.2 reads its settings and
+    // GRVM Notify pairing as they are. Only the legacy flat AyuGramSettings key moved (12.6.2 had it at 23,
+    // which Telegram 13.2 took for newsFeedSettings); it is a June-era fallback and holds nothing since July.
+    case grvmAccountSettings = 24
+    case grvmNotifyState = 25
+    case ayuGramSettings = 26
 }
 
 public struct ApplicationSpecificSharedDataKeys {

@@ -830,6 +830,9 @@ public func enqueueGRVMRepeatedMessage(account: Account, messageId: MessageId) -
                     return nil
                 }
                 mediaReference = .message(message: MessageReference(message), media: file)
+            } else if media is TelegramMediaWebpage {
+                // A link preview is rebuilt by the server from the repeated text.
+                continue
             } else {
                 return nil
             }

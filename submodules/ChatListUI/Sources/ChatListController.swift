@@ -2446,7 +2446,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             return
         }
         
-        if case .chatList(groupId: .root) = self.location, let orderedStorySubscriptions = self.orderedStorySubscriptions, !orderedStorySubscriptions.items.isEmpty {
+        if case .chatList(groupId: .root) = self.location, let orderedStorySubscriptions = self.effectiveStorySubscriptions, !orderedStorySubscriptions.items.isEmpty {
             let _ = (ApplicationSpecificNotice.displayChatListStoriesTooltip(accountManager: self.context.sharedContext.accountManager)
             |> deliverOnMainQueue).startStandalone(next: { [weak self] didDisplay in
                 guard let self else {
@@ -4727,9 +4727,22 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             }
             
             if strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.chatListFilter?.id == id {
-                strongSelf.chatListDisplayNode.mainContainerNode.switchToFilter(id: .all, completion: {
+                // GRVMgram: with «Все чаты» hidden there is no .all tab to fall back to, and switchToFilter would
+                // never call completion; fall back to another visible folder, or remove right away.
+                let mainContainerNode = strongSelf.chatListDisplayNode.mainContainerNode
+                let fallbackId: ChatListFilterTabEntryId?
+                if mainContainerNode.availableFilters.contains(where: { $0.id == .all }) {
+                    fallbackId = .all
+                } else {
+                    fallbackId = mainContainerNode.availableFilters.first(where: { $0.id != .filter(id) })?.id
+                }
+                if let fallbackId {
+                    mainContainerNode.switchToFilter(id: fallbackId, completion: {
+                        commit()
+                    })
+                } else {
                     commit()
-                })
+                }
             } else {
                 commit()
             }

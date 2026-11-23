@@ -2369,6 +2369,11 @@ private final class GRVMLocalCrashExportPresentationOwner: NSObject, UIAdaptiveP
                 }
             }
             UIApplication.shared.applicationIconBadgeNumber = hideBadge ? 0 : Int(count)
+            // GRVMgram: the notification service extension sets the badge itself while the app is not running;
+            // it reads this flag from the shared app group.
+            if let baseAppBundleId = Bundle.main.bundleIdentifier {
+                UserDefaults(suiteName: "group.\(baseAppBundleId)")?.set(hideBadge, forKey: "GRVMgram.hideNotificationBadge")
+            }
         }))
     }
 

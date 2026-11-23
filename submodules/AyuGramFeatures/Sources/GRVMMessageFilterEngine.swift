@@ -93,7 +93,9 @@ public final class GRVMMessageFilterEngine {
         }
 
         var senderPeerIds = Set<PeerId>()
-        if let authorId = message.author?.id {
+        // As AyuGram Desktop: the dialog's own peer is never hidden in its own dialog (a private chat with a
+        // shadow-banned or blocked user, a channel's own posts); its forwarded content elsewhere still is.
+        if let authorId = message.author?.id, authorId != message.id.peerId {
             senderPeerIds.insert(authorId)
         }
         if let forwardedAuthorId = message.forwardInfo?.author?.id {

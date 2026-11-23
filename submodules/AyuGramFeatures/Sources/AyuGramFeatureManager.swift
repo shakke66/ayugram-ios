@@ -402,7 +402,7 @@ public final class AyuGramFeatureManager {
             return service.settingsSnapshot().localTelegramPremium
         }
         AyuGramHooks.shouldDisableAds = { [weak self] accountPeerId in
-            return self?.settings(accountPeerId: accountPeerId)?.disableAds ?? false
+            return self?.settings(accountPeerId: accountPeerId)?.disableAds ?? AyuGramSettings.defaultSettings.disableAds
         }
 
         // MARK: - General
@@ -417,7 +417,7 @@ public final class AyuGramFeatureManager {
             return self?.settings(accountPeerId: accountPeerId)?.hideStories ?? false
         }
         AyuGramHooks.shouldDisableSimilarChannels = { [weak self] accountPeerId in
-            return self?.settings(accountPeerId: accountPeerId)?.disableSimilarChannels ?? false
+            return self?.settings(accountPeerId: accountPeerId)?.disableSimilarChannels ?? AyuGramSettings.defaultSettings.disableSimilarChannels
         }
         AyuGramHooks.similarChannelsDisabled = { [weak self] accountPeerId in
             guard let self else {
@@ -426,7 +426,7 @@ public final class AyuGramFeatureManager {
             return self.registry.similarChannelsDisabled(accountPeerId: accountPeerId)
         }
         AyuGramHooks.shouldDisableNotificationDelay = { [weak self] accountPeerId in
-            return self?.settings(accountPeerId: accountPeerId)?.disableNotificationDelay ?? false
+            return self?.settings(accountPeerId: accountPeerId)?.disableNotificationDelay ?? AyuGramSettings.defaultSettings.disableNotificationDelay
         }
         AyuGramHooks.shouldShowSeconds = { [weak self] accountPeerId in
             return self?.settings(accountPeerId: accountPeerId)?.showSecondsInMessages ?? false

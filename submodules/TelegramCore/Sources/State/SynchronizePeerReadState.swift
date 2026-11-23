@@ -212,6 +212,13 @@ private func validatePeerReadState(network: Network, postbox: Postbox, stateMana
                         case let .idBased(localMaxIncomingReadId, _, _, _, _):
                             if case let .idBased(updatedMaxIncomingReadId, _, _, updatedCount, updatedMarkedUnread) = readState {
                                 if localReadMarkIsAheadOfServer(localMaxIncomingReadId: localMaxIncomingReadId, serverMaxIncomingReadId: updatedMaxIncomingReadId, serverCount: updatedCount, serverMarkedUnread: updatedMarkedUnread) {
+                                    // GRVMgram: with read receipts suppressed a chat read here stays ahead of the
+                                    // server for good, so retrying would refetch the dialog forever. Keep the local
+                                    // mark and settle the validation.
+                                    if AyuGramHooks.shouldSuppressReadReceipts?(stateManager.accountPeerId) == true {
+                                        transaction.confirmSynchronizedIncomingReadState(peerId)
+                                        return nil
+                                    }
                                     return .retry
                                 }
                             }

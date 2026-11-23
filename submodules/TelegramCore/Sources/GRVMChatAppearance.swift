@@ -106,6 +106,10 @@ public func grvmShouldDisplayMessageReactions(
     accountPeerId: PeerId,
     message: Message
 ) -> Bool {
+    // Saved Messages tags are navigation, not reactions: never hidden by the reaction toggles.
+    if message.areReactionsTags(accountPeerId: accountPeerId) {
+        return true
+    }
     let chats = AyuGramHooks.chatAppearance(accountPeerId: accountPeerId).chats
     guard let peer = message.peers[message.id.peerId] else {
         return true

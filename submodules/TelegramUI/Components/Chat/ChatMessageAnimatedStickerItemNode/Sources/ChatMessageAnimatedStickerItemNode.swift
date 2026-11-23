@@ -1066,6 +1066,10 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
             if Namespaces.Message.allEphemeral.contains(item.message.id.namespace) || Namespaces.Message.allWelcomeMessages.contains(item.message.id.namespace) {
                 needsShareButton = false
             }
+            // GRVMgram: «Скрыть кнопку быстрой пересылки» (as in ChatMessageBubbleItemNode).
+            if AyuGramHooks.chatAppearance(accountPeerId: item.context.account.peerId).chats.hideFastShareButton {
+                needsShareButton = false
+            }
             
             var isEmoji = false
             if let _ = telegramDice {

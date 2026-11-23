@@ -39,6 +39,10 @@ public class AdPeer: Equatable {
 }
 
 func _internal_searchAdPeers(account: Account, query: String) -> Signal<[AdPeer], NoError> {
+    // GRVMgram: «Отключить рекламу» covers sponsored results in search too.
+    if AyuGramHooks.shouldDisableAds?(account.peerId) == true {
+        return .single([])
+    }
     return account.network.request(Api.functions.contacts.getSponsoredPeers(q: query))
     |> map(Optional.init)
     |> `catch` { _ in

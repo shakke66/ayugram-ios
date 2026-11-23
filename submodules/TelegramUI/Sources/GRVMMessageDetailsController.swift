@@ -1,5 +1,6 @@
 import Foundation
 import AccountContext
+import AyuGramLib
 import Display
 import ItemListUI
 import Postbox
@@ -56,7 +57,7 @@ private func grvmMessageDetailsText(
     strings: GRVMgramStrings
 ) -> String {
     var lines: [String] = [
-        strings.format(.messageDetailsPeerId, String(describing: message.id.peerId)),
+        strings.format(.messageDetailsPeerId, grvmFormatPeerId(message.id.peerId, format: .botAPI)),
         strings.format(.messageDetailsNamespace, message.id.namespace),
         strings.format(.messageDetailsMessageId, message.id.id),
         strings.format(.messageDetailsStableId, String(message.stableId)),
@@ -66,18 +67,18 @@ private func grvmMessageDetailsText(
         lines.append(strings.format(.messageDetailsThreadId, String(threadId)))
     }
     if let author = message.author {
-        lines.append(strings.format(.messageDetailsAuthor, author.debugDisplayTitle, String(describing: author.id)))
+        lines.append(strings.format(.messageDetailsAuthor, author.debugDisplayTitle, grvmFormatPeerId(author.id, format: .botAPI)))
     }
     if let forwardInfo = message.forwardInfo {
         lines.append(strings.format(.messageDetailsForwardDate, grvmMessageDetailsDate(forwardInfo.date), forwardInfo.date))
         if let author = forwardInfo.author {
-            lines.append(strings.format(.messageDetailsForwardAuthor, author.debugDisplayTitle, String(describing: author.id)))
+            lines.append(strings.format(.messageDetailsForwardAuthor, author.debugDisplayTitle, grvmFormatPeerId(author.id, format: .botAPI)))
         }
         if let source = forwardInfo.source {
-            lines.append(strings.format(.messageDetailsForwardSource, source.debugDisplayTitle, String(describing: source.id)))
+            lines.append(strings.format(.messageDetailsForwardSource, source.debugDisplayTitle, grvmFormatPeerId(source.id, format: .botAPI)))
         }
         if let sourceMessageId = forwardInfo.sourceMessageId {
-            lines.append(strings.format(.messageDetailsForwardSourceMessage, String(describing: sourceMessageId)))
+            lines.append(strings.format(.messageDetailsForwardSourceMessage, "\(grvmFormatPeerId(sourceMessageId.peerId, format: .botAPI)):\(sourceMessageId.id)"))
         }
         if let authorSignature = forwardInfo.authorSignature, !authorSignature.isEmpty {
             lines.append(strings.format(.messageDetailsForwardSignature, authorSignature))
@@ -95,10 +96,10 @@ private func grvmMessageDetailsText(
     for media in message.media {
         if let image = media as? TelegramMediaImage {
             let sizes = image.representations.map { "\($0.dimensions.width)x\($0.dimensions.height)" }
-            lines.append(strings.format(.messageDetailsImage, String(describing: image.imageId), sizes.joined(separator: ", ")))
+            lines.append(strings.format(.messageDetailsImage, "\(image.imageId.namespace):\(image.imageId.id)", sizes.joined(separator: ", ")))
         } else if let file = media as? TelegramMediaFile {
             var metadata = [
-                strings.format(.messageDetailsFileId, String(describing: file.fileId)),
+                strings.format(.messageDetailsFileId, "\(file.fileId.namespace):\(file.fileId.id)"),
                 strings.format(.messageDetailsFileMime, file.mimeType),
             ]
             if let name = file.fileName {

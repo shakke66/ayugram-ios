@@ -95,3 +95,13 @@ func _internal_grvmApplyMaxReadIndex(account: Account, index: MessageIndex, mode
         }
     }
 }
+
+/// GRVMgram: a forum topic or monoforum read from the chat list (swipe, "Mark as Read", reading a folder) sends
+/// `readDiscussion` / `readSavedHistory` directly, outside the read-state synchronization the read-receipt
+/// suppression hooks into. With read receipts suppressed it stays local (as AyuGram Desktop).
+func grvmAllowsServerThreadRead(viewTracker: AccountViewTracker) -> Bool {
+    guard let accountPeerId = viewTracker.account?.peerId else {
+        return true
+    }
+    return AyuGramHooks.shouldSuppressReadReceipts?(accountPeerId) != true
+}

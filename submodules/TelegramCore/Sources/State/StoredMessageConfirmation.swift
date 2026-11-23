@@ -210,7 +210,7 @@ func confirmStoredMessages(accountPeerId: PeerId, postbox: Postbox, source: Fetc
 ///
 /// Returns the ids it deleted: the private-chat and basic-group ones, then the channel ones, each in the order given.
 @discardableResult
-func deleteStoredMessagesAsReceivedDeletion(transaction: Transaction, mediaBox: MediaBox, ids: [MessageId]) -> [MessageId] {
+func deleteStoredMessagesAsReceivedDeletion(transaction: Transaction, accountPeerId: PeerId, mediaBox: MediaBox, ids: [MessageId]) -> [MessageId] {
     var regularIds: [MessageId] = []
     var channelIds: [MessageId] = []
     for id in ids {
@@ -221,20 +221,12 @@ func deleteStoredMessagesAsReceivedDeletion(transaction: Transaction, mediaBox: 
         }
     }
 
-    if !regularIds.isEmpty {
-        var resourceIds: [MediaResourceId] = []
-        transaction.deleteMessages(regularIds, forEachMedia: { media in
-            addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
-        })
-        if !resourceIds.isEmpty {
-            let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
-        }
-    }
-    if !channelIds.isEmpty {
-        _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: channelIds)
-    }
-
-    let deletedIds = regularIds + channelIds
+    // GRVMgram: a message the server no longer has is a received deletion, so it goes through the deleted-messages
+    // archive like every other one: kept (marked as deleted) when saving is on, deleted otherwise. A message the
+    // archive already keeps is missing on the server by definition and stays. Only what is gone is reported.
+    let orderedIds = regularIds + channelIds
+    _internal_applyMessageDeletion(accountPeerId: accountPeerId, transaction: transaction, mediaBox: mediaBox, ids: orderedIds, mode: .server(.validation))
+    let deletedIds = orderedIds.filter { transaction.getMessage($0) == nil }
     // The received-deletion events (owner decision D1): reported inside this transaction, as the replay reports
     // its deletions inside its own; the deletedMessages pipe fires once it has committed.
     StoredMessageConfirmationDeletionReporters.shared.report(deletedIds, mediaBox: mediaBox, transaction: transaction)
@@ -268,7 +260,7 @@ func applyStoredMessageConfirmation(transaction: Transaction, accountPeerId: Pee
         }
     }
 
-    let deletedIds = deleteStoredMessagesAsReceivedDeletion(transaction: transaction, mediaBox: mediaBox, ids: missingIds)
+    let deletedIds = deleteStoredMessagesAsReceivedDeletion(transaction: transaction, accountPeerId: accountPeerId, mediaBox: mediaBox, ids: missingIds)
     if !refreshed.isEmpty {
         updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: confirmation.peers)
         let _ = transaction.addMessages(refreshed, location: .Random)

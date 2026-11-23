@@ -736,7 +736,9 @@ public final class AccountViewTracker {
                             guard let peer = transaction.getPeer(peerId), let inputPeer = apiInputPeer(peer) else {
                                 return .complete()
                             }
-                            return account.network.request(Api.functions.messages.getMessagesViews(peer: inputPeer, id: messageIds.map { $0.id }, increment: .boolTrue))
+                            // GRVMgram: with read receipts suppressed views are fetched without counting this one (as AyuGram Desktop).
+                            let grvmIncrementViews: Api.Bool = AyuGramHooks.shouldSuppressReadReceipts?(accountPeerId) == true ? .boolFalse : .boolTrue
+                            return account.network.request(Api.functions.messages.getMessagesViews(peer: inputPeer, id: messageIds.map { $0.id }, increment: grvmIncrementViews))
                             |> map(Optional.init)
                             |> `catch` { _ -> Signal<Api.messages.MessageViews?, NoError> in
                                 return .single(nil)

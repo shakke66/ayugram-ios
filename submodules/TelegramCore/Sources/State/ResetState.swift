@@ -112,7 +112,7 @@ func _internal_resetAccountState(postbox: Postbox, network: Network, accountPeer
             // deletions adjust.
             let ghostTail = storedCloudMessagesAboveTopMessages(transaction: transaction, fetchedChats: fetchedChats)
             if !ghostTail.isEmpty {
-                let deletedIds = deleteStoredMessagesAsReceivedDeletion(transaction: transaction, mediaBox: postbox.mediaBox, ids: ghostTail)
+                let deletedIds = deleteStoredMessagesAsReceivedDeletion(transaction: transaction, accountPeerId: accountPeerId, mediaBox: postbox.mediaBox, ids: ghostTail)
                 Logger.shared.log("State", "account reset: deleted \(deletedIds.count) stored message(s) above the fetched top messages")
             }
             transaction.resetIncomingReadStates(fetchedChats.readStates)

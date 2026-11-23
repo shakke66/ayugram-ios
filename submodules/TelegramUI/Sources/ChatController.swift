@@ -2889,6 +2889,27 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             if case .pinnedMessages = strongSelf.presentationInterfaceState.subject {
                 return false
             }
+            // GRVMgram: GIFs from search and trending go here, not through sendGif; they ask too.
+            let bypassConfirmation = strongSelf.bypassNextGIFConfirmation
+            strongSelf.bypassNextGIFConfirmation = false
+            if !bypassConfirmation && AyuGramHooks.shouldConfirmGIF?(strongSelf.context.account.peerId) == true {
+                let grvmStrings = GRVMgramStrings(strongSelf.presentationData.strings)
+                let alertController = textAlertController(context: strongSelf.context, title: nil, text: grvmStrings[.confirmSendGif], actions: [
+                    TextAlertAction(type: .genericAction, title: strongSelf.presentationData.strings.Common_Cancel, action: {}),
+                    TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: { [weak self] in
+                        guard let strongSelf = self else {
+                            return
+                        }
+                        strongSelf.bypassNextGIFConfirmation = true
+                        defer {
+                            strongSelf.bypassNextGIFConfirmation = false
+                        }
+                        let _ = strongSelf.controllerInteraction?.sendBotContextResultAsGif(collection, result, sourceView, sourceRect, silentPosting, resetTextInputState)
+                    })
+                ])
+                strongSelf.present(alertController, in: .window(.root))
+                return false
+            }
             if let _ = strongSelf.presentationInterfaceState.slowmodeState, strongSelf.presentationInterfaceState.subject != .scheduledMessages {
                 strongSelf.interfaceInteraction?.displaySlowmodeTooltip(sourceView, sourceRect)
                 return false

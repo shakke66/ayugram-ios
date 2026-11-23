@@ -690,7 +690,7 @@ private struct NotificationContent: CustomStringConvertible {
             content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: sound))
         }
         if let badge = self.badge {
-            content.badge = badge as NSNumber
+            content.badge = grvmShouldHideNotificationBadge() ? 0 : badge as NSNumber
         }
         if let category = self.category {
             content.categoryIdentifier = category
@@ -762,6 +762,15 @@ private func getCurrentRenderedTotalUnreadCount(accountManager: AccountManager<T
 }
 
 @available(iOSApplicationExtension 10.0, iOS 10.0, *)
+/// GRVMgram: «Скрыть значок уведомлений» — the app keeps this flag in the shared app group for the extension.
+private func grvmShouldHideNotificationBadge() -> Bool {
+    guard let appBundleIdentifier = Bundle.main.bundleIdentifier, let lastDotRange = appBundleIdentifier.range(of: ".", options: [.backwards]) else {
+        return false
+    }
+    let baseAppBundleId = String(appBundleIdentifier[..<lastDotRange.lowerBound])
+    return UserDefaults(suiteName: "group.\(baseAppBundleId)")?.bool(forKey: "GRVMgram.hideNotificationBadge") ?? false
+}
+
 private final class NotificationServiceHandler {
     private let queue: Queue
     private let accountManager: AccountManager<TelegramAccountManagerTypes>
@@ -1914,7 +1923,7 @@ private final class NotificationServiceHandler {
                                                 }
 
                                                 if isCurrentAccount {
-                                                    content.badge = Int(value.0)
+                                                    content.badge = grvmShouldHideNotificationBadge() ? 0 : Int(value.0)
                                                 }
 
                                                 Logger.shared.log("NotificationService \(episode)", "Unread count: \(value.0), isCurrentAccount: \(isCurrentAccount)")
@@ -2515,7 +2524,7 @@ private final class NotificationServiceHandler {
                                         |> deliverOn(strongSelf.queue)).start(next: { value in
                                             var content = NotificationContent(isLockedMessage: nil)
                                             if isCurrentAccount {
-                                                content.badge = Int(value.0)
+                                                content.badge = grvmShouldHideNotificationBadge() ? 0 : Int(value.0)
                                             }
                                             Logger.shared.log("NotificationService \(episode)", "Unread count: \(value.0), isCurrentAccount: \(isCurrentAccount)")
                                             Logger.shared.log("NotificationService \(episode)", "Updating content to \(content)")
@@ -2609,7 +2618,7 @@ private final class NotificationServiceHandler {
                                         |> deliverOn(strongSelf.queue)).start(next: { value in
                                             var content = NotificationContent(isLockedMessage: nil)
                                             if isCurrentAccount {
-                                                content.badge = Int(value.0)
+                                                content.badge = grvmShouldHideNotificationBadge() ? 0 : Int(value.0)
                                             }
 
                                             Logger.shared.log("NotificationService \(episode)", "Unread count: \(value.0), isCurrentAccount: \(isCurrentAccount)")
