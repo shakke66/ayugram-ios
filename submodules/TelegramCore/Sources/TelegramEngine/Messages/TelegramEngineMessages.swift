@@ -183,6 +183,10 @@ public extension TelegramEngine {
             return _internal_grvmApplyMaxReadIndex(account: self.account, index: index, mode: mode)
         }
 
+        public func grvmForceReadMessageContents(messageId: MessageId) -> Signal<Void, NoError> {
+            return _internal_grvmForceReadMessageContents(account: self.account, messageId: messageId)
+        }
+
         public func grvmDeleteOwnMessages(peerId: PeerId, threadId: Int64?) -> Signal<GRVMDeleteOwnMessagesResult, NoError> {
             return _internal_grvmDeleteOwnMessages(account: self.account, peerId: peerId, threadId: threadId)
         }

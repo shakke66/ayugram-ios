@@ -1508,6 +1508,8 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
            message.id.peerId.namespace != Namespaces.Peer.SecretChat
         {
             // The route is restricted to .peer and .replyThread histories; .scheduledMessages and .customChatContents stay hidden.
+            // As AyuGram Desktop (AddReadUntilAction, решение владельца 23.11): the read receipt up to this message goes
+            // to the server while ghost mode stays on, and a voice/round message is marked as listened.
             actions.append(.action(ContextMenuActionItem(
                 text: grvmStrings[.menuReadMessage],
                 icon: { theme in
@@ -1518,7 +1520,8 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     guard let chatController = interfaceInteraction.chatController() as? ChatControllerImpl else {
                         return
                     }
-                    chatController.grvmApplyTopReadIndex(mode: .localOnly)
+                    chatController.grvmApplyMaxReadIndex(message.index, mode: .forceServer)
+                    let _ = context.engine.messages.grvmForceReadMessageContents(messageId: message.id).startStandalone()
                 }
             )))
         }

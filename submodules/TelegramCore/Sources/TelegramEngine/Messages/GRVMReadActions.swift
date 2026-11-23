@@ -61,7 +61,12 @@ func _internal_grvmApplyMaxReadIndex(account: Account, index: MessageIndex, mode
                 }
 
                 for peerId in forcePeerIds {
-                    if let combinedPeerReadState = transaction.getCombinedPeerReadState(peerId) {
+                    if let currentReadState = transaction.getCombinedPeerReadState(peerId) {
+                        // В гост-режиме чат локально прочитан до конца, а собеседнику уходит прочтение ровно
+                        // до выбранного сообщения (как AyuGram Desktop, messages.readHistory(max_id)).
+                        let combinedPeerReadState = peerId == index.id.peerId
+                            ? grvmReadState(currentReadState, readUpTo: index.id.id)
+                            : currentReadState
                         var maxIncomingReadId: MessageId.Id?
                         if let cloudState = combinedPeerReadState.states.first(where: { namespace, _ in
                            return namespace == Namespaces.Message.Cloud
@@ -93,6 +98,54 @@ func _internal_grvmApplyMaxReadIndex(account: Account, index: MessageIndex, mode
                 }
             }
         }
+    }
+}
+
+/// Состояние прочтения для отправки на сервер: отметка входящих — не дальше `readUpTo`. Число непрочитанных
+/// остаётся локальным: по нему проверка после отправки понимает, что состояние не менялось.
+private func grvmReadState(_ state: CombinedPeerReadState, readUpTo: MessageId.Id) -> CombinedPeerReadState {
+    return CombinedPeerReadState(states: state.states.map { namespace, readState -> (MessageId.Namespace, PeerReadState) in
+        guard namespace == Namespaces.Message.Cloud,
+              case let .idBased(maxIncomingReadId, maxOutgoingReadId, maxKnownId, count, markedUnread) = readState else {
+            return (namespace, readState)
+        }
+        return (namespace, .idBased(
+            maxIncomingReadId: min(maxIncomingReadId, readUpTo),
+            maxOutgoingReadId: maxOutgoingReadId,
+            maxKnownId: maxKnownId,
+            count: count,
+            markedUnread: markedUnread
+        ))
+    })
+}
+
+/// «Прочитать сообщение» в гост-режиме, как AyuGram Desktop (`AddReadUntilAction`): у голосового или кружка
+/// без самоуничтожения собеседнику уходит и «прослушано» — даже если локально оно уже прослушано в гост-режиме.
+func _internal_grvmForceReadMessageContents(account: Account, messageId: MessageId) -> Signal<Void, NoError> {
+    let accountPeerId = account.peerId
+    let postbox = account.postbox
+    return postbox.transaction { transaction -> Bool in
+        guard messageId.namespace == Namespaces.Message.Cloud,
+              messageId.peerId.namespace != Namespaces.Peer.SecretChat,
+              let message = transaction.getMessage(messageId),
+              message.flags.contains(.Incoming),
+              !message.attributes.contains(where: { $0 is AutoremoveTimeoutMessageAttribute }) else {
+            return false
+        }
+        guard let attribute = message.attributes.first(where: { $0 is ConsumableContentMessageAttribute }) as? ConsumableContentMessageAttribute else {
+            return false
+        }
+        if attribute.consumed {
+            addSynchronizeConsumeMessageContentsOperation(transaction: transaction, messageIds: [messageId], force: true)
+            return false
+        }
+        return true
+    }
+    |> mapToSignal { markInteractively -> Signal<Void, NoError> in
+        guard markInteractively else {
+            return .single(())
+        }
+        return _internal_markMessageContentAsConsumedInteractively(accountPeerId: accountPeerId, postbox: postbox, messageId: messageId, force: true)
     }
 }
 
